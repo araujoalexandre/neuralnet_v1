@@ -107,7 +107,7 @@ class MNISTReader:
     return image_batch, label_batch
 
 
-class CIFARReader:
+class CIFAR10Reader:
 
   def __init__(self, batch_size, num_epochs=1, is_training=False, 
     *args, **kwargs):
