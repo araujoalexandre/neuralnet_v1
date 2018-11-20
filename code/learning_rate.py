@@ -33,7 +33,7 @@ flags.DEFINE_float("learning_rate_decay_examples", 4000000,
                    "every learning_rate_decay_examples.")
 
 # Cyclic learning rate
-flags.DEFINE_float("min_learning_rate", 0.01, 
+flags.DEFINE_float("min_learning_rate", 0.01,
                    "Define the minimum learning_rate used for cyclic lr")
 flags.DEFINE_float("max_learning_rate", 0.1,
                    "Define the maximum learning_rate used for cyclic lr")
@@ -58,14 +58,14 @@ def _cyclic_learning_rate(global_step,
     function taken from: https://goo.gl/x4drQS
     Applies cyclic learning rate (CLR).
     From the paper:
-    Smith, Leslie N. 
+    Smith, Leslie N.
     "Cyclical learning rates for training neural networks." 2017.
     [https://arxiv.org/pdf/1506.01186.pdf]
-    This method lets the learning rate cyclically vary between reasonable 
-    boundary values achieving improved classification accuracy and often in 
+    This method lets the learning rate cyclically vary between reasonable
+    boundary values achieving improved classification accuracy and often in
     fewer iterations. This code varies the learning rate linearly between the
     minimum (learning_rate) and the maximum (max_lr).
-    
+
     It returns the cyclic learning rate. It is computed as:
        ```python
        cycle = floor( 1 + global_step /

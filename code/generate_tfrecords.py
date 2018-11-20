@@ -36,8 +36,8 @@ def _float_feature(value):
 
 def _bytes_feature(value):
   """Wrapper for inserting bytes features into Example proto."""
-  if six.PY3 and isinstance(value, six.text_type):           
-    value = six.binary_type(value, encoding='utf-8') 
+  if six.PY3 and isinstance(value, six.text_type):
+    value = six.binary_type(value, encoding='utf-8')
   return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 
@@ -81,7 +81,7 @@ class ConvertMNIST:
     data_folder = join(FLAGS.output_dir, 'mnist')
     if exists(data_folder):
       logging.info('mnist data already converted to TFRecords.')
-      return 
+      return
     os.makedirs(data_folder)
     self._process_images("train", self.x_train, self.y_train)
     self._process_images("test", self.x_test, self.y_test)
@@ -90,18 +90,13 @@ class ConvertMNIST:
 class ConvertCIFAR:
 
   def __init__(self):
-    
+
     self.url = 'http://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz'
     self.maybe_download_and_extract()
     self.height, self.width = 32, 32
     self.num_classes = 10
     self.train_size = 50000
     self.test_size = 10000
-
-    # Initializes function that decodes RGB JPEG data.
-    self._decode_jpeg_data = tf.placeholder(dtype=tf.string)
-    self._decode_jpeg = tf.image.decode_jpeg(self._decode_jpeg_data, channels=3)
-    self._sess = tf.Session()
 
   def maybe_download_and_extract(self):
     """Download and extract the tarball from Alex's website."""
@@ -123,7 +118,7 @@ class ConvertCIFAR:
     if not exists(self.extracted_dir_path):
       tarfile.open(filepath, 'r:gz').extractall(dest_directory)
     tf.gfile.Remove(filepath)
-  
+
   def _unpickle(self, file):
       with open(file, 'rb') as f:
         data = pickle.load(f, encoding='bytes')
@@ -138,13 +133,6 @@ class ConvertCIFAR:
       'image/filename': _bytes_feature(filename)}))
     return example
 
-  def _decode_jpeg(self, image_data):
-    image = self._sess.run(
-      self._decode_jpeg, feed_dict={self._decode_jpeg_data: image_data})
-    assert len(image.shape) == 3
-    assert image.shape[2] == 3
-    return image
-
   def _process_images(self, name, images, labels, filenames, id_file, nfiles):
     """Processes and saves list of images as TFRecord in 1 thread.
     Args:
@@ -153,14 +141,14 @@ class ConvertCIFAR:
       labels: array of labels
     """
     output_filename = '{}-{:05d}-of-{:05d}'.format(name, id_file, nfiles)
-    output_file = join(FLAGS.output_dir, 'cifar10', 
+    output_file = join(FLAGS.output_dir, 'cifar10',
       output_filename)
     with TFRecordWriter(output_file) as writer:
       for image, label, filename in zip(images, labels, filenames):
         example = self._convert_to_example(image.tobytes(), label, filename)
         writer.write(example.SerializeToString())
     print('{}: Wrote {} images to {}'.format(
-        datetime.now(), len(images), output_file), flush=True)    
+        datetime.now(), len(images), output_file), flush=True)
 
   def convert(self):
     """Main method to convert cifar images to TFRecords
@@ -168,7 +156,7 @@ class ConvertCIFAR:
     data_folder = join(FLAGS.output_dir, 'cifar10')
     if exists(data_folder):
       logging.info('cifar10 data already converted to TFRecords.')
-      return 
+      return
     os.makedirs(data_folder)
     train_files = tf.gfile.Glob(join(self.extracted_dir_path, 'data*'))
     test_file = tf.gfile.Glob(join(self.extracted_dir_path, 'test_batch'))[0]

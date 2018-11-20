@@ -40,7 +40,7 @@ flags.DEFINE_bool("start_new_model", False,
 flags.DEFINE_string("model", "Model",
                     "Which architecture to use for the model. "
                     "Models are defined in models.py.")
-flags.DEFINE_string("reader", "MNISTReader", 
+flags.DEFINE_string("reader", "MNISTReader",
                     "Which reader to use for the data load."
                     "Readers are defined in readers.py")
 
@@ -58,18 +58,18 @@ flags.DEFINE_float("regularization_penalty", 1.0,
 flags.DEFINE_bool("log_device_placement", False,
                   "Whether to write the device on which every op will run "
                   "into the logs on startup.")
-flags.DEFINE_integer("save_checkpoint_steps", 1000, 
+flags.DEFINE_integer("save_checkpoint_steps", 1000,
   "The frequency, in number of global steps, that a checkpoint is saved "
   "using a default checkpoint saver. If both save_checkpoint_steps and "
   "save_checkpoint_secs are set to None, then the default checkpoint saver "
   "isn't used. If both are provided, then only save_checkpoint_secs is used. "
   "Default not enabled.")
-flags.DEFINE_integer("save_summaries_steps", 120, 
+flags.DEFINE_integer("save_summaries_steps", 120,
   "The frequency, in number of global steps, that the summaries are written "
   "to disk using a default summary saver. If both save_summaries_steps and "
   "save_summaries_secs are set to None, then the default summary saver isn't "
   "used.")
-flags.DEFINE_integer("log_steps", 100, 
+flags.DEFINE_integer("log_steps", 100,
                    "The frequency, in number of global steps, that the loss "
                    "is logged.")
 
@@ -91,7 +91,7 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
   restored from a meta graph file rather than being recreated.
 
   Args:
-    reader: the input class. 
+    reader: the input class.
     model: The core model.
     label_loss_fn: What kind of loss to apply to the model. It should inherit
                 from BaseLoss.
@@ -139,13 +139,13 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
     # line. They have to be nested.
     with tf.device(device_string.format(i)):
       with (tf.variable_scope("tower", reuse=True if i > 0 else None)):
-        with (slim.arg_scope([slim.model_variable, slim.variable], 
+        with (slim.arg_scope([slim.model_variable, slim.variable],
           device="/cpu:0" if num_gpus!=1 else "/gpu:0")):
-          
-          predictions = model.create_model(tower_inputs[i], 
+
+          predictions = model.create_model(tower_inputs[i],
             labels=tower_labels[i], n_classes=10, is_training=True)
           tower_predictions.append(predictions)
-          
+
           for variable in slim.get_model_variables():
             tf.summary.histogram(variable.op.name, variable)
 
@@ -171,13 +171,13 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
           gradients = opt.compute_gradients(final_loss,
               colocate_gradients_with_ops=False)
           tower_gradients.append(gradients)
-  
+
   label_loss = tf.reduce_mean(tf.stack(tower_label_losses))
   tf.summary.scalar("label_loss", label_loss)
-  
+
   if regularization_penalty != 0:
     tf.summary.scalar("reg_loss", reg_loss)
-  
+
   # process and apply gradients
   gradients = ProcessGradients(tower_gradients).get_gradients()
   train_op = opt.apply_gradients(gradients, global_step=global_step)
@@ -206,7 +206,7 @@ class Trainer(object):
     self.task = task
     self.is_master = (task.type == "master" and task.index == 0)
     self.train_dir = train_dir
-    self.config = tf.ConfigProto(allow_soft_placement=True, 
+    self.config = tf.ConfigProto(allow_soft_placement=True,
       log_device_placement=log_device_placement)
     self.model = model
     self.reader = reader
@@ -223,10 +223,10 @@ class Trainer(object):
     if not os.path.exists(self.train_dir):
       os.makedirs(self.train_dir)
 
-    # logging.info('{}: Parameters used:'.format(task_as_string(self.task)))
-    # for key, value in sorted(FLAGS.flag_values_dict().items()):
-    #   if key not in ['h', 'help', 'helpfull', 'helpshort']:
-    #     logging.info('{}: {}'.format(key, value))
+    logging.info('{}: Parameters used:'.format(task_as_string(self.task)))
+    for key, value in sorted(FLAGS.flag_values_dict().items()):
+      if key not in ['h', 'help', 'helpfull', 'helpshort']:
+        logging.info('{}: {}'.format(key, value))
 
     logging.info('Command used: ')
     logging.info('{} {}'.format('python3', ' '.join([x for x in sys.argv])))
@@ -268,7 +268,7 @@ class Trainer(object):
         init_op = tf.global_variables_initializer()
 
       hooks = [
-        tf.train.NanTensorHook(loss), 
+        tf.train.NanTensorHook(loss),
         tf.train.StopAtStepHook(num_steps=FLAGS.max_steps)
       ]
 
@@ -288,12 +288,12 @@ class Trainer(object):
       batch_size = FLAGS.batch_size
       num_gpu = FLAGS.num_gpu
 
-      logging.info("start training")
+      logging.info("Start training")
       with tf.train.MonitoredTrainingSession(**session_args) as sess:
         while not sess.should_stop():
           try:
             batch_start_time = time.time()
-            (_, global_step_val, loss_val, learning_rate_val, 
+            (_, global_step_val, loss_val, learning_rate_val,
               predictions_val, labels_val) = sess.run(
                 [train_op, global_step, loss, learning_rate, predictions, labels])
             seconds_per_batch = time.time() - batch_start_time
@@ -301,12 +301,12 @@ class Trainer(object):
 
             to_print = global_step_val % FLAGS.log_steps == 0
             if (self.is_master and to_print) or not global_step_val:
-              epoch = ((global_step_val * batch_size * num_gpu) 
+              epoch = ((global_step_val * batch_size * num_gpu)
                 / self.reader.n_train_files)
               message = ("training epoch: {:.2f} | step: {} | lr: {:.6f} "
               "| loss: {:.2f} | Examples/sec: {:.0f}")
-              logging.info(message.format(epoch, 
-                global_step_val, learning_rate_val, 
+              logging.info(message.format(epoch,
+                global_step_val, learning_rate_val,
                 loss_val, examples_per_second))
 
           except tf.errors.OutOfRangeError:
@@ -368,7 +368,7 @@ class Trainer(object):
   def recover_model(self, meta_filename):
     logging.info("{}: Restoring from meta graph file {}".format(
       task_as_string(self.task), meta_filename))
-    return tf.train.import_meta_graph(meta_filename, 
+    return tf.train.import_meta_graph(meta_filename,
       clear_devices=FLAGS.clear_devices)
 
   def build_model(self, model, reader):
@@ -453,11 +453,13 @@ def main(unused_argv):
   # Dispatch to a master, a worker, or a parameter server.
   if not cluster or task.type == "master" or task.type == "worker":
     reader = find_class_by_name(FLAGS.reader, [readers])(
-      FLAGS.batch_size * FLAGS.num_gpu, num_epochs=FLAGS.num_epochs, 
+      FLAGS.batch_size * FLAGS.num_gpu, num_epochs=FLAGS.num_epochs,
       is_training=True)
 
     model = find_class_by_name(FLAGS.model, [models])()
-    trainer = Trainer(cluster, task, FLAGS.train_dir, model, reader, 
+    logging.info("Using {} as model".format(FLAGS.model))
+    
+    trainer = Trainer(cluster, task, FLAGS.train_dir, model, reader,
       FLAGS.log_device_placement)
     trainer.run(start_new_model=FLAGS.start_new_model)
 
