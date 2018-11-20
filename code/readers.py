@@ -7,17 +7,17 @@ from tensorflow import flags
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("data_dir", "/tmp", 
+flags.DEFINE_string("data_dir", "/tmp",
                     "Folder where to find TFRecords.")
 flags.DEFINE_string("data_pattern", "train*",
                     "File glob for the training dataset. Add several "
                     "data_pattern by concatenating with a comma.")
 flags.DEFINE_integer("num_parallel_calls", 8,
                      "Represent the number elements to process in parallel")
-flags.DEFINE_integer("num_parallel_readers", 8, 
+flags.DEFINE_integer("num_parallel_readers", 8,
                      "The number of input Datasets to interleave from in "
                      "parallel.")
-flags.DEFINE_integer("prefetch_buffer_size", 1000, 
+flags.DEFINE_integer("prefetch_buffer_size", 1000,
                      "Representing the maximum number of elements that will "
                      "be buffered when prefetching.")
 
@@ -25,7 +25,7 @@ flags.DEFINE_integer("prefetch_buffer_size", 1000,
 class MNISTReader:
 
   def __init__(self, batch_size, num_epochs=1, is_training=False):
-    
+
     self.batch_size = batch_size
     self.num_epochs = num_epochs
     self.is_training = is_training
@@ -61,7 +61,7 @@ class MNISTReader:
   def _parse_fn(self, example_serialized):
     """Parses an Example proto containing a training example of an image.
     The output of the build_image_data.py image preprocessing script is a dataset
-    containing serialized Example protocol buffers. 
+    containing serialized Example protocol buffers.
     Args:
       example_serialized: scalar Tensor tf.string containing a serialized
         Example protocol buffer.
@@ -96,7 +96,7 @@ class MNISTReader:
           tf.data.TFRecordDataset, cycle_length=self.num_parallel_readers))
         dataset = dataset.shuffle(buffer_size=3*self.batch_size)
         dataset = dataset.apply(tf.contrib.data.map_and_batch(
-            map_func=self._parse_and_processed, batch_size=self.batch_size, 
+            map_func=self._parse_and_processed, batch_size=self.batch_size,
             num_parallel_calls=self.num_parallel_calls))
         dataset = dataset.prefetch(buffer_size=self.prefetch_buffer_size)
         dataset = dataset.repeat(self.num_epochs)
@@ -109,9 +109,9 @@ class MNISTReader:
 
 class CIFAR10Reader:
 
-  def __init__(self, batch_size, num_epochs=1, is_training=False, 
+  def __init__(self, batch_size, num_epochs=1, is_training=False,
     *args, **kwargs):
-    
+
     self.batch_size = batch_size
     self.num_epochs = num_epochs
     self.is_training = is_training
@@ -139,15 +139,14 @@ class CIFAR10Reader:
     image = tf.decode_raw(image_buffer, tf.uint8)
     image = tf.cast(image, dtype=tf.float32)
     image = tf.reshape(image, (3, self.height, self.width))
-    image = tf.image.per_image_standardization(image)
-    # Convert from [depth, height, width] to [height, width, depth].
     image = tf.transpose(image, [1, 2, 0])
+    image = tf.image.per_image_standardization(image)
     return image
 
   def _parse_fn(self, example_serialized):
     """Parses an Example proto containing a training example of an image.
     The output of the build_image_data.py image preprocessing script is a dataset
-    containing serialized Example protocol buffers. 
+    containing serialized Example protocol buffers.
     Args:
       example_serialized: scalar Tensor tf.string containing a serialized
         Example protocol buffer.
@@ -183,7 +182,7 @@ class CIFAR10Reader:
           tf.data.TFRecordDataset, cycle_length=self.num_parallel_readers))
         dataset = dataset.shuffle(buffer_size=3*self.batch_size)
         dataset = dataset.apply(tf.contrib.data.map_and_batch(
-            map_func=self._parse_and_processed, batch_size=self.batch_size, 
+            map_func=self._parse_and_processed, batch_size=self.batch_size,
             num_parallel_calls=self.num_parallel_calls))
         dataset = dataset.prefetch(buffer_size=self.prefetch_buffer_size)
         dataset = dataset.repeat(self.num_epochs)
