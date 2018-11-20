@@ -9,7 +9,7 @@ from resnet import Resnet
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_integer("n_givens", 10, 
+flags.DEFINE_integer("n_givens", 10,
                      "Number of givens matrices to use.")
 
 
@@ -51,11 +51,11 @@ class MnistModelGivens(BaseModel):
     activation = tf.layers.flatten(model_input)
     feature_size = activation.get_shape().as_list()[-1]
 
-    activation = self._givens_layers(model_input, FLAGS.n_givens, 
+    activation = self._givens_layers(model_input, FLAGS.n_givens,
       feature_size, None)
     activation = tf.nn.relu(activation)
 
-    activation = self._givens_layers(model_input, FLAGS.n_givens, 
+    activation = self._givens_layers(model_input, FLAGS.n_givens,
       feature_size, None)
 
     return activation
@@ -74,7 +74,7 @@ class MnistModelCirculant(BaseModel):
 
     layer2 = layers.CirculantLayer(feature_size, n_classes)
     activation = layer2.matmul(activation)
-    
+
     return activation
 
 
@@ -91,7 +91,7 @@ class MnistModelToeplitz(BaseModel):
 
     layer2 = layers.ToeplitzLayer(feature_size, n_classes)
     activation = layer2.matmul(activation)
-    
+
     return activation
 
 
@@ -124,11 +124,13 @@ class Cifar10BAseModel:
     Returns:
       activation
     """
+
     # conv1
     with tf.variable_scope('conv1') as scope:
-      kernel_initializer = tf.truncated_normal_initializer(stddev=5e-2)
-      biases_initializer = tf.constant_initializer(0.0)
-      kernel = tf.get_variable('weights', (5, 5, 3, 64), initializer=biases_initializer)
+      kernel_initializer = tf.random_normal_initializer(stddev=5e-2)
+      biases_initializer = tf.constant_initializer(0.1)
+      kernel = tf.get_variable('weights', (5, 5, 3, 64),
+                               initializer=kernel_initializer)
       biases = tf.get_variable('biases', [64], initializer=biases_initializer)
 
       activation = tf.nn.conv2d(images, kernel, [1, 1, 1, 1], padding='SAME')
@@ -137,17 +139,18 @@ class Cifar10BAseModel:
       self._activation_summary(activation)
 
     # pool1
-    activation = tf.nn.max_pool(activation, 
+    activation = tf.nn.max_pool(activation,
       ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding='SAME', name='pool1')
     # norm1
-    activation = tf.nn.lrn(activation, 
+    activation = tf.nn.lrn(activation,
       4, bias=1.0, alpha=0.001/9.0, beta=0.75, name='norm1')
 
     # conv2
-    with tf.variable_scope('conv2') as scope:      
-      kernel_initializer = tf.truncated_normal_initializer(stddev=5e-2)
+    with tf.variable_scope('conv2') as scope:
+      kernel_initializer = tf.random_normal_initializer(stddev=5e-2)
       biases_initializer = tf.constant_initializer(0.1)
-      kernel = tf.get_variable('weights', (5, 5, 64, 64), initializer=biases_initializer)
+      kernel = tf.get_variable('weights', (5, 5, 64, 64),
+                               initializer=kernel_initializer)
       biases = tf.get_variable('biases', [64], initializer=biases_initializer)
 
       activation = tf.nn.conv2d(activation, kernel, [1, 1, 1, 1], padding='SAME')
@@ -156,24 +159,23 @@ class Cifar10BAseModel:
       self._activation_summary(activation)
 
     # norm2
-    activation = tf.nn.lrn(activation, 
+    activation = tf.nn.lrn(activation,
       4, bias=1.0, alpha=0.001 / 9.0, beta=0.75, name='norm2')
     # pool2
-    activation = tf.nn.max_pool(activation, 
+    activation = tf.nn.max_pool(activation,
       ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding='SAME', name='pool2')
-
+    
     return tf.layers.flatten(activation)
 
 
 class Cifar10ModelDense(BaseModel, Cifar10BAseModel):
 
-  def __init__(self):
-    super(Cifar10ModelDense, self).__init__()
-
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
     activation = self.convolutional_layers(model_input)
-
+    print(activation.get_shape())
+    # activation = tf.layers.flatten(model_input)
+    
     with tf.variable_scope('dense1') as scope:
       kernel_initializer = tf.random_normal_initializer(stddev=1/np.sqrt(384))
       activation = tf.layers.dense(activation, 384, use_bias=True,
@@ -188,9 +190,11 @@ class Cifar10ModelDense(BaseModel, Cifar10BAseModel):
 
     with tf.variable_scope('dense3') as scope:
       kernel_initializer = tf.random_normal_initializer(stddev=1/np.sqrt(10))
-      activation = tf.layers.dense(activation, 192, use_bias=True,
+      activation = tf.layers.dense(activation, 10, use_bias=True,
         kernel_initializer=kernel_initializer, activation=None)
       self._activation_summary(activation)
+
+    # activation = tf.Print(activation, [activation])
 
     return activation
 
@@ -201,7 +205,7 @@ class Cifar10ModelGivens(BaseModel, Cifar10BAseModel):
     for i in range(n_givens):
       givens_layer = layers.GivensLayer(shape_in, shape_out)
       activation = givens_layer.matmul(model_input)
-      return activation
+    return activation
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
@@ -220,7 +224,7 @@ class Cifar10ModelGivens(BaseModel, Cifar10BAseModel):
         feature_size, 192)
       activation = tf.nn.relu(activation)
       self._activation_summary(activation)
-    
+
     with tf.variable_scope('givens3') as scope:
       feature_size = activation.get_shape().as_list()[-1]
       activation = self._givens_layers(activation, FLAGS.n_givens, 
@@ -249,7 +253,7 @@ class Cifar10ModelCirculant(BaseModel, Cifar10BAseModel):
       activation = layer2.matmul(activation)
       activation = tf.nn.relu(activation)
       self._activation_summary(activation)
-    
+
     with tf.variable_scope('circulant3') as scope:
       feature_size = activation.get_shape().as_list()[-1]
       layer3 = layers.CirculantLayer(feature_size, 10)
@@ -279,7 +283,7 @@ class Cifar10ModelToeplitz(BaseModel, Cifar10BAseModel):
       activation = layer2.matmul(activation)
       activation = tf.nn.relu(activation)
       self._activation_summary(activation)
-    
+
     with tf.variable_scope('toeplitz3') as scope:
       feature_size = activation.get_shape().as_list()[-1]
       layer3 = layers.ToeplitzLayer(feature_size, 10)
