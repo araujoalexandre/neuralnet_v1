@@ -2,6 +2,9 @@
 import os, sys
 import json
 import time
+import pprint
+from os.path import join, exists
+from datetime import datetime
 
 import readers
 import models
@@ -13,65 +16,12 @@ from gradients import ProcessGradients
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 from tensorflow import app
-from tensorflow import flags
 from tensorflow import gfile
 from tensorflow import logging
 from tensorflow.python.client import device_lib
 
-FLAGS = flags.FLAGS
+from config import hparams as FLAGS
 
-# Dataset flags.
-flags.DEFINE_string("train_dir", "/tmp/model/",
-                    "The directory to save the model files in.")
-
-
-flags.DEFINE_integer("batch_size", 32,
-                     "How many examples to process per batch for training.")
-flags.DEFINE_integer("num_epochs", 5,
-                     "How many passes to make over the dataset before "
-                     "halting training.")
-flags.DEFINE_integer("max_steps", 1000000,
-                     "How many steps to make before halting training.")
-flags.DEFINE_bool("start_new_model", False,
-                  "If set, this will not resume from a checkpoint and will "
-                  "instead create a new model instance.")
-
-# Model flags.
-flags.DEFINE_string("model", "Model",
-                    "Which architecture to use for the model. "
-                    "Models are defined in models.py.")
-flags.DEFINE_string("reader", "MNISTReader",
-                    "Which reader to use for the data load."
-                    "Readers are defined in readers.py")
-
-# Training flags.
-flags.DEFINE_integer("num_gpu", 1,
-                     "The maximum number of GPU devices to use for training. "
-                     "Flag only applies if GPUs are installed")
-flags.DEFINE_string("label_loss", "SoftmaxCrossEntropyWithLogits",
-                    "Which loss function to use for training the model.")
-flags.DEFINE_float("regularization_penalty", 1.0,
-                   "How much weight to give to the regularization loss "
-                   "(the label loss has a weight of 1).")
-
-# Other flags.
-flags.DEFINE_bool("log_device_placement", False,
-                  "Whether to write the device on which every op will run "
-                  "into the logs on startup.")
-flags.DEFINE_integer("save_checkpoint_steps", 1000,
-  "The frequency, in number of global steps, that a checkpoint is saved "
-  "using a default checkpoint saver. If both save_checkpoint_steps and "
-  "save_checkpoint_secs are set to None, then the default checkpoint saver "
-  "isn't used. If both are provided, then only save_checkpoint_secs is used. "
-  "Default not enabled.")
-flags.DEFINE_integer("save_summaries_steps", 120,
-  "The frequency, in number of global steps, that the summaries are written "
-  "to disk using a default summary saver. If both save_summaries_steps and "
-  "save_summaries_secs are set to None, then the default summary saver isn't "
-  "used.")
-flags.DEFINE_integer("log_steps", 100,
-                   "The frequency, in number of global steps, that the loss "
-                   "is logged.")
 
 def task_as_string(task):
   return "/job:{}/task:{}".format(task.type, task.index)
@@ -193,8 +143,7 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
 class Trainer(object):
   """A Trainer to train a Tensorflow graph."""
 
-  def __init__(self, cluster, task, train_dir, model, reader,
-                log_device_placement):
+  def __init__(self, cluster, task, train_dir, model, reader, batch_size):
     """"Creates a Trainer.
 
     Args:
@@ -207,9 +156,10 @@ class Trainer(object):
     self.is_master = (task.type == "master" and task.index == 0)
     self.train_dir = train_dir
     self.config = tf.ConfigProto(allow_soft_placement=True,
-      log_device_placement=log_device_placement)
+      log_device_placement=FLAGS.log_device_placement)
     self.model = model
     self.reader = reader
+    self.batch_size = batch_size
 
   def run(self, start_new_model=False):
     """Performs training on the currently defined Tensorflow graph.
@@ -217,23 +167,18 @@ class Trainer(object):
     Returns:
       A tuple of the training Hit@1 and the training PERR.
     """
-    if self.is_master and start_new_model:
+    if self.is_master and start_new_model and exists(self.train_dir):
       self.remove_training_directory(self.train_dir)
 
-    if not os.path.exists(self.train_dir):
+    if not exists(self.train_dir):
       os.makedirs(self.train_dir)
 
-    logging.info('{}: Parameters used:'.format(task_as_string(self.task)))
-    for key, value in sorted(FLAGS.flag_values_dict().items()):
-      if key not in ['h', 'help', 'helpfull', 'helpshort']:
-        logging.info('{}: {}'.format(key, value))
+    pp = pprint.PrettyPrinter(indent=2)
+    pp.pprint(FLAGS.values())
 
-    logging.info('Command used: ')
-    logging.info('{} {}'.format('python3', ' '.join([x for x in sys.argv])))
-
-    model_flags_dict = FLAGS.flag_values_dict()
-    flags_json_path = os.path.join(FLAGS.train_dir, "model_flags.json")
-    if os.path.exists(flags_json_path):
+    model_flags_dict = FLAGS.to_json()
+    flags_json_path = join(self.train_dir, "model_flags.json")
+    if exists(flags_json_path):
       existing_flags = json.load(open(flags_json_path))
       if existing_flags != model_flags_dict:
         logging.error("Model flags do not match existing file {}. Please "
@@ -242,11 +187,11 @@ class Trainer(object):
         logging.error("Ran model with flags: {}".format(str(model_flags_dict)))
         logging.error("Previously ran with flags: {}".format(
           str(existing_flags)))
-        exit(1)
+        sys.exit(1)
     else:
       # Write the file.
       with open(flags_json_path, "w") as fout:
-        fout.write(json.dumps(model_flags_dict))
+        fout.write(model_flags_dict)
 
     target, device_fn = self.start_server_if_distributed()
     meta_filename = self.get_meta_filename(start_new_model, self.train_dir)
@@ -277,16 +222,13 @@ class Trainer(object):
       session_args = dict(
         is_chief=self.is_master,
         scaffold=scaffold,
-        checkpoint_dir=FLAGS.train_dir,
+        checkpoint_dir=self.train_dir,
         hooks=hooks,
         save_checkpoint_steps=FLAGS.save_checkpoint_steps,
         save_summaries_steps=FLAGS.save_summaries_steps,
-        log_step_count_steps=10*FLAGS.log_steps,
+        log_step_count_steps=10*FLAGS.frequency_log_steps,
         config=self.config,
       )
-
-      batch_size = FLAGS.batch_size
-      num_gpu = FLAGS.num_gpu
 
       logging.info("Start training")
       with tf.train.MonitoredTrainingSession(**session_args) as sess:
@@ -299,9 +241,9 @@ class Trainer(object):
             seconds_per_batch = time.time() - batch_start_time
             examples_per_second = labels_val.shape[0] / seconds_per_batch
 
-            to_print = global_step_val % FLAGS.log_steps == 0
+            to_print = global_step_val % FLAGS.frequency_log_steps == 0
             if (self.is_master and to_print) or not global_step_val:
-              epoch = ((global_step_val * batch_size * num_gpu)
+              epoch = ((global_step_val * self.batch_size)
                 / self.reader.n_train_files)
               message = ("training epoch: {:.2f} | step: {} | lr: {:.6f} "
               "| loss: {:.2f} | Examples/sec: {:.0f}")
@@ -343,6 +285,7 @@ class Trainer(object):
       logging.error("{}: Failed to delete directory {} when starting a new "
         "model. Please delete it manually and try again.".format(
           task_as_string(self.task), train_dir))
+      sys.exit()
 
 
   def get_meta_filename(self, start_new_model, train_dir):
@@ -374,12 +317,12 @@ class Trainer(object):
   def build_model(self, model, reader):
     """Find the model and build the graph."""
 
-    label_loss_fn = find_class_by_name(FLAGS.label_loss, [losses, tf.nn])()
+    label_loss_fn = find_class_by_name(FLAGS.loss, [losses, tf.nn])()
 
     build_graph(reader=reader,
                 model=model,
                 label_loss_fn=label_loss_fn,
-                batch_size=FLAGS.batch_size * FLAGS.num_gpu,
+                batch_size=self.batch_size,
                 regularization_penalty=FLAGS.regularization_penalty)
 
     #TODO: make max_to_keep a FLAGS argument
@@ -433,7 +376,8 @@ def start_server(cluster, task):
       task_index=task.index)
 
 
-def main(unused_argv):
+def main():
+
   # Load the environment.
   env = json.loads(os.environ.get("TF_CONFIG", "{}"))
 
@@ -445,22 +389,39 @@ def main(unused_argv):
   task_data = env.get("task", None) or {"type": "master", "index": 0}
   task = type("TaskSpec", (object,), task_data)
 
-  # Logging the version.
-  logging.set_verbosity(tf.logging.INFO)
+  if FLAGS.train_dir == "auto":
+    dirname = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
+    train_dir = join(FLAGS.path, dirname)
+  else:
+    train_dir = join(FLAGS.path, FLAGS.train_dir)
+
+  # Setup logging & log the version.
+  logging.set_verbosity(logging.INFO)
   logging.info("{}: Tensorflow version: {}.".format(
     task_as_string(task), tf.__version__))
+
+  if FLAGS.num_gpu == 0:
+    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+  else:
+    os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(
+      map(str, range(FLAGS.num_gpu)))
+
+  # Define batch size
+  if FLAGS.num_gpu:
+    batch_size = FLAGS.batch_size * FLAGS.num_gpu
+  else:
+    batch_size = FLAGS.batch_size
 
   # Dispatch to a master, a worker, or a parameter server.
   if not cluster or task.type == "master" or task.type == "worker":
     reader = find_class_by_name(FLAGS.reader, [readers])(
-      FLAGS.batch_size * FLAGS.num_gpu, num_epochs=FLAGS.num_epochs,
+      batch_size, num_epochs=FLAGS.num_epochs,
       is_training=True)
 
     model = find_class_by_name(FLAGS.model, [models])()
     logging.info("Using {} as model".format(FLAGS.model))
-    
-    trainer = Trainer(cluster, task, FLAGS.train_dir, model, reader,
-      FLAGS.log_device_placement)
+
+    trainer = Trainer(cluster, task, train_dir, model, reader, batch_size)
     trainer.run(start_new_model=FLAGS.start_new_model)
 
   elif task.type == "ps":
@@ -471,4 +432,4 @@ def main(unused_argv):
 
 
 if __name__ == "__main__":
-  app.run()
+  main()

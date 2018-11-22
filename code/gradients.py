@@ -4,10 +4,7 @@ import tensorflow as tf
 from tensorflow import flags
 from tensorflow import logging
 
-FLAGS = flags.FLAGS
-
-flags.DEFINE_float("clip_gradient_norm", 0,
-                   "Clips the gradients by the given value.")
+from config import hparams as FLAGS
 
 
 class ProcessGradients:
@@ -49,7 +46,7 @@ class ProcessGradients:
        List of pairs of (gradient, variable) where the gradient has been summed
        across all towers.
     """
-    filtered_grads = [[x for x in grad_list if x[0] is not None] 
+    filtered_grads = [[x for x in grad_list if x[0] is not None]
     for grad_list in self.tower_grads]
     final_grads = []
     for i in range(len(filtered_grads[0])):
@@ -60,7 +57,7 @@ class ProcessGradients:
     return final_grads
 
   def get_gradients(self):
-    gradients = self._combine_gradients()    
+    gradients = self._combine_gradients()
     if FLAGS.clip_gradient_norm > 0:
       with tf.name_scope('clip_grads'):
         gradients = self._clip_gradient_norms(

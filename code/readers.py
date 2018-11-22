@@ -5,22 +5,7 @@ from tensorflow import gfile
 from tensorflow import logging
 from tensorflow import flags
 
-FLAGS = flags.FLAGS
-
-flags.DEFINE_string("data_dir", "/tmp",
-                    "Folder where to find TFRecords.")
-flags.DEFINE_string("data_pattern", "train*",
-                    "File glob for the training dataset. Add several "
-                    "data_pattern by concatenating with a comma.")
-flags.DEFINE_integer("num_parallel_calls", 8,
-                     "Represent the number elements to process in parallel")
-flags.DEFINE_integer("num_parallel_readers", 8,
-                     "The number of input Datasets to interleave from in "
-                     "parallel.")
-flags.DEFINE_integer("prefetch_buffer_size", 1000,
-                     "Representing the maximum number of elements that will "
-                     "be buffered when prefetching.")
-
+from config import hparams as FLAGS
 
 class MNISTReader:
 
@@ -29,16 +14,21 @@ class MNISTReader:
     self.batch_size = batch_size
     self.num_epochs = num_epochs
     self.is_training = is_training
-    self.num_parallel_calls = FLAGS.num_parallel_calls
-    self.num_parallel_readers = FLAGS.num_parallel_readers
-    self.prefetch_buffer_size = FLAGS.prefetch_buffer_size
     self.height, self.width = 28, 28
     self.n_train_files = 60000
+    self.n_classes = 10
 
-    self.files = gfile.Glob(join(FLAGS.data_dir, 'mnist', FLAGS.data_pattern))
+    readers_params = FLAGS.readers_params
+    self.num_parallel_calls = readers_params['num_parallel_calls']
+    self.num_parallel_readers = readers_params['num_parallel_readers']
+    self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
+
+    data = FLAGS.data
+    self.files = gfile.Glob(join(data['data_dir'], 'mnist',
+                                 data['data_pattern']))
     if not self.files:
       raise IOError("Unable to find files in data_dir '{}'.".format(
-        FLAGS.data_dir))
+        data['data_dir']))
     logging.info("Number of training TFRecord files: {}.".format(
       len(self.files)))
 
@@ -115,16 +105,21 @@ class CIFAR10Reader:
     self.batch_size = batch_size
     self.num_epochs = num_epochs
     self.is_training = is_training
-    self.num_parallel_calls = FLAGS.num_parallel_calls
-    self.num_parallel_readers = FLAGS.num_parallel_readers
-    self.prefetch_buffer_size = FLAGS.prefetch_buffer_size
     self.height, self.width = 32, 32
     self.n_train_files = 60000
+    self.n_classes = 10
 
-    self.files = gfile.Glob(join(FLAGS.data_dir, 'cifar10', FLAGS.data_pattern))
+    readers_params = FLAGS.readers_params
+    self.num_parallel_calls = readers_params['num_parallel_calls']
+    self.num_parallel_readers = readers_params['num_parallel_readers']
+    self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
+
+    data = FLAGS.data
+    self.files = gfile.Glob(join(data["data_dir"], 'cifar10',
+                                 data["data_pattern"]))
     if not self.files:
       raise IOError("Unable to find training files. data_pattern='{}'.".format(
-        FLAGS.data_pattern))
+        data["data_pattern"]))
     logging.info("Number of training TFRecord files: {}.".format(
       len(self.files)))
 

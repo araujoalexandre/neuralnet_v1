@@ -7,10 +7,8 @@ from tensorflow import flags
 import layers
 from resnet import Resnet
 
-FLAGS = flags.FLAGS
+from config import hparams as FLAGS
 
-flags.DEFINE_integer("n_givens", 10,
-                     "Number of givens matrices to use.")
 
 
 class BaseModel(object):
@@ -48,14 +46,16 @@ class MnistModelGivens(BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
+    n_givens = FLAGS.givens['n_givens']
+
     activation = tf.layers.flatten(model_input)
     feature_size = activation.get_shape().as_list()[-1]
 
-    activation = self._givens_layers(model_input, FLAGS.n_givens,
+    activation = self._givens_layers(model_input, n_givens,
       feature_size, None)
     activation = tf.nn.relu(activation)
 
-    activation = self._givens_layers(model_input, FLAGS.n_givens,
+    activation = self._givens_layers(model_input, n_givens,
       feature_size, None)
 
     return activation
@@ -164,7 +164,7 @@ class Cifar10BAseModel:
     # pool2
     activation = tf.nn.max_pool(activation,
       ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding='SAME', name='pool2')
-    
+
     return tf.layers.flatten(activation)
 
 
@@ -173,9 +173,7 @@ class Cifar10ModelDense(BaseModel, Cifar10BAseModel):
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
     activation = self.convolutional_layers(model_input)
-    print(activation.get_shape())
-    # activation = tf.layers.flatten(model_input)
-    
+
     with tf.variable_scope('dense1') as scope:
       kernel_initializer = tf.random_normal_initializer(stddev=1/np.sqrt(384))
       activation = tf.layers.dense(activation, 384, use_bias=True,
@@ -213,21 +211,21 @@ class Cifar10ModelGivens(BaseModel, Cifar10BAseModel):
 
     with tf.variable_scope('givens1') as scope:
       feature_size = activation.get_shape().as_list()[-1]
-      activation = self._givens_layers(activation, FLAGS.n_givens, 
+      activation = self._givens_layers(activation, FLAGS.n_givens,
         feature_size, 384)
       activation = tf.nn.relu(activation)
       self._activation_summary(activation)
 
     with tf.variable_scope('givens2') as scope:
       feature_size = activation.get_shape().as_list()[-1]
-      activation = self._givens_layers(activation, FLAGS.n_givens, 
+      activation = self._givens_layers(activation, FLAGS.n_givens,
         feature_size, 192)
       activation = tf.nn.relu(activation)
       self._activation_summary(activation)
 
     with tf.variable_scope('givens3') as scope:
       feature_size = activation.get_shape().as_list()[-1]
-      activation = self._givens_layers(activation, FLAGS.n_givens, 
+      activation = self._givens_layers(activation, FLAGS.n_givens,
         feature_size, 10)
       self._activation_summary(activation)
 

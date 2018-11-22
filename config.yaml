@@ -1,0 +1,77 @@
+
+default: &DEFAULT
+  path: &path               /home/aaraujo/neuralnet_structured_matrices/models
+  train_dir:                auto
+  batch_size:               32
+  num_epochs:               100000
+  max_steps:                1000000
+  start_new_model:          True
+  num_gpu:                  2
+
+  log_device_placement:     False
+  save_checkpoint_steps:    1000
+  save_summaries_steps:     120
+  frequency_log_steps:      100
+
+  model:                    Cifar10ModelDense
+  circulant:
+    diagnonal:              False
+    n_circulant:            1
+  givens:
+    n_givens:               10
+
+  reader:                   CIFAR10Reader
+  readers_params:
+    num_parallel_calls:     8
+    num_parallel_readers:   8 
+    prefetch_buffer_size:   1000
+
+  loss:                     SoftmaxCrossEntropyWithLogits
+  regularization_penalty:   1.0
+  
+  lr_strategy:              exponential_decay
+  piecewise_constant:
+    boundaries:             [4,8,12,16,20,24]
+    values:                 [1.e-1,2.e-2,4.e-3,8.e-4,1.6e-4,3.2e-5,6.4e-6]
+  exponential_decay:
+    base_lr:                0.001
+    lr_decay:               0.95
+    lr_decay_examples:      400000
+  cyclic_lr:
+    base_lr:                0.01
+    min_lr:                 0.01
+    max_lr:                 0.1
+    step_size_lr:           20
+    mode_cyclic_lr:         triangular
+    gamma:                  0.99994
+  
+  optimizer:                AdamOptimizer
+  clip_gradient_norm:       0
+  MomentumOptimizer:
+    momentum:               0.9 
+    use_nesterov:           False
+    use_locking:            False
+  AdamOptimizer: 
+    beta1:                  0.9
+    beta2:                  0.999
+    epsilon:                1.e-08
+    use_locking:            False
+
+train: &TRAIN
+  <<: *DEFAULT
+  data:
+    data_dir:               /home/aaraujo/neuralnet_structured_matrices/data
+    data_pattern:           train*
+
+eval: &EVAL
+  <<: *DEFAULT
+  train_dir:                2018-11-22_22.33.46
+  data: 
+    data_dir:               /home/aaraujo/neuralnet_structured_matrices/data
+    data_pattern:           test*
+  batch_size:               512
+  num_gpu:                  0
+  start_eval_from_ckpt:     last
+  cherrypick:               None
+  start_new_model:          False
+

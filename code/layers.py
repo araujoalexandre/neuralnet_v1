@@ -4,8 +4,7 @@ import tensorflow as tf
 from tensorflow import flags
 from tensorflow import logging
 
-FLAGS = flags.FLAGS
-
+from config import hparams as FLAGS
 
 class GivensLayer:
 

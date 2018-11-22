@@ -6,45 +6,7 @@ from tensorflow.python.eager import context
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import math_ops
 
-
-FLAGS = flags.FLAGS
-
-# global
-flags.DEFINE_string("learning_rate_strategy", "exponential_decay",
-                    "Learning rate strategy to use for training. Choices are "
-                    "['exponential_decay', 'cyclic_learning_rate'].")
-
-# Piecewise constant
-flags.DEFINE_string("boundaries", "4,8,12,16,20,24",
-                    "A list of Tensors or ints or floats with strictly"
-                    " increasing entries")
-flags.DEFINE_string("values", "1e-1,2e-2,4e-3,8e-4,1.6e-4,3.2e-5,6.4e-6",
-                    "A list of Tensors or floats or ints that specifies the "
-                    "values for the intervals defined by boundaries")
-
-# Exponential decay
-flags.DEFINE_float("base_learning_rate", 0.01,
-                   "Which learning rate to start with.")
-flags.DEFINE_float("learning_rate_decay", 0.95,
-                   "Learning rate decay factor to be applied every "
-                   "learning_rate_decay_examples.")
-flags.DEFINE_float("learning_rate_decay_examples", 4000000,
-                   "Multiply current learning rate by learning_rate_decay "
-                   "every learning_rate_decay_examples.")
-
-# Cyclic learning rate
-flags.DEFINE_float("min_learning_rate", 0.01,
-                   "Define the minimum learning_rate used for cyclic lr")
-flags.DEFINE_float("max_learning_rate", 0.1,
-                   "Define the maximum learning_rate used for cyclic lr")
-flags.DEFINE_integer("step_size_learning_rate", 20,
-                     "Define the step size for cyclic_learning_rate")
-flags.DEFINE_string("mode_cyclic_learning_rate", "triangular",
-                    "Define the polices for the 'cyclic_learning_rate'"
-                    "Choices are ['triangular', 'triangular2', 'exp_range']."
-                    "Default is 'triangular'.")
-flags.DEFINE_float("gamma", 0.99994,
-                   "Constant in 'exp_range' mode: gamma**(global_step)")
+from config import hparams as FLAGS
 
 
 def _cyclic_learning_rate(global_step,
@@ -131,40 +93,40 @@ def _cyclic_learning_rate(global_step,
   """
   if global_step is None:
     raise ValueError("global_step is required for cyclic_learning_rate.")
-  
-  with ops.name_scope(name, "CyclicLearningRate", 
+
+  with ops.name_scope(name, "CyclicLearningRate",
     [learning_rate, global_step]) as name:
     learning_rate = ops.convert_to_tensor(learning_rate, name="learning_rate")
     dtype = learning_rate.dtype
     global_step = math_ops.cast(global_step, dtype)
     step_size = math_ops.cast(step_size, dtype)
-    
+
     def cyclic_lr():
       """Helper to recompute learning rate; most helpful in eager-mode."""
-      
+
       # computing: cycle = floor( 1 + global_step / ( 2 * step_size ) )
       double_step = math_ops.multiply(2., step_size)
       global_div_double_step = math_ops.divide(global_step, double_step)
       cycle = math_ops.floor(math_ops.add(1., global_div_double_step))
-      
+
       # computing: x = abs( global_step / step_size – 2 * cycle + 1 )
       double_cycle = math_ops.multiply(2., cycle)
       global_div_step = math_ops.divide(global_step, step_size)
       tmp = math_ops.subtract(global_div_step, double_cycle)
       x = math_ops.abs(math_ops.add(1., tmp))
-      
+
       # computing: clr = learning_rate + (max_lr – learning_rate) * max(0, 1 - x)
       a1 = math_ops.maximum(0., math_ops.subtract(1., x))
       a2 = math_ops.subtract(max_lr, learning_rate)
       clr = math_ops.multiply(a1, a2)
-      
+
       if mode == 'triangular2':
         clr = math_ops.divide(clr, math_ops.cast(math_ops.pow(2, math_ops.cast(
             cycle-1, tf.int32)), tf.float32))
       if mode == 'exp_range':
         clr = math_ops.multiply(math_ops.pow(gamma, global_step), clr)
       return math_ops.add(clr, learning_rate, name=name)
-     
+
     if not context.executing_eagerly():
       cyclic_lr = cyclic_lr()
     return cyclic_lr
@@ -177,36 +139,39 @@ class LearningRate:
     self.batch_size = batch_size
 
   def piecewise_constant(self):
-    boundaries = list(map(int, FLAGS.boundaries.split(',')))
-    values = list(map(float, FLAGS.values.split(',')))
+    config = FLAGS.piecewise_constant
+    boundaries = config['boundaries']
+    values = config['values']
     assert len(boundaries) == (len(values) + 1)
     learning_rate = tf.train.piecewise_constant(
-      self.global_step, 
-      boundaries=boundaries, 
+      self.global_step,
+      boundaries=boundaries,
       values=values)
     return learning_rate
 
   def exponential_decay(self):
+    config = FLAGS.exponential_decay
     learning_rate = tf.train.exponential_decay(
-        FLAGS.base_learning_rate,
+        config['base_lr'],
         self.global_step * self.batch_size,
-        FLAGS.learning_rate_decay_examples,
-        FLAGS.learning_rate_decay,
+        config['lr_decay_examples'],
+        config['lr_decay'],
         staircase=True)
     return learning_rate
 
   def cyclic_learning_rate(self):
+    config = FLAGS.cyclic_lr
     learning_rate = _cyclic_learning_rate(
         self.global_step,
-        learning_rate=FLAGS.base_learning_rate,
-        max_lr=FLAGS.max_learning_rate,
-        step_size=FLAGS.step_size_learning_rate,
-        gamma=FLAGS.gamma,
-        mode=FLAGS.mode_cyclic_learning_rate)
+        learning_rate=config['min_lr'],
+        max_lr=config['max_lr'],
+        step_size=config['step_size_lr'],
+        gamma=config['gamma'],
+        mode=config['mode_cyclic_lr'])
     return learning_rate
 
   def get_learning_rate(self):
-    strategy = FLAGS.learning_rate_strategy
+    strategy = FLAGS.lr_strategy
     logging.info("Using '{}' strategy for learning rate".format(strategy))
     learning_rate = getattr(self, strategy)()
     tf.summary.scalar('learning_rate', learning_rate)
