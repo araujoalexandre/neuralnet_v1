@@ -74,7 +74,9 @@ class CirculantLayer:
     bias_initializer=None, kernel_regularizer=None, bias_regularizer=None):
 
     self.shape_in, self.shape_out = shape_in, shape_out
-    self.kernel_initializer = kernel_initializer
+    size = np.max([shape_in, shape_out])
+    stddev = 1/np.sqrt(size)
+    self.kernel_initializer = tf.random_normal_initializer(stddev=stddev)
     self.bias_initializer = bias_initializer
     self.kernel_regularizer = kernel_regularizer
     self.bias_regularizer = bias_regularizer
