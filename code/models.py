@@ -207,25 +207,27 @@ class Cifar10ModelGivens(BaseModel, Cifar10BAseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
+    config = FLAGS.givens
+
     activation = self.convolutional_layers(model_input)
 
     with tf.variable_scope('givens1') as scope:
       feature_size = activation.get_shape().as_list()[-1]
-      activation = self._givens_layers(activation, FLAGS.n_givens,
+      activation = self._givens_layers(activation, config["n_givens"],
         feature_size, 384)
       activation = tf.nn.relu(activation)
       self._activation_summary(activation)
 
     with tf.variable_scope('givens2') as scope:
       feature_size = activation.get_shape().as_list()[-1]
-      activation = self._givens_layers(activation, FLAGS.n_givens,
+      activation = self._givens_layers(activation, config["n_givens"],
         feature_size, 192)
       activation = tf.nn.relu(activation)
       self._activation_summary(activation)
 
     with tf.variable_scope('givens3') as scope:
       feature_size = activation.get_shape().as_list()[-1]
-      activation = self._givens_layers(activation, FLAGS.n_givens,
+      activation = self._givens_layers(activation, config["n_givens"],
         feature_size, 10)
       self._activation_summary(activation)
 
