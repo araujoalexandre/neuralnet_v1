@@ -82,10 +82,10 @@ class MNISTReader:
     with tf.device('/cpu:0'):
       with tf.name_scope('batch_processing'):
         files = tf.data.Dataset.list_files(self.files)
-        dataset = files.apply(tf.contrib.data.parallel_interleave(
+        dataset = files.apply(tf.data.experimental.parallel_interleave(
           tf.data.TFRecordDataset, cycle_length=self.num_parallel_readers))
         dataset = dataset.shuffle(buffer_size=3*self.batch_size)
-        dataset = dataset.apply(tf.contrib.data.map_and_batch(
+        dataset = dataset.apply(tf.data.experimental.map_and_batch(
             map_func=self._parse_and_processed, batch_size=self.batch_size,
             num_parallel_calls=self.num_parallel_calls))
         dataset = dataset.prefetch(buffer_size=self.prefetch_buffer_size)
@@ -173,10 +173,10 @@ class CIFAR10Reader:
     with tf.device('/cpu:0'):
       with tf.name_scope('batch_processing'):
         files = tf.data.Dataset.list_files(self.files)
-        dataset = files.apply(tf.contrib.data.parallel_interleave(
+        dataset = files.apply(tf.data.experimental.parallel_interleave(
           tf.data.TFRecordDataset, cycle_length=self.num_parallel_readers))
         dataset = dataset.shuffle(buffer_size=3*self.batch_size)
-        dataset = dataset.apply(tf.contrib.data.map_and_batch(
+        dataset = dataset.apply(tf.data.experimental.map_and_batch(
             map_func=self._parse_and_processed, batch_size=self.batch_size,
             num_parallel_calls=self.num_parallel_calls))
         dataset = dataset.prefetch(buffer_size=self.prefetch_buffer_size)
