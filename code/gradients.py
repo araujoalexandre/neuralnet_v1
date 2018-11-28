@@ -33,6 +33,11 @@ class ProcessGradients:
       clipped_grads_and_vars.append((grad, var))
     return clipped_grads_and_vars
 
+  def _gradients_summary(self, gradients):
+    for grad, var in gradients:
+      if grad is not None:
+        tf.summary.histogram(var.op.name + '/gradients', grad)
+
   def _combine_gradients(self):
     """Calculate the combined gradient for each shared variable across all towers.
 
@@ -58,6 +63,7 @@ class ProcessGradients:
 
   def get_gradients(self):
     gradients = self._combine_gradients()
+    self._gradients_summary(gradients)
     if FLAGS.clip_gradient_norm > 0:
       with tf.name_scope('clip_grads'):
         gradients = self._clip_gradient_norms(
