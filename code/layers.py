@@ -8,13 +8,12 @@ from config import hparams as FLAGS
 
 class GivensLayer:
 
-  def __init__(self, shape_in, shape_out=None):
+  def __init__(self, shape_in):
     i, j = 2, 1
     while i >= j:
       i, j = np.random.randint(0, shape_in, size=2)
     index = np.zeros((shape_in, 2))
     index[i, 0], index[j, 1] = 1, 1
-    self.shape_out = shape_out
     self.index = tf.convert_to_tensor(np.float32(index))
     eye_mask = np.invert(index.sum(axis=1).astype(bool)).astype(np.float32)
     self.eye = tf.diag(eye_mask)
@@ -24,10 +23,9 @@ class GivensLayer:
     theta, index, eye = self.theta, self.index, self.eye
     cos, sin = tf.cos(theta), tf.sin(theta)
     rotation = tf.stack([[cos, -sin], [sin, cos]])
-    givens = (index @ rotation @ tf.transpose(index)) + eye
-    ret = input_data @ givens
-    if self.shape_out:
-      ret = ret[..., :self.shape_out]
+    givens = tf.matmul(tf.matmul(index, rotation), tf.transpose(index))
+    givens = givens + eye
+    ret = tf.matmul(input_data, givens)
     return ret
 
 class ToeplitzLayer:
