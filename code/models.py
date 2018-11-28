@@ -79,6 +79,29 @@ class MnistModelGivens(BaseModel):
 
     return activation
 
+class MnistModelGivens_v2(BaseModel):
+
+  def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
+
+    config = FLAGS.givens
+    assert config['n_layers'] == len(config['hidden'])
+
+    activation = tf.layers.flatten(model_input)
+
+    for i in range(config['n_layers']):
+      with tf.variable_scope('givens{}'.format(i)):
+        feature_size = activation.get_shape().as_list()[-1]
+        num_hidden = config['hidden'][i] or feature_size
+        cls_layer = layers.GivensLayer_v2(feature_size, num_hidden,
+                                       config['n_givens'])
+        activation = cls_layer.matmul(activation)
+        activation = tf.nn.tanh(activation)
+        tf.summary.histogram('Mnist/Givens/Layer{}'.format(i), activation)
+
+    # classification layer
+    cls_layer = layers.GivensLayer_v2(feature_size, n_classes,
+                                     config['n_givens'])
+    activation = cls_layer.matmul(activation)
 
     return activation
 
