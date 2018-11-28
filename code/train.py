@@ -235,14 +235,49 @@ class Trainer(object):
 
       logging.info("Start training")
       with tf.train.MonitoredTrainingSession(**session_args) as sess:
+        profiler = tf.profiler.Profiler(sess.graph)
+        step = 0
         while not sess.should_stop():
           try:
+
+            make_profile = False
+            profile_args = {}
+
+            if step % 1000 == 0 and FLAGS.profiler:
+              make_profile = True
+              run_meta = tf.RunMetadata()
+              profile_args = {
+                'options': tf.RunOptions(
+                  trace_level=tf.RunOptions.FULL_TRACE),
+                'run_metadata': run_meta
+              }
+
             batch_start_time = time.time()
             (_, global_step_val, loss_val, learning_rate_val,
               predictions_val, labels_val) = sess.run(
-                [train_op, global_step, loss, learning_rate, predictions, labels])
+                [train_op, global_step, loss, learning_rate, predictions,
+                 labels], **profile_args)
             seconds_per_batch = time.time() - batch_start_time
             examples_per_second = labels_val.shape[0] / seconds_per_batch
+
+            if make_profile and FLAGS.profiler:
+              profiler.add_step(step, run_meta)
+
+              # Profile the parameters of your model.
+              profiler.profile_name_scope(options=(tf.profiler.ProfileOptionBuilder
+                  .trainable_variables_parameter()))
+
+              # Or profile the timing of your model operations.
+              opts = tf.profiler.ProfileOptionBuilder.time_and_memory()
+              profiler.profile_operations(options=opts)
+
+              # Or you can generate a timeline:
+              opts = (tf.profiler.ProfileOptionBuilder(
+                      tf.profiler.ProfileOptionBuilder.time_and_memory())
+                      .with_step(step)
+                      .with_timeline_output('./profile.logs').build())
+              profiler.profile_graph(options=opts)
+
 
             to_print = global_step_val % FLAGS.frequency_log_steps == 0
             if (self.is_master and to_print) or not global_step_val:
@@ -254,9 +289,13 @@ class Trainer(object):
                 global_step_val, learning_rate_val,
                 loss_val, examples_per_second))
 
+            step += 1
+
+
           except tf.errors.OutOfRangeError:
             logging.info("{}: Done training -- epoch limit reached.".format(
               task_as_string(self.task)))
+            profiler.advise()
             break
     logging.info("{}: Exited training loop.".format(task_as_string(self.task)))
 
