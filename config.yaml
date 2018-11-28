@@ -2,25 +2,48 @@
 default: &DEFAULT
   path: &path               /home/aaraujo/neuralnet_structured_matrices/models
   train_dir:                auto
-  batch_size:               32
-  num_epochs:               100000
+  batch_size:               512
+  num_epochs:               200
   max_steps:                1000000
   start_new_model:          True
   num_gpu:                  2
+  profiler:                 False
 
   log_device_placement:     False
   save_checkpoint_steps:    1000
-  save_summaries_steps:     120
+  save_summaries_steps:     100
   frequency_log_steps:      100
 
-  model:                    Cifar10ModelDense
+  model:                    MnistModelGivens_v2
+  dense:
+    n_layers:               3
+    hidden:                 [0, 0, 0]
   circulant:
+    n_layers:               3
+    hidden:                 [256000, 256000, 0]
     diagnonal:              False
     n_circulant:            1
   givens:
-    n_givens:               10
+    n_layers:               3
+    hidden:                 [0, 0, 0]
+    n_givens:               256
+  resnet:
+    resnet_size:            18
+    bottleneck:             False
+    num_filters:            64
+    kernel_size:            3
+    conv_stride:            1
+    first_pool_size:        0
+    first_pool_stride:      2
+    second_pool_size:       7
+    second_pool_stride:     1
+    block_sizes:            [2, 2, 2, 2]
+    block_strides:          [1, 2, 2, 2]
+    final_size:             512
+    version:                2
+    data_format:            channels_last
 
-  reader:                   CIFAR10Reader
+  reader:                   MNISTReader
   readers_params:
     num_parallel_calls:     8
     num_parallel_readers:   8 
