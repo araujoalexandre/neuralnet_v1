@@ -96,7 +96,7 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
             labels=tower_labels[i], n_classes=10, is_training=True)
           tower_predictions.append(predictions)
 
-          for variable in slim.get_model_variables():
+          for variable in tf.trainable_variables():
             tf.summary.histogram(variable.op.name, variable)
 
           label_loss = label_loss_fn.calculate_loss(predictions, tower_labels[i])
@@ -125,9 +125,6 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
   label_loss = tf.reduce_mean(tf.stack(tower_label_losses))
   tf.summary.scalar("label_loss", label_loss)
 
-  if regularization_penalty != 0:
-    tf.summary.scalar("reg_loss", reg_loss)
-
   # process and apply gradients
   gradients = ProcessGradients(tower_gradients).get_gradients()
   train_op = opt.apply_gradients(gradients, global_step=global_step)
@@ -137,6 +134,7 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
   tf.add_to_collection("predictions", tf.concat(tower_predictions, 0))
   tf.add_to_collection("images_batch", images_batch)
   tf.add_to_collection("labels", tf.cast(labels_batch, tf.float32))
+  tf.add_to_collection("summary_op", tf.summary.merge_all())
   tf.add_to_collection("train_op", train_op)
 
 
@@ -210,6 +208,7 @@ class Trainer(object):
         predictions = tf.get_collection("predictions")[0]
         labels = tf.get_collection("labels")[0]
         train_op = tf.get_collection("train_op")[0]
+        summary_op = tf.get_collection("summary_op")[0]
         init_op = tf.global_variables_initializer()
 
       hooks = [
@@ -217,7 +216,11 @@ class Trainer(object):
         tf.train.StopAtStepHook(num_steps=FLAGS.max_steps)
       ]
 
-      scaffold = tf.train.Scaffold(saver=saver, init_op=init_op)
+      scaffold = tf.train.Scaffold(
+        saver=saver,
+        init_op=init_op,
+        summary_op=summary_op,
+      )
 
       session_args = dict(
         is_chief=self.is_master,
