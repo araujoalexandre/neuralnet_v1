@@ -27,36 +27,58 @@ class MnistModelDense(BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
-    activation = tf.layers.flatten(model_input)
-    feature_size = activation.get_shape().as_list()[-1]
+    config = FLAGS.dense
+    assert config['n_layers'] == len(config['hidden'])
 
+    activation = tf.layers.flatten(model_input)
+
+    for i in range(config['n_layers']):
+      feature_size = activation.get_shape().as_list()[-1]
+      num_hidden = config['hidden'][i] or feature_size
+      initializer = tf.random_normal_initializer(stddev=1/np.sqrt(feature_size))
+      activation = tf.layers.dense(activation, num_hidden, activation=tf.nn.relu,
+                                   kernel_initializer=initializer)
+      tf.summary.histogram('Mnist/Dense/Layer{}'.format(i), activation)
+
+    # classification layer
+    feature_size = activation.get_shape().as_list()[-1]
     initializer = tf.random_normal_initializer(stddev=1/np.sqrt(feature_size))
-    activation = tf.layers.dense(activation, n_classes, activation=tf.nn.relu,
-      kernel_initializer=initializer)
+    activation = tf.layers.dense(activation, n_classes, activation=None,
+                                 kernel_initializer=initializer)
     return activation
 
 
 class MnistModelGivens(BaseModel):
 
-  def _givens_layers(self, model_input, n_givens, shape_in, shape_out=None):
+  def _givens_layers(self, activation, n_givens, shape_in, shape_out=None):
     for i in range(n_givens):
-      givens_layer = layers.GivensLayer(shape_in, shape_out)
-      activation = givens_layer.matmul(model_input)
-      return activation
+      givens_layer = layers.GivensLayer(shape_in, shape_out=None)
+      activation = givens_layer.matmul(activation)
+    if shape_out is not None:
+      activation = activation[..., :shape_out]
+    return activation
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
-    n_givens = FLAGS.givens['n_givens']
+    config = FLAGS.givens
+    assert config['n_layers'] == len(config['hidden'])
 
     activation = tf.layers.flatten(model_input)
-    feature_size = activation.get_shape().as_list()[-1]
 
-    activation = self._givens_layers(model_input, n_givens,
-      feature_size, None)
-    activation = tf.nn.relu(activation)
+    for i in range(config['n_layers']):
+      feature_size = activation.get_shape().as_list()[-1]
+      num_hidden = config['hidden'][i] or feature_size
+      activation = self._givens_layers(activation, config['n_givens'],
+        feature_size, num_hidden)
+      activation = tf.nn.relu(activation)
+      tf.summary.histogram('Mnist/Givens/Layer{}'.format(i), activation)
 
-    activation = self._givens_layers(model_input, n_givens,
-      feature_size, None)
+    # classification layer
+    activation = self._givens_layers(activation, config['n_givens'],
+      feature_size, n_classes)
+
+    return activation
+
 
     return activation
 
@@ -172,37 +194,38 @@ class Cifar10ModelDense(BaseModel, Cifar10BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
+    config = FLAGS.dense
     activation = self.convolutional_layers(model_input)
 
     with tf.variable_scope('dense1') as scope:
       kernel_initializer = tf.random_normal_initializer(stddev=1/np.sqrt(384))
-      activation = tf.layers.dense(activation, 384, use_bias=True,
+      activation = tf.layers.dense(activation, config['hidden'][0], use_bias=True,
         kernel_initializer=kernel_initializer, activation=tf.nn.relu)
       self._activation_summary(activation)
 
     with tf.variable_scope('dense2') as scope:
       kernel_initializer = tf.random_normal_initializer(stddev=1/np.sqrt(192))
-      activation = tf.layers.dense(activation, 192, use_bias=True,
+      activation = tf.layers.dense(activation, config['hidden'][1], use_bias=True,
         kernel_initializer=kernel_initializer, activation=tf.nn.relu)
       self._activation_summary(activation)
 
     with tf.variable_scope('dense3') as scope:
       kernel_initializer = tf.random_normal_initializer(stddev=1/np.sqrt(10))
-      activation = tf.layers.dense(activation, 10, use_bias=True,
+      activation = tf.layers.dense(activation, num_classes, use_bias=True,
         kernel_initializer=kernel_initializer, activation=None)
       self._activation_summary(activation)
-
-    # activation = tf.Print(activation, [activation])
 
     return activation
 
 
 class Cifar10ModelGivens(BaseModel, Cifar10BaseModel):
 
-  def _givens_layers(self, model_input, n_givens, shape_in, shape_out=None):
+  def _givens_layers(self, activation, n_givens, shape_in, shape_out=None):
     for i in range(n_givens):
-      givens_layer = layers.GivensLayer(shape_in, shape_out)
-      activation = givens_layer.matmul(model_input)
+      givens_layer = layers.GivensLayer(shape_in, shape_out=None)
+      activation = givens_layer.matmul(activation)
+    if shape_out is not None:
+      activation = activation[..., :shape_out]
     return activation
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
@@ -211,24 +234,28 @@ class Cifar10ModelGivens(BaseModel, Cifar10BaseModel):
 
     activation = self.convolutional_layers(model_input)
 
+    assert len(config['hidden']) == 2
+
     with tf.variable_scope('givens1') as scope:
       feature_size = activation.get_shape().as_list()[-1]
+      num_hidden = config['hidden'][0] or feature_size
       activation = self._givens_layers(activation, config["n_givens"],
-        feature_size, 384)
+        feature_size, num_hidden)
       activation = tf.nn.relu(activation)
       self._activation_summary(activation)
 
     with tf.variable_scope('givens2') as scope:
       feature_size = activation.get_shape().as_list()[-1]
+      num_hidden = config['hidden'][1] or feature_size
       activation = self._givens_layers(activation, config["n_givens"],
-        feature_size, 192)
+        feature_size, num_hidden)
       activation = tf.nn.relu(activation)
       self._activation_summary(activation)
 
     with tf.variable_scope('givens3') as scope:
       feature_size = activation.get_shape().as_list()[-1]
       activation = self._givens_layers(activation, config["n_givens"],
-        feature_size, 10)
+        feature_size, n_classes)
       self._activation_summary(activation)
 
     return activation
@@ -238,26 +265,39 @@ class Cifar10ModelCirculant(BaseModel, Cifar10BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
-    activation = self.convolutional_layers(model_input)
+    config = FLAGS.circulant
+    # activation = self.convolutional_layers(model_input)
+    activation = tf.layers.flatten(model_input)
 
     with tf.variable_scope('circulant1') as scope:
       feature_size = activation.get_shape().as_list()[-1]
-      layer1 = layers.CirculantLayer(feature_size, 384)
+      num_hidden = config['hidden'][0] or feature_size
+      layer1 = layers.CirculantLayer(feature_size, num_hidden)
       activation = layer1.matmul(activation)
+      bias = tf.get_variable('bias1', shape=(num_hidden, ),
+                             initializer=tf.constant_initializer(0.1))
+      activation = activation + bias
       activation = tf.nn.relu(activation)
       self._activation_summary(activation)
 
     with tf.variable_scope('circulant2') as scope:
       feature_size = activation.get_shape().as_list()[-1]
-      layer2 = layers.CirculantLayer(feature_size, 192)
+      num_hidden = config['hidden'][1] or feature_size
+      layer2 = layers.CirculantLayer(feature_size, num_hidden)
       activation = layer2.matmul(activation)
+      bias = tf.get_variable('bias2', shape=(num_hidden, ),
+                             initializer=tf.constant_initializer(0.1))
+      activation = activation + bias
       activation = tf.nn.relu(activation)
       self._activation_summary(activation)
 
     with tf.variable_scope('circulant3') as scope:
       feature_size = activation.get_shape().as_list()[-1]
-      layer3 = layers.CirculantLayer(feature_size, 10)
+      layer3 = layers.CirculantLayer(feature_size, n_classes)
       activation = layer3.matmul(activation)
+      bias = tf.get_variable('bias3', shape=(n_classes, ),
+                            initializer=tf.constant_initializer(0.1))
+      activation = activation + bias
       self._activation_summary(activation)
 
     return activation
