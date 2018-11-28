@@ -28,6 +28,50 @@ class GivensLayer:
     ret = tf.matmul(input_data, givens)
     return ret
 
+
+class GivensLayer_v2:
+
+  def __init__(self, shape_in, shape_out, n_givens=1):
+
+    self.shape_in = shape_in
+    self.shape_out = shape_out
+    assert self.shape_in >= self.shape_out
+
+    self.n_givens = n_givens
+    self.ij = [self._draw_ij(self.shape_in) for _ in range(n_givens)]
+    self.thetas = [self._get_weights('theta{}'.format(i))
+                    for i in range(len(self.ij))]
+
+  def _draw_ij(self, size):
+    i, j = 1, 0
+    while i >= j:
+      i, j = np.random.randint(0, size, size=2)
+    return i, j
+
+  def _get_weights(self, name=None):
+    initializer = tf.random_uniform_initializer()
+    return tf.get_variable(
+                name=name,
+                shape=(1),
+                dtype=tf.float32,
+                initializer=initializer,
+                trainable=True)
+
+  def matmul(self, input_data):
+    x = tf.unstack(input_data, axis=1)
+    for (i, j), theta in zip(self.ij, self.thetas):
+      # print_op = tf.print(theta)
+      # with tf.control_dependencies([print_op]):
+      #   cost, sint = tf.cos(theta), tf.sin(theta)
+      cost, sint = tf.cos(theta), tf.sin(theta)
+      xi_new = (x[i] * cost + x[j] * -sint)
+      xj_new = (x[i] * sint + x[j] * cost)
+      with tf.control_dependencies([xi_new, xj_new]):
+        x[i] = tf.squeeze(xi_new)
+        x[j] = tf.squeeze(xj_new)
+    return tf.stack(x, axis=1)[..., :self.shape_out]
+
+
 class ToeplitzLayer:
 
   def __init__(self, shape_in, shape_out, kernel_initializer=None,
