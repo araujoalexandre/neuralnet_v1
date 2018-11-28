@@ -100,7 +100,7 @@ class MnistModelToeplitz(BaseModel):
 ################################################################################
 
 
-class Cifar10BAseModel:
+class Cifar10BaseModel:
 
   def _activation_summary(self, x):
     """Helper to create summaries for activations.
@@ -168,7 +168,7 @@ class Cifar10BAseModel:
     return tf.layers.flatten(activation)
 
 
-class Cifar10ModelDense(BaseModel, Cifar10BAseModel):
+class Cifar10ModelDense(BaseModel, Cifar10BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
@@ -197,7 +197,7 @@ class Cifar10ModelDense(BaseModel, Cifar10BAseModel):
     return activation
 
 
-class Cifar10ModelGivens(BaseModel, Cifar10BAseModel):
+class Cifar10ModelGivens(BaseModel, Cifar10BaseModel):
 
   def _givens_layers(self, model_input, n_givens, shape_in, shape_out=None):
     for i in range(n_givens):
@@ -234,7 +234,7 @@ class Cifar10ModelGivens(BaseModel, Cifar10BAseModel):
     return activation
 
 
-class Cifar10ModelCirculant(BaseModel, Cifar10BAseModel):
+class Cifar10ModelCirculant(BaseModel, Cifar10BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
@@ -264,7 +264,7 @@ class Cifar10ModelCirculant(BaseModel, Cifar10BAseModel):
 
 
 
-class Cifar10ModelToeplitz(BaseModel, Cifar10BAseModel):
+class Cifar10ModelToeplitz(BaseModel, Cifar10BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
