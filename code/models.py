@@ -302,20 +302,26 @@ class Cifar10ModelToeplitz(BaseModel, Cifar10BaseModel):
 class ResnetModel(BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
+
+    config = FLAGS.resnet
+    print(model_input.get_shape())
+
     output = Resnet(
-      resnet_size=18,
-      bottleneck=False,
+      resnet_size=config['resnet_size'],
+      bottleneck=config['bottleneck'],
       num_classes=n_classes,
-      num_filters=64,
-      kernel_size=3,
-      conv_stride=1,
-      first_pool_size=0,
-      first_pool_stride=2,
-      second_pool_size=7,
-      second_pool_stride=1,
-      block_sizes=[2, 2, 2, 2],
-      block_strides=[1, 2, 2, 2],
-      final_size=512,
-      version=2,
-      data_format=None).foward(model_input, is_training)
+      num_filters=config['num_filters'],
+      kernel_size=config['kernel_size'],
+      conv_stride=config['conv_stride'],
+      first_pool_size=config['first_pool_size'],
+      first_pool_stride=config['first_pool_stride'],
+      second_pool_size=config['second_pool_size'],
+      second_pool_stride=config['second_pool_stride'],
+      block_sizes=config['block_sizes'],
+      block_strides=config['block_strides'],
+      final_size=config['final_size'],
+      version=config['version'],
+      data_format=config['data_format']
+    ).foward(model_input, is_training)
     return output
+
