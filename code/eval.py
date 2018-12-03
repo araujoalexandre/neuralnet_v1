@@ -53,17 +53,19 @@ class Evaluate:
     num_gpus = len(gpus)
 
     if num_gpus > 0:
-      logging.info("Using the following GPUs to train: " + str(gpus))
+      logging.info("Using the {} GPUs".format(num_gpus))
       num_towers = num_gpus
       device_string = '/gpu:{}'
+      logging.info("Using total batch size of {} for evaluation "
+        "over {} GPUs: batch size of {} per GPUs.".format(
+          self.batch_size, num_towers, self.batch_size // num_towers))
     else:
-      logging.info("No GPUs found. Training on CPU.")
+      logging.info("No GPUs found. Eval on CPU.")
       num_towers = 1
       device_string = '/cpu:{}'
+      logging.info("Using total batch size of {} for evalauton "
+        "on CPU.".format(self.batch_size))
 
-    logging.info("Using total batch size of {} for training "
-      "over {} GPUs: batch size of {} per GPUs.".format(
-        self.batch_size, num_towers, self.batch_size // num_towers))
     with tf.name_scope("train_input"):
       images_batch, labels_batch = self.reader.input_fn()
     tf.summary.histogram("model/input_raw", images_batch)
@@ -210,8 +212,8 @@ class Evaluate:
       self.train_dir = join(FLAGS.path, FLAGS.train_dir)
       self.flags_dict = self.load_config(self.train_dir)
 
-    pp = pprint.PrettyPrinter(indent=2)
-    pp.pprint(self.flags_dict)
+    pp = pprint.PrettyPrinter(indent=2, compact=True)
+    logging.info(pp.pformat(self.flags_dict.values()))
 
     with tf.Graph().as_default():
 
@@ -239,8 +241,7 @@ class Evaluate:
       last_global_step_val = 0
       while True:
         last_global_step_val = self.eval_loop(last_global_step_val)
-        # if FLAGS.run_once or FLAGS.checkpoint is not None:
-        #   break
+      logging.info("Done evaluation -- number of eval reached.")
 
 
 
