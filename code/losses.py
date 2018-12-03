@@ -25,6 +25,6 @@ class BaseLoss(object):
 
 class SoftmaxCrossEntropyWithLogits:
 
-  def calculate_loss(self, predictions, labels, **unused_params):
+  def calculate_loss(self, labels=None, logits=None, **unused_params):
     return tf.losses.sparse_softmax_cross_entropy(
-          labels=labels, logits=predictions)
+          labels=labels, logits=logits)

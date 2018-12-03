@@ -81,8 +81,8 @@ class Evaluate:
             logits = self.model.create_model(tower_inputs[i],
               labels=tower_labels[i], n_classes=self.reader.n_classes, is_training=False)
             tower_logits.append(logits)
-            label_loss = self.loss_fn.calculate_loss(logits,
-                                                      tower_labels[i])
+            label_loss = self.loss_fn.calculate_loss(
+              logits=logits, labels=tower_labels[i])
             tower_label_losses.append(label_loss)
 
     logits = tf.concat(tower_logits, 0)

@@ -82,7 +82,7 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
   tower_inputs = tf.split(images_batch, num_towers)
   tower_labels = tf.split(labels_batch, num_towers)
   tower_gradients = []
-  tower_predictions = []
+  tower_logits = []
   tower_label_losses = []
   for i in range(num_towers):
     # For some reason these 'with' statements can't be combined onto the same
@@ -92,14 +92,15 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
         with (slim.arg_scope([slim.model_variable, slim.variable],
           device="/cpu:0" if num_gpus!=1 else "/gpu:0")):
 
-          predictions = model.create_model(tower_inputs[i],
+          logits = model.create_model(tower_inputs[i],
             labels=tower_labels[i], n_classes=10, is_training=True)
-          tower_predictions.append(predictions)
+          tower_logits.append(logits)
 
           for variable in tf.trainable_variables():
             tf.summary.histogram(variable.op.name, variable)
 
-          label_loss = label_loss_fn.calculate_loss(predictions, tower_labels[i])
+          label_loss = label_loss_fn.calculate_loss(
+            logits=logits, labels=tower_labels[i])
           reg_losses = tf.losses.get_regularization_losses()
           if reg_losses:
             reg_loss = tf.add_n(reg_losses)
@@ -131,9 +132,9 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
 
   tf.add_to_collection("loss", label_loss)
   tf.add_to_collection("learning_rate", learning_rate)
-  tf.add_to_collection("predictions", tf.concat(tower_predictions, 0))
-  tf.add_to_collection("images_batch", images_batch)
-  tf.add_to_collection("labels", tf.cast(labels_batch, tf.float32))
+  # tf.add_to_collection("logits", tf.concat(tower_logits, 0))
+  # tf.add_to_collection("images_batch", images_batch)
+  # tf.add_to_collection("labels", tf.cast(labels_batch, tf.float32))
   tf.add_to_collection("summary_op", tf.summary.merge_all())
   tf.add_to_collection("train_op", train_op)
 
@@ -205,8 +206,8 @@ class Trainer(object):
         global_step = tf.train.get_global_step()
         loss = tf.get_collection("loss")[0]
         learning_rate = tf.get_collection("learning_rate")[0]
-        predictions = tf.get_collection("predictions")[0]
-        labels = tf.get_collection("labels")[0]
+        # logits = tf.get_collection("logits")[0]
+        # labels = tf.get_collection("labels")[0]
         train_op = tf.get_collection("train_op")[0]
         summary_op = tf.get_collection("summary_op")[0]
         init_op = tf.global_variables_initializer()
@@ -253,10 +254,8 @@ class Trainer(object):
               }
 
             batch_start_time = time.time()
-            (_, global_step_val, loss_val, learning_rate_val,
-              predictions_val, labels_val) = sess.run(
-                [train_op, global_step, loss, learning_rate, predictions,
-                 labels], **profile_args)
+            (_, global_step_val, loss_val, learning_rate_val) = sess.run(
+                [train_op, global_step, loss, learning_rate], **profile_args)
             seconds_per_batch = time.time() - batch_start_time
             examples_per_second = labels_val.shape[0] / seconds_per_batch
 
