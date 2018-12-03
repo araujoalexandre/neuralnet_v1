@@ -113,33 +113,60 @@ class ToeplitzLayer:
 class CirculantLayer:
 
   def __init__(self, shape_in, shape_out, kernel_initializer=None,
-    bias_initializer=None, kernel_regularizer=None, bias_regularizer=None):
+    diag_initializer=None, bias_initializer=None, regularizer=None,
+    use_diag=True, use_bias=True):
 
+    self.use_diag, self.use_bias = use_diag, use_bias
     self.shape_in, self.shape_out = shape_in, shape_out
     size = np.max([shape_in, shape_out])
-    stddev = 1/np.sqrt(size)
-    self.kernel_initializer = tf.random_normal_initializer(stddev=stddev)
-    self.bias_initializer = bias_initializer
-    self.kernel_regularizer = kernel_regularizer
-    self.bias_regularizer = bias_regularizer
+
+    self.size = np.max([shape_in, shape_out])
+    shape = (self.size, )
+
+    if kernel_initializer is None:
+      kernel_initializer = np.random.normal(0, 0.001, size=shape)
+      kernel_initializer[0] = 1 + np.random.normal(0, 0.01)
+      kernel_initializer = np.float32(kernel_initializer)
+      self.kernel = tf.get_variable(name='kernel',
+        initializer=kernel_initializer, regularizer=regularizer)
+    else:
+      self.kernel = tf.get_variable(name='kernel', shape=shape,
+        initializer=kernel_initializer, regularizer=regularizer)
+
+    if diag_initializer is None:
+      stddev = 1/np.sqrt(size)
+      diag_initializer = tf.random_normal_initializer(stddev=stddev)
+
+    if bias_initializer is None:
+      bias_initializer = tf.constant_initializer(0.1)
 
     self.padding = True
     if shape_out < shape_in:
         self.padding = False
 
-    self.size = np.max([shape_in, shape_out])
-    shape = (self.size, )
-    self.kernel = tf.get_variable(name='kernel', shape=shape,
-      initializer=self.kernel_initializer, regularizer=self.kernel_regularizer)
+    if use_diag:
+      self.diag = tf.get_variable(name='diag', shape=shape,
+        initializer=diag_initializer, regularizer=regularizer)
+    if use_bias:
+      self.bias = tf.get_variable(name="bias", shape=[shape_out],
+        initializer=bias_initializer, regularizer=regularizer)
+
 
   def matmul(self, input_data):
     padding_size = (np.abs(self.size - self.shape_in))
     paddings = ((0, 0), (padding_size, 0))
     data = tf.pad(input_data, paddings) if self.padding else input_data
+    if self.use_diag:
+      data = np.multiply(data, self.diag)
     act_fft = tf.spectral.rfft(data)
     kernel_fft = tf.spectral.rfft(self.kernel[::-1])
     ret_mul = tf.multiply(act_fft, kernel_fft)
     ret = tf.spectral.irfft(ret_mul)
     ret = tf.cast(ret, tf.float32)
     ret = tf.manip.roll(ret, 1, axis=1)
-    return ret[..., :self.shape_out]
+    ret = ret[..., :self.shape_out]
+    if self.use_bias:
+      ret = ret + self.bias
+    return ret
+
+
