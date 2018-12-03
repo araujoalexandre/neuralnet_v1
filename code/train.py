@@ -132,9 +132,6 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
 
   tf.add_to_collection("loss", label_loss)
   tf.add_to_collection("learning_rate", learning_rate)
-  # tf.add_to_collection("logits", tf.concat(tower_logits, 0))
-  # tf.add_to_collection("images_batch", images_batch)
-  # tf.add_to_collection("labels", tf.cast(labels_batch, tf.float32))
   tf.add_to_collection("summary_op", tf.summary.merge_all())
   tf.add_to_collection("train_op", train_op)
 
@@ -206,8 +203,6 @@ class Trainer(object):
         global_step = tf.train.get_global_step()
         loss = tf.get_collection("loss")[0]
         learning_rate = tf.get_collection("learning_rate")[0]
-        # logits = tf.get_collection("logits")[0]
-        # labels = tf.get_collection("labels")[0]
         train_op = tf.get_collection("train_op")[0]
         summary_op = tf.get_collection("summary_op")[0]
         init_op = tf.global_variables_initializer()
@@ -257,7 +252,7 @@ class Trainer(object):
             (_, global_step_val, loss_val, learning_rate_val) = sess.run(
                 [train_op, global_step, loss, learning_rate], **profile_args)
             seconds_per_batch = time.time() - batch_start_time
-            examples_per_second = labels_val.shape[0] / seconds_per_batch
+            examples_per_second = self.batch_size / seconds_per_batch
 
             if make_profile and FLAGS.profiler:
               profiler.add_step(step, run_meta)
