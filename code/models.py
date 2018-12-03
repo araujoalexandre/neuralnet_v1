@@ -374,7 +374,6 @@ class ResnetModel(BaseModel):
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
     config = FLAGS.resnet
-    print(model_input.get_shape())
 
     output = Resnet(
       resnet_size=config['resnet_size'],
