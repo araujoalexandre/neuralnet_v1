@@ -16,6 +16,5 @@ nohup python3 code/train.py \
 nohup python3 code/eval.py \
 	--config_file=config.yaml \
 	--config_name=eval \
-  --train_dir=${TRAIN_DIR} \
   &>> "${DIR_LOGS}/log_eval.logs" &
 
