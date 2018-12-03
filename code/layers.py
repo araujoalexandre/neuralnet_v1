@@ -60,9 +60,6 @@ class GivensLayer_v2:
   def matmul(self, input_data):
     x = tf.unstack(input_data, axis=1)
     for (i, j), theta in zip(self.ij, self.thetas):
-      # print_op = tf.print(theta)
-      # with tf.control_dependencies([print_op]):
-      #   cost, sint = tf.cos(theta), tf.sin(theta)
       cost, sint = tf.cos(theta), tf.sin(theta)
       xi_new = (x[i] * cost + x[j] * -sint)
       xj_new = (x[i] * sint + x[j] * cost)
