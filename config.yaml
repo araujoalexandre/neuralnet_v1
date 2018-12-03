@@ -98,3 +98,11 @@ eval: &EVAL
   cherrypick:               None
   start_new_model:          False
 
+attack: &ATTACK
+  <<: *DEFAULT
+  <<: *EVAL
+  train_dir:                2018-11-30_20.24.19
+  attack:
+    method:                 FGSM
+    epsilon:                0.1
+    checkpoint:             model.ckpt-1650
