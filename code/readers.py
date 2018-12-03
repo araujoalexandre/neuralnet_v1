@@ -84,12 +84,13 @@ class MNISTReader:
         files = tf.data.Dataset.list_files(self.files)
         dataset = files.apply(tf.data.experimental.parallel_interleave(
           tf.data.TFRecordDataset, cycle_length=self.num_parallel_readers))
-        dataset = dataset.shuffle(buffer_size=3*self.batch_size)
         dataset = dataset.apply(tf.data.experimental.map_and_batch(
             map_func=self._parse_and_processed, batch_size=self.batch_size,
             num_parallel_calls=self.num_parallel_calls))
         dataset = dataset.prefetch(buffer_size=self.prefetch_buffer_size)
-        dataset = dataset.repeat(self.num_epochs)
+        if self.is_training:
+          dataset = dataset.shuffle(buffer_size=3*self.batch_size)
+          dataset = dataset.repeat(self.num_epochs)
         iterator = dataset.make_one_shot_iterator()
         image_batch, label_batch = iterator.get_next()
     # Display the training images in the visualizer.
@@ -175,12 +176,13 @@ class CIFAR10Reader:
         files = tf.data.Dataset.list_files(self.files)
         dataset = files.apply(tf.data.experimental.parallel_interleave(
           tf.data.TFRecordDataset, cycle_length=self.num_parallel_readers))
-        dataset = dataset.shuffle(buffer_size=3*self.batch_size)
         dataset = dataset.apply(tf.data.experimental.map_and_batch(
             map_func=self._parse_and_processed, batch_size=self.batch_size,
             num_parallel_calls=self.num_parallel_calls))
         dataset = dataset.prefetch(buffer_size=self.prefetch_buffer_size)
-        dataset = dataset.repeat(self.num_epochs)
+        if self.is_training:
+          dataset = dataset.shuffle(buffer_size=3*self.batch_size)
+          dataset = dataset.repeat(self.num_epochs)
         iterator = dataset.make_one_shot_iterator()
         image_batch, label_batch = iterator.get_next()
     # Display the training images in the visualizer.
