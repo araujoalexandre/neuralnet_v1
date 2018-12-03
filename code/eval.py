@@ -168,6 +168,10 @@ class Evaluate:
 
           msg = ("epoch/eval number {} | Accuracy: {:.5f} | Avg_Loss: {:5f}")
           logging.info(msg.format(global_step_val, accuracy_val, loss_val))
+
+          if self.flags_dict.stopped_at_n:
+           self.counter += 1
+
           break
 
         except Exception as e:
@@ -238,8 +242,9 @@ class Evaluate:
       self.summary_writer = tf.summary.FileWriter(self.train_dir,
         graph=tf.get_default_graph())
 
+      self.counter = 0
       last_global_step_val = 0
-      while True:
+      while self.counter <= self.flags_dict.stopped_at_n:
         last_global_step_val = self.eval_loop(last_global_step_val)
       logging.info("Done evaluation -- number of eval reached.")
 
