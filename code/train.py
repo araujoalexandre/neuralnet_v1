@@ -231,7 +231,10 @@ class Trainer(object):
 
       logging.info("Start training")
       with tf.train.MonitoredTrainingSession(**session_args) as sess:
-        profiler = tf.profiler.Profiler(sess.graph)
+
+        if FLAGS.profiler:
+          profiler = tf.profiler.Profiler(sess.graph)
+
         step = 0
         while not sess.should_stop():
           try:
@@ -289,7 +292,8 @@ class Trainer(object):
           except tf.errors.OutOfRangeError:
             logging.info("{}: Done training -- epoch limit reached.".format(
               task_as_string(self.task)))
-            profiler.advise()
+            if make_profile and FLAGS.profiler:
+              profiler.advise()
             break
     logging.info("{}: Exited training loop.".format(task_as_string(self.task)))
 
