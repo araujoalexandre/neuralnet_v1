@@ -241,7 +241,7 @@ class Cifar10ModelDense(BaseModel, Cifar10BaseModel):
 
     with tf.variable_scope('dense3') as scope:
       kernel_initializer = tf.random_normal_initializer(stddev=1/np.sqrt(10))
-      activation = tf.layers.dense(activation, num_classes, use_bias=True,
+      activation = tf.layers.dense(activation, n_classes, use_bias=True,
         kernel_initializer=kernel_initializer, activation=None)
       self._activation_summary(activation)
 
