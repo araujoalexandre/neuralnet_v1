@@ -110,16 +110,23 @@ class MnistModelCirculant(BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
+    config = FLAGS.circulant
+    assert config["n_layers"] == len(config["hidden"])
+
     activation = tf.layers.flatten(model_input)
-    feature_size = activation.get_shape().as_list()[-1]
+    for i in range(config["n_layers"]):
+      with tf.variable_scope("circulant{}".format(i)):
+        feature_size = activation.get_shape().as_list()[-1]
+        num_hidden = config["hidden"][i] or feature_size
+        cls_layer = layers.CirculantLayer(feature_size, num_hidden,
+                                          use_diag=config["use_diag"],
+                                          use_bias=config["use_bias"])
+        activation = cls_layer.matmul(activation)
+        activation = tf.nn.relu(activation)
 
-    layer1 = layers.CirculantLayer(feature_size, feature_size)
-    activation = layer1.matmul(activation)
-    activation = tf.nn.relu(activation)
-
-    layer2 = layers.CirculantLayer(feature_size, n_classes)
-    activation = layer2.matmul(activation)
-
+    # classification layer
+    cls_layer = layers.CirculantLayer(feature_size, n_classes)
+    activation = cls_layer.matmul(activation)
     return activation
 
 
