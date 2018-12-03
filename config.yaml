@@ -20,8 +20,9 @@ default: &DEFAULT
     hidden:                 [0, 0, 0]
   circulant:
     n_layers:               3
-    hidden:                 [256000, 256000, 0]
-    diagnonal:              False
+    hidden:                 [8192, 8192, 8192]
+    use_diag:               True
+    use_bias:               True
     n_circulant:            1
   givens:
     n_layers:               3
