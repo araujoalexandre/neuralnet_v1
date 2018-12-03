@@ -3,7 +3,7 @@ import os
 import re
 import time
 import pprint
-from os.path import exists, join
+from os.path import exists, join, basename
 
 import models
 import losses
@@ -32,11 +32,16 @@ class Attack:
     folders = sorted(folders, key=lambda x: basename(x))
     return folders[-1]
 
-  def _get_attack_fgsm(self, images, loss):
-    eps = tf.constant(self.attack_config["epsilon"])
-    attack = images + eps * tf.sign(tf.gradients(loss, images)[0])
-    attack = tf.clip_by_value(attack, -1.0, 1.0)
-    return tf.stop_gradient(attack)
+  def _get_attack_fgsm(self, images, logits):
+    eps = self.attack_config["epsilon"]
+    loss_fn = self.loss_fn.calculate_loss
+    target = tf.argmax(logits, axis=1)
+    target = tf.reshape(target, (-1, 1))
+    loss = loss_fn(labels=target, logits=logits)
+    dy_dx, = tf.gradients(loss, images)
+    xadv = images + eps * tf.sign(dy_dx)
+    xadv = tf.clip_by_value(xadv, -1.0, 1.0)
+    return tf.stop_gradient(xadv)
 
   def _predict(self, images_batch, labels_batch, attack=False):
 
@@ -56,8 +61,8 @@ class Attack:
             device="/cpu:0" if self.num_towers !=1 else "/gpu:0")):
             logits = self.model.create_model(tower_inputs[i],
               labels=tower_labels[i], n_classes=n_classes, is_training=False)
+            label_loss = loss_fn(logits=logits, labels=tower_labels[i])
             tower_logits.append(logits)
-            label_loss = loss_fn(logits, tf.cast(tower_labels[i], tf.int32))
             tower_label_losses.append(label_loss)
 
     logits_batch = tf.concat(tower_logits, 0)
@@ -92,14 +97,12 @@ class Attack:
       images_batch, labels_batch = self.reader.input_fn()
     tf.summary.histogram("model/input_raw", images_batch)
 
-    label_batch = tf.cast(labels_batch, tf.float32)
-
     # get loss and logits from real examples
     (logits_batch, preds_batch, losses_batch) = self._predict(
-        images_batch, label_batch, attack=False)
+        images_batch, labels_batch, attack=False)
 
     # get loss and logits from adversarial examples
-    adversarial_images_batch = self._get_attack(images_batch, losses_batch)
+    adversarial_images_batch = self._get_attack(images_batch, logits_batch)
     (attack_logits_batch, attack_preds_batch,
       attack_losses_batch) = self._predict(
         adversarial_images_batch, labels_batch, attack=True)
@@ -114,17 +117,10 @@ class Attack:
         labels_batch, attack_preds_batch)
 
 
-  def _eval_with_attack(self, checkpoint_name):
+  def _eval_with_attack(self, checkpoint_path):
     """Run the evaluation with attack.
     """
-
-    checkpoint_path = join(self.train_dir, checkpoint_name)
-    if not exists(checkpoint_path):
-      logging.error("checkpoint {} not found in {}.".format(
-          checkpoint_name, self.train_dir))
-
     with tf.Session() as sess:
-      logging.info("Loading checkpoint for eval: {}".format(checkpoint_path))
 
       loss, acc = self.loss, self.accuracy
       loss_update_op, acc_update_op = self.loss_update_op, self.acc_update_op
@@ -169,6 +165,13 @@ class Attack:
           logging.info("Unexpected exception: {}".format(e))
           break
 
+  def load_last_train_dir(self):
+    folders = tf.gfile.Glob(join(self.flags_dict.path, "*"))
+    folders = list(filter(lambda x: "logs" not in x, folders))
+    folders = sorted(folders, key=lambda x: basename(x))
+    last_train_dir = folders[-1]
+    return last_train_dir
+
   def load_config(self, train_dir):
     # Write json of flags
     model_flags_path = join("{}_logs".format(train_dir), "model_flags.yaml")
@@ -192,20 +195,32 @@ class Attack:
         map(str, range(FLAGS.num_gpu)))
 
     if FLAGS.train_dir == "auto":
-      self.flags_dict = FLAGS.values()
+      self.flags_dict = FLAGS
       self.train_dir = self.load_last_train_dir()
     else:
       self.train_dir = join(FLAGS.path, FLAGS.train_dir)
       self.flags_dict = self.load_config(self.train_dir)
 
-    pp = pprint.PrettyPrinter(indent=2)
-    pp.pprint(self.flags_dict)
+    pp = pprint.PrettyPrinter(indent=2, compact=True)
+    logging.info(pp.pformat(self.flags_dict.values()))
 
     self.attack_config = FLAGS.attack
     self.method = self.attack_config["method"]
     self._get_attack = getattr(self,
             "_get_attack_{}".format(self.method.lower()))
     self.checkpoint = FLAGS.attack["checkpoint"]
+
+
+    if self.checkpoint == "auto":
+      checkpoint_path = tf.train.latest_checkpoint(self.train_dir)
+    else:
+      checkpoint_path = join(self.train_dir, self.checkpoint)
+      if not exists(checkpoint_path):
+        logging.error("checkpoint {} not found in {}.".format(
+            self.checkpoint, self.train_dir))
+
+    logging.info("Loading checkpoint for eval: {}".format(checkpoint_path))
+
 
     with tf.Graph().as_default():
 
@@ -227,7 +242,7 @@ class Attack:
       logging.info("Built evaluation graph")
 
       self.saver = tf.train.Saver(tf.global_variables())
-      self._eval_with_attack(self.checkpoint)
+      self._eval_with_attack(checkpoint_path)
 
 
 if __name__ == '__main__':
