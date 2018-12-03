@@ -169,8 +169,8 @@ class Trainer(object):
     if not exists(self.train_dir):
       os.makedirs(self.train_dir)
 
-    pp = pprint.PrettyPrinter(indent=2)
-    pp.pprint(FLAGS.values())
+    pp = pprint.PrettyPrinter(indent=2, compact=True)
+    logging.info(pp.pformat(FLAGS.values()))
 
     model_flags_dict = FLAGS.to_json()
     flags_json_path = join(self.train_dir, "model_flags.json")
