@@ -107,7 +107,7 @@ class Evaluate:
         join(self.train_dir, 'model.ckpt-*.index'))
       # No files
       if not files:
-        return None
+        return None, None
       sort_fn = lambda x: int(re.findall("(?<=ckpt-)[0-9]+", x)[-1])
       files = sorted(files, key=self._get_global_step_from_ckpt)
       for filename in files:
@@ -179,6 +179,7 @@ class Evaluate:
 
   def load_last_train_dir(self):
     folders = tf.gfile.Glob(join(self.flags_dict.path, "*"))
+    folders = list(filter(lambda x: "logs" not in x, folders))
     folders = sorted(folders, key=lambda x: basename(x))
     return folders[-1]
 
@@ -206,7 +207,7 @@ class Evaluate:
         map(str, range(FLAGS.num_gpu)))
 
     if FLAGS.train_dir == "auto":
-      self.flags_dict = FLAGS.values()
+      self.flags_dict = FLAGS
       self.train_dir = self.load_last_train_dir()
     else:
       self.train_dir = join(FLAGS.path, FLAGS.train_dir)
@@ -216,7 +217,6 @@ class Evaluate:
     logging.info(pp.pformat(self.flags_dict.values()))
 
     with tf.Graph().as_default():
-
       if self.flags_dict.num_gpu:
         self.batch_size = self.flags_dict.batch_size * self.flags_dict.num_gpu
       else:
