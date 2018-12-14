@@ -209,12 +209,10 @@ class Trainer(object):
         summary_op = tf.get_collection("summary_op")[0]
         init_op = tf.global_variables_initializer()
 
-      hooks = [
-        tf.train.NanTensorHook(loss),
-        tf.train.StopAtStepHook(num_steps=FLAGS.max_steps)
-      ]
         gradients_norm = tf.get_collection("gradients_norm")[0]
 
+      summary_writer = tf.summary.FileWriter(
+           self.train_dir, graph=graph, filename_suffix='_train')
 
       scaffold = tf.train.Scaffold(
         saver=saver,
@@ -222,13 +220,23 @@ class Trainer(object):
         summary_op=summary_op,
       )
 
+      hooks = [
+        tf.train.NanTensorHook(loss),
+        tf.train.StopAtStepHook(num_steps=FLAGS.max_steps),
+        tf.train.SummarySaverHook(
+           save_steps=FLAGS.save_summaries_steps,
+           output_dir=FLAGS.train_dir,
+           summary_writer=summary_writer,
+           scaffold=scaffold)
+      ]
+
       session_args = dict(
         is_chief=self.is_master,
         scaffold=scaffold,
         checkpoint_dir=self.train_dir,
         hooks=hooks,
         save_checkpoint_steps=FLAGS.save_checkpoint_steps,
-        save_summaries_steps=FLAGS.save_summaries_steps,
+        save_summaries_steps=None,
         log_step_count_steps=10*FLAGS.frequency_log_steps,
         config=self.config,
       )
