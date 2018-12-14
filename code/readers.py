@@ -47,7 +47,10 @@ class MNISTReader:
     image = tf.pad(image, ((0,0), (2,2), (2,2), (0,0)), mode='constant')
     _, self.height, self.width, _ = image.get_shape().as_list()
     image = tf.reshape(image, (self.height, self.width, 1))
-    image = tf.divide(image, 255)
+    if FLAGS.per_image_standardization:
+      image = tf.image.per_image_standardization(image)
+    else:
+      image = (image / 255 - 0.5) * 2
     return image
 
   def _parse_fn(self, example_serialized):
@@ -140,7 +143,10 @@ class CIFAR10Reader:
     image = tf.cast(image, dtype=tf.float32)
     image = tf.reshape(image, (3, self.height, self.width))
     image = tf.transpose(image, [1, 2, 0])
-    image = tf.image.per_image_standardization(image)
+    if FLAGS.per_image_standardization:
+      image = tf.image.per_image_standardization(image)
+    else:
+      image = (image / 255 - 0.5) * 2
     return image
 
   def _parse_fn(self, example_serialized):
