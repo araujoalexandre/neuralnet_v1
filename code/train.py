@@ -213,6 +213,8 @@ class Trainer(object):
         tf.train.NanTensorHook(loss),
         tf.train.StopAtStepHook(num_steps=FLAGS.max_steps)
       ]
+        gradients_norm = tf.get_collection("gradients_norm")[0]
+
 
       scaffold = tf.train.Scaffold(
         saver=saver,
@@ -254,8 +256,8 @@ class Trainer(object):
               }
 
             batch_start_time = time.time()
-            (_, global_step_val, loss_val, learning_rate_val) = sess.run(
-                [train_op, global_step, loss, learning_rate], **profile_args)
+            (_, global_step_val, loss_val, learning_rate_val, grad_norm_val) = sess.run(
+                [train_op, global_step, loss, learning_rate, gradients_norm], **profile_args)
             seconds_per_batch = time.time() - batch_start_time
             examples_per_second = self.batch_size / seconds_per_batch
 
@@ -282,11 +284,12 @@ class Trainer(object):
             if (self.is_master and to_print) or not global_step_val:
               epoch = ((global_step_val * self.batch_size)
                 / self.reader.n_train_files)
-              message = ("training epoch: {:.2f} | step: {} | lr: {:.6f} "
-              "| loss: {:.2f} | Examples/sec: {:.0f}")
+              message = ("epoch: {:4.2f} | step: {: 5d} | lr: {:.6f} "
+                         "| loss: {:.4f} | imgs/sec: {:5.0f} | "
+                         "Grad norm: {:.4f}")
               logging.info(message.format(epoch,
                 global_step_val, learning_rate_val,
-                loss_val, examples_per_second))
+                loss_val, examples_per_second, grad_norm_val))
 
             step += 1
 
