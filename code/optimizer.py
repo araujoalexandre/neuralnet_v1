@@ -17,6 +17,11 @@ class Optimizer:
   def __init__(self, learning_rate):
     self.learning_rate = learning_rate
 
+  def GradientDescentOptimizer(self):
+    opt = tf.train.GradientDescentOptimizer(self.learning_rate,
+                                            use_locking=False)
+    return opt
+
   def MomentumOptimizer(self):
     config = FLAGS.MomentumOptimizer
     opt = tf.train.MomentumOptimizer(self.learning_rate, config['momentum'],
