@@ -12,6 +12,7 @@ import losses
 from learning_rate import LearningRate
 from optimizer import Optimizer
 from gradients import ProcessGradients
+from update_ops import UpdateOps
 
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
@@ -128,7 +129,8 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
 
   # process and apply gradients
   gradients = ProcessGradients(tower_gradients).get_gradients()
-  train_op = opt.apply_gradients(gradients, global_step=global_step)
+  train_op_cls = UpdateOps(opt, gradients, global_step)
+  train_op = train_op_cls.make_update()
 
   tf.add_to_collection("loss", label_loss)
   tf.add_to_collection("learning_rate", learning_rate)
