@@ -16,7 +16,9 @@ class MNISTReader:
     self.is_training = is_training
     self.height, self.width = 28, 28
     self.n_train_files = 60000
+    self.n_test_files = 10000
     self.n_classes = 10
+    self.batch_shape = (None, 32, 32, 1)
 
     readers_params = FLAGS.readers_params
     self.num_parallel_calls = readers_params['num_parallel_calls']
@@ -107,8 +109,10 @@ class CIFAR10Reader:
     self.num_epochs = num_epochs
     self.is_training = is_training
     self.height, self.width = 32, 32
-    self.n_train_files = 60000
+    self.n_train_files = 50000
+    self.n_test_files = 10000
     self.n_classes = 10
+    self.batch_shape = (None, 32, 32, 3)
 
     readers_params = FLAGS.readers_params
     self.num_parallel_calls = readers_params['num_parallel_calls']
