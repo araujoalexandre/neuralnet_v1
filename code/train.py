@@ -55,7 +55,7 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
 
   local_device_protos = device_lib.list_local_devices()
   gpus = [x.name for x in local_device_protos if x.device_type == 'GPU']
-  gpus = gpus[:FLAGS.num_gpu]
+  gpus = gpus[:FLAGS.train_num_gpu]
   num_gpus = len(gpus)
 
   if num_gpus > 0:
@@ -440,17 +440,17 @@ def main():
   logging.info("{}: Tensorflow version: {}.".format(
     task_as_string(task), tf.__version__))
 
-  if FLAGS.num_gpu == 0:
+  if FLAGS.train_num_gpu == 0:
     os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
   else:
     os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(
-      map(str, range(FLAGS.num_gpu)))
+      map(str, range(FLAGS.train_num_gpu)))
 
   # Define batch size
-  if FLAGS.num_gpu:
-    batch_size = FLAGS.batch_size * FLAGS.num_gpu
+  if FLAGS.train_num_gpu:
+    batch_size = FLAGS.train_batch_size * FLAGS.train_num_gpu
   else:
-    batch_size = FLAGS.batch_size
+    batch_size = FLAGS.train_batch_size
 
   # Dispatch to a master, a worker, or a parameter server.
   if not cluster or task.type == "master" or task.type == "worker":
