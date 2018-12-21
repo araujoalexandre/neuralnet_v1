@@ -49,7 +49,7 @@ class Evaluate:
 
     local_device_protos = device_lib.list_local_devices()
     gpus = [x.name for x in local_device_protos if x.device_type == 'GPU']
-    gpus = gpus[:self.flags_dict.num_gpu]
+    gpus = gpus[:FLAGS.eval_num_gpu]
     num_gpus = len(gpus)
 
     if num_gpus > 0:
@@ -81,7 +81,7 @@ class Evaluate:
           with (slim.arg_scope([slim.model_variable, slim.variable],
             device="/cpu:0" if num_gpus!=1 else "/gpu:0")):
             logits = self.model.create_model(tower_inputs[i],
-              labels=tower_labels[i], n_classes=self.reader.n_classes, is_training=False)
+              n_classes=self.reader.n_classes, is_training=False)
             tower_logits.append(logits)
             label_loss = self.loss_fn.calculate_loss(
               logits=logits, labels=tower_labels[i])
@@ -102,7 +102,7 @@ class Evaluate:
     return int(re.findall(regex, filename)[-1])
 
   def get_checkpoint(self, last_global_step_val):
-    if self.flags_dict.start_eval_from_ckpt == 'first':
+    if FLAGS.start_eval_from_ckpt == 'first':
       files = file_io.get_matching_files(
         join(self.train_dir, 'model.ckpt-*.index'))
       # No files
@@ -146,6 +146,15 @@ class Evaluate:
       # Restores from checkpoint
       self.saver.restore(sess, latest_checkpoint)
       sess.run(tf.local_variables_initializer())
+
+      train_gpu = FLAGS.train_num_gpu
+      train_batch_size = FLAGS.train_batch_size
+      n_train_files = self.reader.n_train_files
+      if train_gpu:
+        epoch = ((global_step_val*train_batch_size*train_gpu) / n_train_files)
+      else:
+        epoch = ((global_step_val*train_batch_size) / n_train_files)
+
       while True:
         try:
           batch_start_time = time.time()
@@ -154,22 +163,23 @@ class Evaluate:
           seconds_per_batch = time.time() - batch_start_time
           examples_per_second = self.batch_size / seconds_per_batch
 
-          msg = ("global_step {} | Acc Accuracy: {:.5f} | Avg Loss: {:.5f} "
-            "| Examples_per_sec: {:.2f}")
-          logging.info(msg.format(global_step_val, accuracy_val, loss_val,
+          msg = ("epoch: {:.2f} | step {} | cumulative accuracy: {:.5f} | avg loss: {:.5f} "
+            "| imgs/sec: {:.0f}")
+          logging.info(msg.format(epoch, global_step_val, accuracy_val, loss_val,
             examples_per_second))
 
         except tf.errors.OutOfRangeError:
           logging.info("Done with batched inference.")
 
-          self.make_summary("Epoch/Accuracy", accuracy_val, global_step_val)
-          self.make_summary("Epoch/Loss", loss_val, global_step_val)
+          self.make_summary("accuracy", accuracy_val, global_step_val)
+          self.make_summary("loss", loss_val, global_step_val)
+          self.make_summary("epoch", epoch, global_step_val)
           self.summary_writer.flush()
 
-          msg = ("epoch/eval number {} | Accuracy: {:.5f} | Avg_Loss: {:5f}")
-          logging.info(msg.format(global_step_val, accuracy_val, loss_val))
+          msg = ("final: epoch: {:.2f} | step: {} | accuracy: {:.5f} | avg loss: {:.5f}")
+          logging.info(msg.format(epoch, global_step_val, accuracy_val, loss_val))
 
-          if self.flags_dict.stopped_at_n:
+          if FLAGS.stopped_at_n:
            self.counter += 1
 
           break
@@ -182,9 +192,12 @@ class Evaluate:
 
 
   def load_last_train_dir(self):
-    folders = tf.gfile.Glob(join(self.flags_dict.path, "*"))
-    folders = list(filter(lambda x: "logs" not in x, folders))
-    folders = sorted(folders, key=lambda x: basename(x))
+    while True:
+      folders = tf.gfile.Glob(join(FLAGS.path, "*"))
+      folders = list(filter(lambda x: "logs" not in x, folders))
+      folders = sorted(folders, key=lambda x: basename(x))
+      if folders:
+        break
     return folders[-1]
 
   def load_config(self, train_dir):
@@ -204,34 +217,33 @@ class Evaluate:
     tf.logging.set_verbosity(logging.INFO)
     logging.info("Tensorflow version: {}.".format(tf.__version__))
 
-    if FLAGS.num_gpu == 0:
-      os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-    else:
-      os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(
-        map(str, range(FLAGS.num_gpu)))
+    if os.environ.get('CUDA_VISIBLE_DEVICES') is None:
+      if FLAGS.eval_num_gpu == 0:
+        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+      else:
+        os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(
+          map(str, range(FLAGS.eval_num_gpu)))
 
-    if FLAGS.train_dir == "auto":
-      self.flags_dict = FLAGS
-      self.train_dir = self.load_last_train_dir()
-    else:
-      self.train_dir = join(FLAGS.path, FLAGS.train_dir)
-      self.flags_dict = self.load_config(self.train_dir)
+    # self.train_dir = join(FLAGS.path, FLAGS.train_dir)
+    self.train_dir = FLAGS.train_dir
 
     pp = pprint.PrettyPrinter(indent=2, compact=True)
-    logging.info(pp.pformat(self.flags_dict.values()))
+    logging.info(pp.pformat(FLAGS.values()))
 
     with tf.Graph().as_default():
-      if self.flags_dict.num_gpu:
-        self.batch_size = self.flags_dict.batch_size * self.flags_dict.num_gpu
+      if FLAGS.eval_num_gpu:
+        self.batch_size = \
+            FLAGS.eval_batch_size * FLAGS.eval_num_gpu
       else:
-        self.batch_size = self.flags_dict.batch_size
+        self.batch_size = FLAGS.eval_batch_size
 
-      self.reader = find_class_by_name(self.flags_dict.reader, [readers])(
+      self.reader = find_class_by_name(FLAGS.reader, [readers])(
         self.batch_size, is_training=False)
-      self.model = find_class_by_name(self.flags_dict.model, [models])()
-      self.loss_fn = find_class_by_name(self.flags_dict.loss, [losses])()
+      self.model = find_class_by_name(FLAGS.model, [models])()
+      self.loss_fn = find_class_by_name(FLAGS.loss, [losses])()
 
-      if self.flags_dict.data["data_pattern"] is "":
+      data_pattern = FLAGS.data_pattern
+      if data_pattern is "":
         raise IOError("'data_pattern' was not specified. "
           "Nothing to evaluate.")
 
@@ -239,12 +251,16 @@ class Evaluate:
       logging.info("Built evaluation graph")
 
       self.saver = tf.train.Saver(tf.global_variables())
-      self.summary_writer = tf.summary.FileWriter(self.train_dir,
+      filename_suffix= "_{}_{}".format("eval",
+                  re.findall("[a-z0-9]+", data_pattern.lower())[0])
+      self.summary_writer = tf.summary.FileWriter(
+        self.train_dir,
+        filename_suffix=filename_suffix,
         graph=tf.get_default_graph())
 
       self.counter = 0
       last_global_step_val = 0
-      while self.counter <= self.flags_dict.stopped_at_n:
+      while self.counter < FLAGS.stopped_at_n:
         last_global_step_val = self.eval_loop(last_global_step_val)
       logging.info("Done evaluation -- number of eval reached.")
 
