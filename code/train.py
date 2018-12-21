@@ -11,7 +11,7 @@ import models
 import losses
 from learning_rate import LearningRate
 from optimizer import Optimizer
-from gradients import ProcessGradients
+from gradients import ComputeAndProcessGradients
 from update_ops import UpdateOps
 
 import tensorflow as tf
@@ -47,8 +47,6 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
     label_loss_fn: What kind of loss to apply to the model. It should inherit
                 from BaseLoss.
     batch_size: How many examples to process at a time.
-    num_epochs: How many passes to make over the data. 'None' means an
-                unlimited number of passes.
     regularization_penalty: How much weight to give the regularization loss
                             compared to the label loss.
   """
@@ -84,21 +82,20 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
   tower_labels = tf.split(labels_batch, num_towers)
   tower_gradients = []
   tower_logits = []
-  tower_label_losses = []
+  tower_final_losses = []
   for i in range(num_towers):
-    # For some reason these 'with' statements can't be combined onto the same
-    # line. They have to be nested.
     with tf.device(device_string.format(i)):
-      with (tf.variable_scope("tower", reuse=True if i > 0 else None)):
-        with (slim.arg_scope([slim.model_variable, slim.variable],
-          device="/cpu:0" if num_gpus!=1 else "/gpu:0")):
+      logging.info(device_string.format(i))
+      with tf.variable_scope("tower", reuse=tf.AUTO_REUSE):
 
           logits = model.create_model(tower_inputs[i],
-            labels=tower_labels[i], n_classes=10, is_training=True)
+            n_classes=reader.n_classes, is_training=True)
           tower_logits.append(logits)
 
-          for variable in tf.trainable_variables():
-            tf.summary.histogram(variable.op.name, variable)
+          if i == 0:
+            for variable in tf.trainable_variables():
+              logging.info(variable.op.name)
+              tf.summary.histogram(variable.op.name, variable)
 
           label_loss = label_loss_fn.calculate_loss(
             logits=logits, labels=tower_labels[i])
@@ -116,25 +113,27 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
               barrier = tf.no_op(name="gradient_barrier")
               with tf.control_dependencies([barrier]):
                 label_loss = tf.identity(label_loss)
-          tower_label_losses.append(label_loss)
 
           # Incorporate the L2 weight penalties etc.
           final_loss = regularization_penalty * reg_loss + label_loss
-          gradients = opt.compute_gradients(final_loss,
-              colocate_gradients_with_ops=False)
-          tower_gradients.append(gradients)
+          tower_final_losses.append(final_loss)
 
-  label_loss = tf.reduce_mean(tf.stack(tower_label_losses))
-  tf.summary.scalar("label_loss", label_loss)
+  total_loss = tf.stack(tower_final_losses)
+  tf.summary.scalar("loss",
+    tf.reduce_mean(total_loss))
 
   # process and apply gradients
-  gradients = ProcessGradients(tower_gradients).get_gradients()
+  gradients_cls = ComputeAndProcessGradients()
+  gradients = gradients_cls.get_gradients(opt, [total_loss])
   train_op_cls = UpdateOps(opt, gradients, global_step)
-  train_op = train_op_cls.make_update()
+
+  summary_op = tf.summary.merge_all()
+  with tf.control_dependencies([summary_op]):
+    train_op = train_op_cls.make_update()
 
   tf.add_to_collection("loss", label_loss)
   tf.add_to_collection("learning_rate", learning_rate)
-  tf.add_to_collection("summary_op", tf.summary.merge_all())
+  tf.add_to_collection("summary_op", summary_op)
   tf.add_to_collection("train_op", train_op)
 
 
@@ -153,11 +152,21 @@ class Trainer(object):
     self.task = task
     self.is_master = (task.type == "master" and task.index == 0)
     self.train_dir = train_dir
-    self.config = tf.ConfigProto(allow_soft_placement=True,
-      log_device_placement=FLAGS.log_device_placement)
     self.model = model
     self.reader = reader
     self.batch_size = batch_size
+
+    self.config = tf.ConfigProto(allow_soft_placement=True,
+      log_device_placement=FLAGS.log_device_placement)
+    jit_level = 0
+    if FLAGS.compile:
+      # Turns on XLA JIT compilation.
+      jit_level = tf.OptimizerOptions.ON_2
+    self.config.graph_options.optimizer_options.global_jit_level = jit_level
+
+    # define the number of epochs
+    num_steps_by_epochs = reader.n_train_files / batch_size
+    self.max_steps = FLAGS.num_epochs * num_steps_by_epochs
 
   def run(self, start_new_model=False):
     """Performs training on the currently defined Tensorflow graph.
@@ -168,25 +177,13 @@ class Trainer(object):
     if self.is_master and start_new_model and exists(self.train_dir):
       self.remove_training_directory(self.train_dir)
 
-    if not exists(self.train_dir):
-      os.makedirs(self.train_dir)
-
     pp = pprint.PrettyPrinter(indent=2, compact=True)
     logging.info(pp.pformat(FLAGS.values()))
 
     model_flags_dict = FLAGS.to_json()
-    flags_json_path = join(self.train_dir, "model_flags.json")
-    if exists(flags_json_path):
-      existing_flags = json.load(open(flags_json_path))
-      if existing_flags != model_flags_dict:
-        logging.error("Model flags do not match existing file {}. Please "
-                      "delete the file, change --train_dir, or pass flag "
-                      "--start_new_model".format(flags_json_path))
-        logging.error("Ran model with flags: {}".format(str(model_flags_dict)))
-        logging.error("Previously ran with flags: {}".format(
-          str(existing_flags)))
-        sys.exit(1)
-    else:
+    log_folder = '{}_logs'.format(self.train_dir)
+    flags_json_path = join(log_folder, "model_flags.json")
+    if not exists(flags_json_path):
       # Write the file.
       with open(flags_json_path, "w") as fout:
         fout.write(model_flags_dict)
@@ -211,8 +208,6 @@ class Trainer(object):
 
         gradients_norm = tf.get_collection("gradients_norm")[0]
 
-      summary_writer = tf.summary.FileWriter(
-           self.train_dir, graph=graph, filename_suffix='_train')
 
       scaffold = tf.train.Scaffold(
         saver=saver,
@@ -222,21 +217,17 @@ class Trainer(object):
 
       hooks = [
         tf.train.NanTensorHook(loss),
-        tf.train.StopAtStepHook(num_steps=FLAGS.max_steps),
-        tf.train.SummarySaverHook(
-           save_steps=FLAGS.save_summaries_steps,
-           output_dir=FLAGS.train_dir,
-           summary_writer=summary_writer,
-           scaffold=scaffold)
+        tf.train.StopAtStepHook(num_steps=self.max_steps),
       ]
 
       session_args = dict(
         is_chief=self.is_master,
         scaffold=scaffold,
-        checkpoint_dir=self.train_dir,
+        checkpoint_dir=FLAGS.train_dir,
         hooks=hooks,
         save_checkpoint_steps=FLAGS.save_checkpoint_steps,
-        save_summaries_steps=None,
+        save_summaries_steps=10,
+        save_summaries_secs=None,
         log_step_count_steps=10*FLAGS.frequency_log_steps,
         config=self.config,
       )
@@ -249,65 +240,62 @@ class Trainer(object):
 
         step = 0
         while not sess.should_stop():
-          try:
 
-            make_profile = False
-            profile_args = {}
+          make_profile = False
+          profile_args = {}
 
-            if step % 1000 == 0 and FLAGS.profiler:
-              make_profile = True
-              run_meta = tf.RunMetadata()
-              profile_args = {
-                'options': tf.RunOptions(
-                  trace_level=tf.RunOptions.FULL_TRACE),
-                'run_metadata': run_meta
-              }
+          if step % 1000 == 0 and FLAGS.profiler:
+            make_profile = True
+            run_meta = tf.RunMetadata()
+            profile_args = {
+              'options': tf.RunOptions(
+                trace_level=tf.RunOptions.FULL_TRACE),
+              'run_metadata': run_meta
+            }
 
-            batch_start_time = time.time()
-            (_, global_step_val, loss_val, learning_rate_val, grad_norm_val) = sess.run(
-                [train_op, global_step, loss, learning_rate, gradients_norm], **profile_args)
-            seconds_per_batch = time.time() - batch_start_time
-            examples_per_second = self.batch_size / seconds_per_batch
+          batch_start_time = time.time()
+          (_, global_step_val, loss_val, learning_rate_val, grad_norm_val) = sess.run(
+              [train_op, global_step, loss, learning_rate, gradients_norm], **profile_args)
+          seconds_per_batch = time.time() - batch_start_time
+          examples_per_second = self.batch_size / seconds_per_batch
 
-            if make_profile and FLAGS.profiler:
-              profiler.add_step(step, run_meta)
+          if make_profile and FLAGS.profiler:
+            profiler.add_step(step, run_meta)
 
-              # Profile the parameters of your model.
-              profiler.profile_name_scope(options=(tf.profiler.ProfileOptionBuilder
-                  .trainable_variables_parameter()))
+            # Profile the parameters of your model.
+            profiler.profile_name_scope(options=(tf.profiler.ProfileOptionBuilder
+                .trainable_variables_parameter()))
 
-              # Or profile the timing of your model operations.
-              opts = tf.profiler.ProfileOptionBuilder.time_and_memory()
-              profiler.profile_operations(options=opts)
+            # Or profile the timing of your model operations.
+            opts = tf.profiler.ProfileOptionBuilder.time_and_memory()
+            profiler.profile_operations(options=opts)
 
-              # Or you can generate a timeline:
-              opts = (tf.profiler.ProfileOptionBuilder(
-                      tf.profiler.ProfileOptionBuilder.time_and_memory())
-                      .with_step(step)
-                      .with_timeline_output('./profile.logs').build())
-              profiler.profile_graph(options=opts)
-
-
-            to_print = global_step_val % FLAGS.frequency_log_steps == 0
-            if (self.is_master and to_print) or not global_step_val:
-              epoch = ((global_step_val * self.batch_size)
-                / self.reader.n_train_files)
-              message = ("epoch: {:4.2f} | step: {: 5d} | lr: {:.6f} "
-                         "| loss: {:.4f} | imgs/sec: {:5.0f} | "
-                         "Grad norm: {:.4f}")
-              logging.info(message.format(epoch,
-                global_step_val, learning_rate_val,
-                loss_val, examples_per_second, grad_norm_val))
-
-            step += 1
+            # Or you can generate a timeline:
+            opts = (tf.profiler.ProfileOptionBuilder(
+                    tf.profiler.ProfileOptionBuilder.time_and_memory())
+                    .with_step(step)
+                    .with_timeline_output('./profile.logs').build())
+            profiler.profile_graph(options=opts)
 
 
-          except tf.errors.OutOfRangeError:
-            logging.info("{}: Done training -- epoch limit reached.".format(
-              task_as_string(self.task)))
-            if make_profile and FLAGS.profiler:
-              profiler.advise()
-            break
+          to_print = global_step_val % FLAGS.frequency_log_steps == 0
+          if (self.is_master and to_print) or not global_step_val:
+            epoch = ((global_step_val * self.batch_size)
+              / self.reader.n_train_files)
+            message = ("epoch: {:4.2f} | step: {: 5d} | lr: {:.6f} "
+                       "| loss: {:.4f} | imgs/sec: {:5.0f} | "
+                       "Grad norm: {:.4f}")
+            logging.info(message.format(epoch,
+              global_step_val, learning_rate_val,
+              loss_val, examples_per_second, grad_norm_val))
+
+          step += 1
+
+        # End training
+        logging.info("{}: Done training -- epoch limit reached.".format(
+          task_as_string(self.task)))
+        if FLAGS.profiler:
+          profiler.advise()
     logging.info("{}: Exited training loop.".format(task_as_string(self.task)))
 
 
@@ -442,22 +430,23 @@ def main():
   task_data = env.get("task", None) or {"type": "master", "index": 0}
   task = type("TaskSpec", (object,), task_data)
 
-  if FLAGS.train_dir == "auto":
-    dirname = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
-    train_dir = join(FLAGS.path, dirname)
-  else:
-    train_dir = join(FLAGS.path, FLAGS.train_dir)
+  # if FLAGS.train_dir == "auto":
+  #   dirname = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
+  #   train_dir = join(FLAGS.path, dirname)
+  # else:
+  #   train_dir = join(FLAGS.path, FLAGS.train_dir)
 
   # Setup logging & log the version.
   logging.set_verbosity(logging.INFO)
   logging.info("{}: Tensorflow version: {}.".format(
     task_as_string(task), tf.__version__))
 
-  if FLAGS.train_num_gpu == 0:
-    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-  else:
-    os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(
-      map(str, range(FLAGS.train_num_gpu)))
+  if not os.environ['CUDA_VISIBLE_DEVICES']:
+    if FLAGS.train_num_gpu == 0:
+      os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+    else:
+      os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(
+        map(str, range(FLAGS.train_num_gpu)))
 
   # Define batch size
   if FLAGS.train_num_gpu:
@@ -468,13 +457,12 @@ def main():
   # Dispatch to a master, a worker, or a parameter server.
   if not cluster or task.type == "master" or task.type == "worker":
     reader = find_class_by_name(FLAGS.reader, [readers])(
-      batch_size, num_epochs=FLAGS.num_epochs,
-      is_training=True)
+      batch_size, is_training=True)
 
     model = find_class_by_name(FLAGS.model, [models])()
     logging.info("Using {} as model".format(FLAGS.model))
 
-    trainer = Trainer(cluster, task, train_dir, model, reader, batch_size)
+    trainer = Trainer(cluster, task, FLAGS.train_dir, model, reader, batch_size)
     trainer.run(start_new_model=FLAGS.start_new_model)
 
   elif task.type == "ps":
