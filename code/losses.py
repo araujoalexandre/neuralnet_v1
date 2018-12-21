@@ -2,6 +2,7 @@
 
 import tensorflow as tf
 
+from config import hparams as FLAGS
 
 class BaseLoss(object):
   """Inherit from this class when implementing new losses."""
@@ -23,8 +24,22 @@ class BaseLoss(object):
     raise NotImplementedError()
 
 
-class SoftmaxCrossEntropyWithLogits:
+class SoftmaxCrossEntropyWithLogits(BaseLoss):
 
   def calculate_loss(self, labels=None, logits=None, **unused_params):
-    return tf.losses.sparse_softmax_cross_entropy(
-          labels=labels, logits=logits)
+    with tf.name_scope("loss"):
+      if FLAGS.gradients["compute_hessian"]:
+        if not FLAGS.one_hot_labels:
+          raise ValueError("Labels needs to be one hot encoded.")
+        # We are going to compute the hessian so we can't 
+        # use the tf.losses.sparse_softmax_cross_entropy
+        # because the ops are fused and the gradient of the 
+        # cross entropy is blocked. Insted we compute it manually.
+        # /!\ might not be efficient and not numerically stable
+        labels = tf.cast(labels, tf.float32)
+        proba = tf.nn.softmax(logits)
+        loss = tf.reduce_mean(-tf.reduce_sum(labels * tf.log(proba), axis=1))
+        return loss
+      return tf.losses.sparse_softmax_cross_entropy(
+            labels=labels, logits=logits)
+
