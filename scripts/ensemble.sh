@@ -12,11 +12,11 @@ do
   mkdir ${LOGS_DIR}
   cp ${CONFIG_PATH}/config.yaml ${LOGS_DIR}/model_flags.yaml
   
-  python3 ${CODE_PATH}/eval.py \
-    --config_file=${CONFIG_PATH}/config.yaml \
-    --config_name=eval_train \
-    --train_dir=${TRAIN_DIR} \
-    &> "${LOGS_DIR}/log_eval_train.logs" &
+  # python3 ${CODE_PATH}/eval.py \
+  #   --config_file=${CONFIG_PATH}/config.yaml \
+  #   --config_name=eval_train \
+  #   --train_dir=${TRAIN_DIR} \
+  #   &> "${LOGS_DIR}/log_eval_train.logs" &
 
   python3 ${CODE_PATH}/eval.py \
     --config_file=${CONFIG_PATH}/config.yaml \
