@@ -51,13 +51,13 @@ if __name__ == "__main__":
     if "eval_test" in files:
       events_path["eval_test"] = files
 
-  try:
-    parse_events(events_path["eval_train"], dataset='train')
-  except Exception as e:
-    logging.info("error parsing eval_train: {}".format(e))
+  # try:
+  #   parse_events(events_path["eval_train"], dataset='train')
+  # except Exception as e:
+  #   tf.logging.info("error parsing eval_train: {}".format(e))
 
   try:
     parse_events(events_path["eval_test"], dataset='test')
   except Exception as e:
-    logging.info("error parsing eval_test: {}".format(e))
+    tf.logging.info("error parsing eval_test: {}".format(e))
 
