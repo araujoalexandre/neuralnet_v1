@@ -7,9 +7,49 @@ from tensorflow import flags
 
 from config import hparams as FLAGS
 
-class MNISTReader:
+class BaseReader:
 
-  def __init__(self, batch_size, num_epochs=1, is_training=False):
+  def _maybe_one_hot_encode(self, labels):
+    """One hot encode the labels"""
+    if FLAGS.one_hot_labels:
+      labels = tf.one_hot(labels, self.n_classes)
+      labels = tf.squeeze(labels)
+      return labels
+    return labels
+
+  def _parse_and_processed(self, example_serialized):
+    """Parses an Example proto containing a training example of an image.
+    """
+    image, label = self._parse_fn(example_serialized)
+    image = self._image_preprocessing(image)
+    return image, label
+
+  def input_fn(self):
+    # Force all input processing onto CPU in order to reserve the GPU for
+    # the forward inference and back-propagation.
+    with tf.device('/cpu:0'):
+      with tf.name_scope('batch_processing'):
+        files = tf.data.Dataset.list_files(self.files)
+        dataset = files.apply(tf.data.experimental.parallel_interleave(
+          tf.data.TFRecordDataset, cycle_length=self.num_parallel_readers))
+        dataset = dataset.apply(tf.data.experimental.map_and_batch(
+            map_func=self._parse_and_processed, batch_size=self.batch_size,
+            num_parallel_calls=self.num_parallel_calls))
+        dataset = dataset.prefetch(buffer_size=self.prefetch_buffer_size)
+        if self.is_training:
+          dataset = dataset.shuffle(buffer_size=3*self.batch_size)
+          dataset = dataset.repeat()
+        iterator = dataset.make_one_shot_iterator()
+        image_batch, label_batch = iterator.get_next()
+    label_batch = self._maybe_one_hot_encode(label_batch)
+    # Display the training images in the visualizer.
+    tf.summary.image('images', image_batch)
+    return image_batch, label_batch
+
+
+class MNISTReader(BaseReader):
+
+  def __init__(self, batch_size, is_training=False, *args, **kwargs):
 
     self.batch_size = batch_size
     self.is_training = is_training
@@ -73,36 +113,9 @@ class MNISTReader:
     label = tf.cast(features['image/label'], dtype=tf.int32)
     return features['image'], label
 
-  def _parse_and_processed(self, example_serialized):
-    """Parses an Example proto containing a training example of an image.
-    """
-    image, label = self._parse_fn(example_serialized)
-    image = self._image_preprocessing(image)
-    return image, label
-
-  def input_fn(self):
-    # Force all input processing onto CPU in order to reserve the GPU for
-    # the forward inference and back-propagation.
-    with tf.device('/cpu:0'):
-      with tf.name_scope('batch_processing'):
-        files = tf.data.Dataset.list_files(self.files)
-        dataset = files.apply(tf.data.experimental.parallel_interleave(
-          tf.data.TFRecordDataset, cycle_length=self.num_parallel_readers))
-        dataset = dataset.apply(tf.data.experimental.map_and_batch(
-            map_func=self._parse_and_processed, batch_size=self.batch_size,
-            num_parallel_calls=self.num_parallel_calls))
-        dataset = dataset.prefetch(buffer_size=self.prefetch_buffer_size)
-        if self.is_training:
-          dataset = dataset.shuffle(buffer_size=3*self.batch_size)
-          dataset = dataset.repeat(self.num_epochs)
-        iterator = dataset.make_one_shot_iterator()
-        image_batch, label_batch = iterator.get_next()
-    # Display the training images in the visualizer.
-    tf.summary.image('images', image_batch)
-    return image_batch, label_batch
 
 
-class CIFAR10Reader:
+class CIFAR10Reader(BaseReader):
 
   def __init__(self, batch_size, is_training=False, *args, **kwargs):
 
@@ -168,30 +181,3 @@ class CIFAR10Reader:
     label = tf.cast(features['image/label'], dtype=tf.int32)
     return features['image'], label
 
-  def _parse_and_processed(self, example_serialized):
-    """Parses an Example proto containing a training example of an image.
-    """
-    image, label = self._parse_fn(example_serialized)
-    image = self._image_preprocessing(image)
-    return image, label
-
-  def input_fn(self):
-    # Force all input processing onto CPU in order to reserve the GPU for
-    # the forward inference and back-propagation.
-    with tf.device('/cpu:0'):
-      with tf.name_scope('batch_processing'):
-        files = tf.data.Dataset.list_files(self.files)
-        dataset = files.apply(tf.data.experimental.parallel_interleave(
-          tf.data.TFRecordDataset, cycle_length=self.num_parallel_readers))
-        dataset = dataset.apply(tf.data.experimental.map_and_batch(
-            map_func=self._parse_and_processed, batch_size=self.batch_size,
-            num_parallel_calls=self.num_parallel_calls))
-        dataset = dataset.prefetch(buffer_size=self.prefetch_buffer_size)
-        if self.is_training:
-          dataset = dataset.shuffle(buffer_size=3*self.batch_size)
-          dataset = dataset.repeat(self.num_epochs)
-        iterator = dataset.make_one_shot_iterator()
-        image_batch, label_batch = iterator.get_next()
-    # Display the training images in the visualizer.
-    tf.summary.image('images', image_batch)
-    return image_batch, label_batch
