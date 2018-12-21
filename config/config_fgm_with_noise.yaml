@@ -14,13 +14,14 @@ default: &DEFAULT
   save_summaries_steps:     60
   frequency_log_steps:      100
   
-  reader:                   MNISTReader
+  reader:                   CIFAR10Reader
+  per_image_standardization: False
   readers_params:
     num_parallel_calls:     16
     num_parallel_readers:   16 
     prefetch_buffer_size:   50000
 
-  model:                    MnistRandomModel
+  model:                    Cifar10RandomModel
   dense:
     n_layers:               3
     hidden:                 [0, 0, 0]
@@ -128,13 +129,13 @@ attack: &ATTACK
   <<: *DEFAULT
   <<: *EVAL
   eval_num_gpu:             2
-  path:                     /srv/osirim/aaraujo/neuralnet_structured_matrices/mnist_models
+  path:                     /srv/osirim/aaraujo/neuralnet_structured_matrices/cifar_models
   train_dir:                auto
   data:
     data_dir:               /home/aaraujo/neuralnet_structured_matrices/data  
     data_pattern:           test*
   attack_method:            FastGradientMethod
-  adv_processing:           True
+  adv_processing:           False
   attack:
     CarliniWagnerL2:
       binary_search_steps:  10 
@@ -143,7 +144,7 @@ attack: &ATTACK
       initial_const:        1.0e-3
     FastGradientMethod:
       eps:                  0.1
-      clip_min:             0.0
-      clip_max:             1.0
+      clip_min:             -1.0
+      clip_max:             +1.0
 
 
