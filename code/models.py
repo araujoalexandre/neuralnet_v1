@@ -627,38 +627,44 @@ class MnistRandomModel(RandomModel):
 class Cifar10RandomModel(RandomModel):
   """ResNet model."""
 
+  def batch_normalization(self, x):
+     return tf.layers.batch_normalization(x,
+               training=self.is_training,
+               beta_regularizer=self.regularizer,
+               gamma_regularizer=self.regularizer)
+
   def _bottleneck_residual(self, x, in_filter, out_filter, stride,
-                    activate_before_residual=False):
-    """Bottleneck residual unit with 3 sub layers."""
-    if activate_before_residual:
-      with tf.variable_scope('common_bn_relu'):
-        x = tf.layers.batch_normalization(x)
-        x = tf.nn.leaky_relu(x, self.config['leakyness'])
-        orig_x = x
-    else:
-      with tf.variable_scope('residual_bn_relu'):
-        orig_x = x
-        x = tf.layers.batch_normalization(x)
-        x = tf.nn.leaky_relu(x, self.config['leakyness'])
+                     activate_before_residual=False):
+     """Bottleneck residual unit with 3 sub layers."""
+     if activate_before_residual:
+       with tf.variable_scope('common_bn_relu'):
+         x = self.batch_normalization(x)
+         x = tf.nn.leaky_relu(x, self.config['leakyness'])
+         orig_x = x
+     else:
+       with tf.variable_scope('residual_bn_relu'):
+         orig_x = x
+         x = self.batch_normalization(x)
+         x = tf.nn.leaky_relu(x, self.config['leakyness'])
 
-    with tf.variable_scope('sub1'):
-      x = self._conv('conv1', x, 1, in_filter, out_filter/4, stride)
+     with tf.variable_scope('sub1'):
+       x = self._conv('conv1', x, 1, in_filter, out_filter/4, stride)
 
-    with tf.variable_scope('sub2'):
-      x = tf.layers.batch_normalization(x)
-      x = tf.nn.leaky_relu(x, self.config['leakyness'])
-      x = self._conv('conv2', x, 3, out_filter/4, out_filter/4, [1, 1, 1, 1])
+     with tf.variable_scope('sub2'):
+       x = self.batch_normalization(x)
+       x = tf.nn.leaky_relu(x, self.config['leakyness'])
+       x = self._conv('conv2', x, 3, out_filter/4, out_filter/4, [1, 1, 1, 1])
 
-    with tf.variable_scope('sub3'):
-      x = tf.layers.batch_normalization(x)
-      x = tf.nn.leaky_relu(x, self.config['leakyness'])
-      x = self._conv('conv3', x, 1, out_filter/4, out_filter, [1, 1, 1, 1])
+     with tf.variable_scope('sub3'):
+       x = self.batch_normalization(x)
+       x = tf.nn.leaky_relu(x, self.config['leakyness'])
+       x = self._conv('conv3', x, 1, out_filter/4, out_filter, [1, 1, 1, 1])
 
-    with tf.variable_scope('sub_add'):
-      if in_filter != out_filter:
-        orig_x = self._conv('project', orig_x, 1, in_filter, out_filter, stride)
-      x += orig_x
-    return x
+     with tf.variable_scope('sub_add'):
+       if in_filter != out_filter:
+         orig_x = self._conv('project', orig_x, 1, in_filter, out_filter, stride)
+       x += orig_x
+     return x
 
   def _global_avg_pool(self, x):
     assert x.get_shape().ndims == 4
@@ -669,29 +675,29 @@ class Cifar10RandomModel(RandomModel):
    """Residual unit with 2 sub layers."""
    if activate_before_residual:
      with tf.variable_scope('shared_activation'):
-       x = tf.layers.batch_normalization(x)
+       x = self.batch_normalization(x)
        x = tf.nn.leaky_relu(x, self.config['leakyness'])
        orig_x = x
    else:
      with tf.variable_scope('residual_only_activation'):
        orig_x = x
-       x = tf.layers.batch_normalization(x)
+       x = self.batch_normalization(x)
        x = tf.nn.leaky_relu(x, self.config['leakyness'])
 
    with tf.variable_scope('sub1'):
      x = self._conv('conv1', x, 3, in_filter, out_filter, stride)
 
    with tf.variable_scope('sub2'):
-     x = tf.layers.batch_normalization(x)
+     x = self.batch_normalization(x)
      x = tf.nn.leaky_relu(x, self.config['leakyness'])
      x = self._conv('conv2', x, 3, out_filter, out_filter, [1, 1, 1, 1])
 
    with tf.variable_scope('sub_add'):
      if in_filter != out_filter:
        orig_x = tf.nn.avg_pool(orig_x, stride, stride, 'VALID')
-       orig_x = tf.pad(
-         orig_x, [[0, 0], [0, 0], [0, 0],
-               [(out_filter-in_filter)//2, (out_filter-in_filter)//2]])
+       paddings = [[0, 0], [0, 0], [0, 0],
+                   [(out_filter-in_filter)//2, (out_filter-in_filter)//2]]
+       orig_x = tf.pad(orig_x, paddings)
      x += orig_x
    return x
 
@@ -708,8 +714,6 @@ class Cifar10RandomModel(RandomModel):
       self.regularizer = None
     else:
       self.regularizer = reg_fn(l=FLAGS.weight_decay_rate)
-
-    logging.info("model shape".format(model_input.get_shape()))
 
     # Book keeping for the noise layer
     self._sensitivities = [1]
@@ -749,12 +753,12 @@ class Cifar10RandomModel(RandomModel):
       filters = [16, 64, 128, 256]
     else:
       res_func = self._residual
-      filters = [16, 16, 32, 64]
+      # filters = [16, 16, 32, 64]
       # Uncomment the following codes to use w28-10 wide residual network.
       # It is more memory efficient than very deep residual network and has
       # comparably good performance.
       # https://arxiv.org/pdf/1605.07146v1.pdf
-      # filters = [out_filters, 160, 320, 640]
+      filters = [out_filters, 160, 320, 640]
       # Update hps.num_residual_units to 4
 
     with tf.variable_scope('unit_1_0'):
@@ -779,11 +783,9 @@ class Cifar10RandomModel(RandomModel):
          x = res_func(x, filters[3], filters[3], self._stride_arr(1), False)
 
     with tf.variable_scope('unit_last'):
-      x = tf.layers.batch_normalization(x)
+      x = self.batch_normalization(x)
       x = tf.nn.leaky_relu(x, config['leakyness'])
       x = self._global_avg_pool(x)
-
-    logging.info("after conv {}".format(x.get_shape()))
 
     with tf.variable_scope('logits') as scope:
       feature_size = x.get_shape().as_list()[-1]
