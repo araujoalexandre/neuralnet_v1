@@ -137,15 +137,16 @@ class MnistModelCirculant(BaseModel):
         activation = tf.nn.tanh(activation)
 
     # classification layer
-    kernel_initializer = tf.random_normal_initializer(
-      stddev=1/np.sqrt(n_classes))
-    bias_initializer = tf.random_normal_initializer(stddev=0.01)
-    cls_layer = layers.CirculantLayer(feature_size, n_classes,
-                                     kernel_initializer=kernel_initializer,
-                                     bias_initializer=bias_initializer,
-                                     use_diag=config["use_diag"],
-                                     use_bias=config["use_bias"])
-    activation = cls_layer.matmul(activation)
+    with tf.name_scope("classification"):
+      kernel_initializer = tf.random_normal_initializer(
+        stddev=1/np.sqrt(n_classes))
+      bias_initializer = tf.random_normal_initializer(stddev=0.01)
+      cls_layer = layers.CirculantLayer(feature_size, n_classes,
+                                       kernel_initializer=kernel_initializer,
+                                       bias_initializer=bias_initializer,
+                                       use_diag=config["use_diag"],
+                                       use_bias=config["use_bias"])
+      activation = cls_layer.matmul(activation)
     return activation
 
 
