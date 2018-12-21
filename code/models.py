@@ -54,7 +54,7 @@ class MnistModelGivens(BaseModel):
 
   def _givens_layers(self, activation, n_givens, shape_in, shape_out=None):
     for i in range(n_givens):
-      givens_layer = layers.GivensLayer(shape_in, shape_out=None)
+      givens_layer = layers.GivensLayer(shape_in)
       activation = givens_layer.matmul(activation)
     if shape_out is not None:
       activation = activation[..., :shape_out]
@@ -63,7 +63,9 @@ class MnistModelGivens(BaseModel):
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
     config = FLAGS.givens
-    assert config['n_layers'] == len(config['hidden'])
+    if type(config['hidden']) == int:
+      config['hidden'] = [config['hidden']] * config['n_layers']
+    assert config["n_layers"] == len(config["hidden"])
 
     activation = tf.layers.flatten(model_input)
 
