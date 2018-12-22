@@ -91,11 +91,6 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
             n_classes=reader.n_classes, is_training=True)
           tower_logits.append(logits)
 
-          if i == 0:
-            for variable in tf.trainable_variables():
-              logging.info(variable.op.name)
-              tf.summary.histogram(variable.op.name, variable)
-
           label_loss = label_loss_fn.calculate_loss(
             logits=logits, labels=tower_labels[i])
           reg_losses = tf.losses.get_regularization_losses()
@@ -120,6 +115,9 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
   total_loss = tf.stack(tower_final_losses)
   tf.summary.scalar("loss",
     tf.reduce_mean(total_loss))
+
+  for variable in tf.trainable_variables():
+    tf.summary.histogram(variable.op.name, variable)
 
   # process and apply gradients
   gradients_cls = ComputeAndProcessGradients()
