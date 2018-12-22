@@ -1,6 +1,6 @@
 
 default: &DEFAULT
-  path: &path               /srv/osirim/aaraujo/neuralnet_structured_matrices/models
+  path: &path               /srv/osirim/aaraujo/neuralnet/models
   train_dir:                auto
   train_batch_size:         100
   num_epochs:               30
@@ -99,7 +99,7 @@ default: &DEFAULT
 train: &TRAIN
   <<: *DEFAULT
   data:
-    data_dir:               /home/aaraujo/neuralnet_structured_matrices/data
+    data_dir:               /home/aaraujo/neuralnet/data
     data_pattern:           train*
 
 eval: &EVAL
@@ -116,23 +116,23 @@ eval: &EVAL
 eval_train: &EVAL_TRAIN
   <<: *EVAL
   data:
-    data_dir:               /home/aaraujo/neuralnet_structured_matrices/data
+    data_dir:               /home/aaraujo/neuralnet/data
     data_pattern:           train*
 
 eval_test: &EVAL_TEST
   <<: *EVAL
   data:
-    data_dir:               /home/aaraujo/neuralnet_structured_matrices/data
+    data_dir:               /home/aaraujo/neuralnet/data
     data_pattern:           test*
 
 attack: &ATTACK
   <<: *DEFAULT
   <<: *EVAL
   eval_num_gpu:             2
-  path:                     /srv/osirim/aaraujo/neuralnet_structured_matrices/cifar_models
+  path:                     /srv/osirim/aaraujo/neuralnet/cifar_models
   train_dir:                auto
   data:
-    data_dir:               /home/aaraujo/neuralnet_structured_matrices/data  
+    data_dir:               /home/aaraujo/neuralnet/data  
     data_pattern:           test*
   attack_method:            FastGradientMethod
   adv_processing:           False

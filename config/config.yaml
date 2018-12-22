@@ -1,8 +1,8 @@
 
 default: &DEFAULT
-  # path: &path                 /srv/osirim/aaraujo/neuralnet_structured_matrices/grid_search_mom_v2
-  path: &path                 /home/aaraujo/neuralnet_structured_matrices/models
-  data_dir:                   /home/aaraujo/neuralnet_structured_matrices/data
+  # path: &path                 /srv/osirim/aaraujo/neuralnet/grid_search_mom_v2
+  path: &path                 /home/aaraujo/neuralnet/models
+  data_dir:                   /home/aaraujo/neuralnet/data
   # train_dir:                  auto  
   train_batch_size:           100
   num_epochs:                 100
@@ -10,14 +10,14 @@ default: &DEFAULT
   train_num_gpu:              2
   clear_devices:              False
   profiler:                   False
-  compile:                    True
+  compile:                    False
 
   log_device_placement:       False
   save_checkpoint_steps:      600 # ckpt per epoch: 60K / (batch_size * gpu) 
   save_summaries_steps:       60
   frequency_log_steps:        100
 
-  reader:                     MNISTReader
+  reader:                     CIFAR100Reader
   one_hot_labels:             False
   per_image_standardization:  False
   readers_params:
@@ -25,7 +25,7 @@ default: &DEFAULT
     num_parallel_readers:     16
     prefetch_buffer_size:     50000
 
-  model:                      MnistModelGivens
+  model:                      MnistModelDense
   dense:
     n_layers:                 3
     hidden:                   [0, 0, 0]
@@ -137,7 +137,7 @@ attack: &ATTACK
   <<: *DEFAULT
   <<: *EVAL_TEST
   eval_num_gpu:               2
-  path:                       /srv/osirim/aaraujo/neuralnet_structured_matrices/mnist_models
+  path:                       /srv/osirim/aaraujo/neuralnet/mnist_models
   # train_dir:                  auto
   data:
   attack_method:              FastGradientMethod
