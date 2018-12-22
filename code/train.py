@@ -85,7 +85,6 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
   tower_final_losses = []
   for i in range(num_towers):
     with tf.device(device_string.format(i)):
-      logging.info(device_string.format(i))
       with tf.variable_scope("tower", reuse=tf.AUTO_REUSE):
 
           logits = model.create_model(tower_inputs[i],
