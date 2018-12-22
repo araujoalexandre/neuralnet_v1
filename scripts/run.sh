@@ -1,5 +1,5 @@
 
-PROJECT_PATH="/home/aaraujo/neuralnet_structured_matrices"
+PROJECT_PATH="/home/aaraujo/neuralnet"
 CONFIG_PATH="${PROJECT_PATH}/config"
 CODE_PATH="${PROJECT_PATH}/code"
 
