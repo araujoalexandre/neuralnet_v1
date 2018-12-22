@@ -84,7 +84,7 @@ class ComputeAndProcessGradients:
 
   def get_gradients(self, opt, losses):
 
-    gradients = opt.compute_gradients(loss)
+    gradients = opt.compute_gradients(losses)
     self._gradients_summary(gradients)
 
     # compute and record summary of hessians eigenvals
