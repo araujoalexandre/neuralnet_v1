@@ -15,11 +15,18 @@ from tensorflow import flags
 from tensorflow import gfile
 from tensorflow import logging
 from tensorflow.python_io import TFRecordWriter
+from tensorflow.keras import datasets
 
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string("output_dir", "/tmp/",
                     "Output data directory")
+
+flags.DEFINE_integer("train_split", 10,
+                     "Number of TFRecords to split the train dataset")
+
+flags.DEFINE_integer("test_split", 1,
+                     "Number of TFRecords to split the test dataset")
 
 
 def _int64_feature(value):
@@ -41,15 +48,20 @@ def _bytes_feature(value):
   return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 
-class ConvertMNIST:
 
-  def __init__(self):
-    self.height, self.width = 28, 28
-    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
-    x_train, x_test = x_train.reshape(-1, 784), x_test.reshape(-1, 784)
-    y_train, y_test = y_train.reshape(-1, 1), y_test.reshape(-1, 1)
-    self.x_train, self.x_test = x_train, x_test
-    self.y_train, self.y_test = y_train, y_test
+class ConvertDataset:
+
+  def reshape(self):
+    if self.x_train.ndim == 3:
+      _, self.height, self.width = self.x_train.shape
+      dim = self.height * self.width
+    else:
+      _, self.height, self.width, self.channels = self.x_train.shape
+      dim = self.height * self.width * self.channels
+    self.x_train = self.x_train.reshape(-1, dim)
+    self.x_test = self.x_test.reshape(-1, dim)
+    self.y_train = self.y_train.reshape(-1, 1)
+    self.y_test = self.y_test.reshape(-1, 1)
 
   def _convert_to_example(self, image, label):
     example = tf.train.Example(features=tf.train.Features(feature={
@@ -59,15 +71,15 @@ class ConvertMNIST:
       'image/label': _int64_feature(label)}))
     return example
 
-  def _process_images(self, name, images, labels):
+  def _process_images(self, name, images, labels, id_file, n_files):
     """Processes and saves list of images as TFRecord in 1 thread.
     Args:
       name: string, unique identifier specifying the data set
       images: array of images
       labels: array of labels
     """
-    output_filename = '{}-00001-of-00001'.format(name)
-    output_file = os.path.join(FLAGS.output_dir, 'mnist', output_filename)
+    output_filename = '{}-{:05d}-of-{:05d}'.format(name, id_file, n_files)
+    output_file = os.path.join(FLAGS.output_dir, self.name, output_filename)
     with TFRecordWriter(output_file) as writer:
       for image, label in zip(images, labels):
         example = self._convert_to_example(image.tobytes(), label)
@@ -75,105 +87,63 @@ class ConvertMNIST:
     print('{}: Wrote {} images to {}'.format(
         datetime.now(), len(images), output_file), flush=True)
 
+  def split_data(self, x, y, n_split):
+    x_split = np.array_split(x, n_split)
+    y_split = np.array_split(y, n_split)
+    return x_split, y_split
+
   def convert(self):
     """Main method to convert mnist images to TFRecords
     """
-    data_folder = join(FLAGS.output_dir, 'mnist')
+    data_folder = join(FLAGS.output_dir, self.name)
     if exists(data_folder):
-      logging.info('mnist data already converted to TFRecords.')
+      logging.info('{} data already converted to TFRecords.'.format(self.name))
       return
     os.makedirs(data_folder)
-    self._process_images("train", self.x_train, self.y_train)
-    self._process_images("test", self.x_test, self.y_test)
+    x_train_split, y_train_split = self.split_data(
+      self.x_train, self.y_train, FLAGS.train_split)
+    x_test_split, y_test_split = self.split_data(
+      self.x_test, self.y_test, FLAGS.test_split)
+    for i, (x, y) in enumerate(zip(x_train_split, y_train_split), 1):
+      self._process_images("train", x, y, i, FLAGS.train_split)
+    for i, (x, y) in enumerate(zip(x_test_split, y_test_split), 1):
+      self._process_images("test", x, y, i , FLAGS.test_split)
 
 
-class ConvertCIFAR:
-
+class ConvertMNIST(ConvertDataset):
   def __init__(self):
+    self.name = "mnist"
+    (self.x_train, self.y_train), (self.x_test, self.y_test) = \
+        datasets.mnist.load_data()
+    self.reshape()
 
-    self.url = 'http://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz'
-    self.maybe_download_and_extract()
-    self.height, self.width = 32, 32
-    self.num_classes = 10
-    self.train_size = 50000
-    self.test_size = 10000
+class ConvertFashionMNIST(ConvertDataset):
+  def __init__(self):
+    self.name = "fashion_mnist"
+    (self.x_train, self.y_train), (self.x_test, self.y_test) = \
+        datasets.fashion_mnist.load_data()
+    self.reshape()
 
-  def maybe_download_and_extract(self):
-    """Download and extract the tarball from Alex's website."""
-    dest_directory = FLAGS.output_dir
-    if not exists(dest_directory):
-      os.makedirs(dest_directory)
-    filename = self.url.split('/')[-1]
-    filepath = join(dest_directory, filename)
-    if not exists(filepath):
-      def _progress(count, block_size, total_size):
-        sys.stdout.write('\r>> Downloading %s %.1f%%' % (filename,
-            float(count * block_size) / float(total_size) * 100.0))
-        sys.stdout.flush()
-      filepath, _ = urllib.request.urlretrieve(self.url, filepath, _progress)
-      print()
-      statinfo = os.stat(filepath)
-      logging.info('Successfully downloaded', filename, statinfo.st_size, 'bytes.')
-    self.extracted_dir_path = join(dest_directory, 'cifar-10-batches-py')
-    if not exists(self.extracted_dir_path):
-      tarfile.open(filepath, 'r:gz').extractall(dest_directory)
-    tf.gfile.Remove(filepath)
+class ConvertCIFAR10(ConvertDataset):
+  def __init__(self):
+    self.name = "cifar10"
+    (self.x_train, self.y_train), (self.x_test, self.y_test) = \
+        datasets.cifar10.load_data()
+    self.reshape()
 
-  def _unpickle(self, file):
-      with open(file, 'rb') as f:
-        data = pickle.load(f, encoding='bytes')
-      return data
-
-  def _convert_to_example(self, image, label, filename):
-    example = tf.train.Example(features=tf.train.Features(feature={
-      'image': _bytes_feature(image),
-      'image/height': _int64_feature(self.height),
-      'image/width': _int64_feature(self.width),
-      'image/label': _int64_feature(label),
-      'image/filename': _bytes_feature(filename)}))
-    return example
-
-  def _process_images(self, name, images, labels, filenames, id_file, nfiles):
-    """Processes and saves list of images as TFRecord in 1 thread.
-    Args:
-      name: string, unique identifier specifying the data set
-      images: array of images
-      labels: array of labels
-    """
-    output_filename = '{}-{:05d}-of-{:05d}'.format(name, id_file, nfiles)
-    output_file = join(FLAGS.output_dir, 'cifar10',
-      output_filename)
-    with TFRecordWriter(output_file) as writer:
-      for image, label, filename in zip(images, labels, filenames):
-        example = self._convert_to_example(image.tobytes(), label, filename)
-        writer.write(example.SerializeToString())
-    print('{}: Wrote {} images to {}'.format(
-        datetime.now(), len(images), output_file), flush=True)
-
-  def convert(self):
-    """Main method to convert cifar images to TFRecords
-    """
-    data_folder = join(FLAGS.output_dir, 'cifar10')
-    if exists(data_folder):
-      logging.info('cifar10 data already converted to TFRecords.')
-      return
-    os.makedirs(data_folder)
-    train_files = tf.gfile.Glob(join(self.extracted_dir_path, 'data*'))
-    test_file = tf.gfile.Glob(join(self.extracted_dir_path, 'test_batch'))[0]
-    nfiles = len(train_files)
-    for i, train_file in enumerate(train_files, 1):
-      data = self._unpickle(train_file)
-      images, labels, filenames = data[b'data'], data[b'labels'], data[b'filenames']
-      self._process_images('train', images, labels, filenames, i, nfiles)
-    data = self._unpickle(test_file)
-    images, labels, filename = data[b'data'], data[b'labels'], data[b'filenames']
-    self._process_images('test', images, labels, filenames, 1, 1)
-    tf.gfile.DeleteRecursively(self.extracted_dir_path)
+class ConvertCIFAR100(ConvertDataset):
+  def __init__(self):
+    self.name = "cifar100"
+    (self.x_train, self.y_train), (self.x_test, self.y_test) = \
+        datasets.cifar100.load_data()
+    self.reshape()
 
 
 def main(_):
   ConvertMNIST().convert()
-  ConvertCIFAR().convert()
+  ConvertFashionMNIST().convert()
+  ConvertCIFAR10().convert()
+  ConvertCIFAR100().convert()
 
 if __name__ == '__main__':
   tf.app.run()
