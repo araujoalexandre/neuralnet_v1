@@ -438,7 +438,7 @@ def main():
   logging.info("{}: Tensorflow version: {}.".format(
     task_as_string(task), tf.__version__))
 
-  if not os.environ['CUDA_VISIBLE_DEVICES']:
+  if os.environ.get('CUDA_VISIBLE_DEVICES', None) is None:
     if FLAGS.train_num_gpu == 0:
       os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
     else:
