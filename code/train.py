@@ -121,7 +121,7 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
 
   # process and apply gradients
   gradients_cls = ComputeAndProcessGradients()
-  gradients = gradients_cls.get_gradients(opt, [total_loss])
+  gradients = gradients_cls.get_gradients(opt, total_loss)
   train_op_cls = UpdateOps(opt, gradients, global_step)
 
   summary_op = tf.summary.merge_all()
