@@ -1,3 +1,4 @@
+import sys
 import glob
 from os.path import join, basename, exists
 from ruamel.yaml import YAML
@@ -13,7 +14,7 @@ class YParams(HParams):
                 self.add_hparam(k, v)
 
 def main():
-  path = "/srv/osirim/aaraujo/neuralnet_structured_matrices/grid_search_mom_v2"
+  path = sys.argv[1]
   folders = glob.glob(join(path, "*"))
   folders = list(filter(lambda x: 'logs' not in x, folders))
   folders = sorted(folders)
