@@ -12,6 +12,7 @@ import losses
 from learning_rate import LearningRate
 from optimizer import Optimizer
 from gradients import ComputeAndProcessGradients
+from gradients import compute_hessian_and_summary
 from update_ops import UpdateOps
 
 import tensorflow as tf
@@ -225,12 +226,15 @@ class Trainer(object):
         save_checkpoint_steps=FLAGS.save_checkpoint_steps,
         save_summaries_steps=10,
         save_summaries_secs=None,
-        log_step_count_steps=10*FLAGS.frequency_log_steps,
+        # log_step_count_steps=10*FLAGS.frequency_log_steps,
+        log_step_count_steps=0,
         config=self.config,
       )
 
       logging.info("Start training")
       with tf.train.MonitoredTrainingSession(**session_args) as sess:
+
+        summary_writer = tf.summary.FileWriterCache.get(FLAGS.train_dir)
 
         if FLAGS.profiler:
           profiler = tf.profiler.Profiler(sess.graph)
@@ -255,6 +259,10 @@ class Trainer(object):
               [train_op, global_step, loss, learning_rate, gradients_norm], **profile_args)
           seconds_per_batch = time.time() - batch_start_time
           examples_per_second = self.batch_size / seconds_per_batch
+
+          if FLAGS.gradients['compute_hessian'] and global_step_val != 0 and \
+             global_step_val % FLAGS.gradients['hessian_every_n_step'] == 0:
+            compute_hessian_and_summary(sess, summary_writer, global_step_val)
 
           if make_profile and FLAGS.profiler:
             profiler.add_step(step, run_meta)
