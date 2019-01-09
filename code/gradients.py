@@ -123,7 +123,7 @@ class ComputeAndProcessGradients:
     Returns:
       A list of clipped gradient to variable pairs.
     """
-    with tf.name_score('clip_gradients'):
+    with tf.name_scope('clip_gradients'):
       clipped_grads_and_vars = []
       for grad, var in gradients_to_variables:
         if grad is not None:
@@ -195,8 +195,7 @@ class ComputeAndProcessGradients:
 
     # to regularize, clip the value of the gradients
     if self.config['clip_gradient_norm'] > 0:
-      with tf.name_scope('clip_grads'):
-        gradients = self._clip_gradient_norms(
-          gradients, self.config['clip_gradient_norm'])
+      gradients = self._clip_gradient_norms(
+        gradients, self.config['clip_gradient_norm'])
     return gradients
 
