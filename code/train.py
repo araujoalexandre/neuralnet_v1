@@ -239,13 +239,13 @@ class Trainer(object):
         if FLAGS.profiler:
           profiler = tf.profiler.Profiler(sess.graph)
 
-        step = 0
+        global_step_val = 0
         while not sess.should_stop():
 
           make_profile = False
           profile_args = {}
 
-          if step % 1000 == 0 and FLAGS.profiler:
+          if global_step_val % 1000 == 0 and FLAGS.profiler:
             make_profile = True
             run_meta = tf.RunMetadata()
             profile_args = {
@@ -265,7 +265,7 @@ class Trainer(object):
             compute_hessian_and_summary(sess, summary_writer, global_step_val)
 
           if make_profile and FLAGS.profiler:
-            profiler.add_step(step, run_meta)
+            profiler.add_step(global_step_val, run_meta)
 
             # Profile the parameters of your model.
             profiler.profile_name_scope(options=(tf.profiler.ProfileOptionBuilder
@@ -278,13 +278,13 @@ class Trainer(object):
             # Or you can generate a timeline:
             opts = (tf.profiler.ProfileOptionBuilder(
                     tf.profiler.ProfileOptionBuilder.time_and_memory())
-                    .with_step(step)
+                    .with_step(global_step_val)
                     .with_timeline_output('./profile.logs').build())
             profiler.profile_graph(options=opts)
 
 
           to_print = global_step_val % FLAGS.frequency_log_steps == 0
-          if (self.is_master and to_print) or not global_step_val:
+          if (self.is_master and to_print) or global_step_val == 1:
             epoch = ((global_step_val * self.batch_size)
               / self.reader.n_train_files)
             message = ("epoch: {:4.2f} | step: {: 5d} | lr: {:.6f} "
@@ -293,8 +293,6 @@ class Trainer(object):
             logging.info(message.format(epoch,
               global_step_val, learning_rate_val,
               loss_val, examples_per_second, grad_norm_val))
-
-          step += 1
 
         # End training
         logging.info("{}: Done training -- epoch limit reached.".format(
