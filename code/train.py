@@ -433,12 +433,6 @@ def main():
   task_data = env.get("task", None) or {"type": "master", "index": 0}
   task = type("TaskSpec", (object,), task_data)
 
-  # if FLAGS.train_dir == "auto":
-  #   dirname = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
-  #   train_dir = join(FLAGS.path, dirname)
-  # else:
-  #   train_dir = join(FLAGS.path, FLAGS.train_dir)
-
   # Setup logging & log the version.
   logging.set_verbosity(logging.INFO)
   logging.info("{}: Tensorflow version: {}.".format(
