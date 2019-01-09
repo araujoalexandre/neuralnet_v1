@@ -1,6 +1,5 @@
 
 from ruamel.yaml import YAML
-from ruamel.yaml.comments import CommentedMap
 from tensorflow.contrib.training import HParams
 from tensorflow import flags
 
