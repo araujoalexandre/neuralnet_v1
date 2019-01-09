@@ -19,8 +19,10 @@ class YParams(HParams):
     def __init__(self, yaml_fn, config_name):
         super().__init__()
         with open(yaml_fn) as fp:
-            for k, v in YAML(typ='unsafe').load(fp)[config_name].items():
-                self.add_hparam(k, v)
+          yaml = YAML(typ='unsafe')
+          yaml.allow_duplicate_keys = True
+          for k, v in yaml.load(fp)[config_name].items():
+            self.add_hparam(k, v)
 
 hparams = YParams(FLAGS.config_file, FLAGS.config_name)
 # record the train directory
