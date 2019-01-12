@@ -318,46 +318,54 @@ class Cifar10ModelGivens(BaseModel, Cifar10BaseModel):
 
     return activation
 
-
 class Cifar10ModelCirculant(BaseModel, Cifar10BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
     config = FLAGS.circulant
-    # activation = self.convolutional_layers(model_input)
+    if type(config['hidden']) == int:
+      config['hidden'] = [config['hidden']] * config['n_layers']
+    assert config["n_layers"] == len(config["hidden"])
+
+    reg_fn = getattr(tf.keras.regularizers, FLAGS.reg_norm, None)
+    if reg_fn is None:
+      regularizer = None
+    else:
+      regularizer = reg_fn(l=FLAGS.weight_decay_rate)
+
+    alpha = config['alpha']
     activation = tf.layers.flatten(model_input)
 
-    with tf.variable_scope('circulant1') as scope:
-      feature_size = activation.get_shape().as_list()[-1]
-      num_hidden = config['hidden'][0] or feature_size
-      layer1 = layers.CirculantLayer(feature_size, num_hidden)
-      activation = layer1.matmul(activation)
-      bias = tf.get_variable('bias1', shape=(num_hidden, ),
-                             initializer=tf.constant_initializer(0.1))
-      activation = activation + bias
-      activation = tf.nn.relu(activation)
-      self._activation_summary(activation)
+    for i in range(config["n_layers"]):
+      with tf.variable_scope("circulant{}".format(i)):
+        feature_size = activation.get_shape().as_list()[-1]
+        num_hidden = config["hidden"][i] or feature_size
+        kernel_initializer = tf.random_normal_initializer(
+          stddev=alpha/np.sqrt(num_hidden))
+        bias_initializer = tf.random_normal_initializer(stddev=0.01)
+        cls_layer = layers.CirculantLayer(feature_size, num_hidden,
+                                          kernel_initializer=kernel_initializer,
+                                          bias_initializer=bias_initializer,
+                                          use_diag=config["use_diag"],
+                                          use_bias=config["use_bias"],
+                                          regularizer=regularizer)
+        activation = cls_layer.matmul(activation)
+        activation = tf.nn.leaky_relu(activationi, 0.5)
+        self._activation_summary(x)
 
-    with tf.variable_scope('circulant2') as scope:
-      feature_size = activation.get_shape().as_list()[-1]
-      num_hidden = config['hidden'][1] or feature_size
-      layer2 = layers.CirculantLayer(feature_size, num_hidden)
-      activation = layer2.matmul(activation)
-      bias = tf.get_variable('bias2', shape=(num_hidden, ),
-                             initializer=tf.constant_initializer(0.1))
-      activation = activation + bias
-      activation = tf.nn.relu(activation)
-      self._activation_summary(activation)
-
-    with tf.variable_scope('circulant3') as scope:
-      feature_size = activation.get_shape().as_list()[-1]
-      layer3 = layers.CirculantLayer(feature_size, n_classes)
-      activation = layer3.matmul(activation)
-      bias = tf.get_variable('bias3', shape=(n_classes, ),
-                            initializer=tf.constant_initializer(0.1))
-      activation = activation + bias
-      self._activation_summary(activation)
-
+    # classification layer
+    with tf.name_scope("classification"):
+      kernel_initializer = tf.random_normal_initializer(
+        stddev=alpha/np.sqrt(n_classes))
+      bias_initializer = tf.random_normal_initializer(stddev=0.01)
+      cls_layer = layers.CirculantLayer(feature_size, n_classes,
+                                       kernel_initializer=kernel_initializer,
+                                       bias_initializer=bias_initializer,
+                                       use_diag=config["use_diag"],
+                                       use_bias=config["use_bias"],
+                                       regularizer=regularizer)
+      activation = cls_layer.matmul(activation)
+      self._activation_summary(x)
     return activation
 
 
