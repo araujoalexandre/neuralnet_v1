@@ -123,13 +123,15 @@ class MnistModelCirculant(BaseModel):
       config['hidden'] = [config['hidden']] * config['n_layers']
     assert config["n_layers"] == len(config["hidden"])
 
+    alpha = config['alpha']
+
     activation = tf.layers.flatten(model_input)
     for i in range(config["n_layers"]):
       with tf.variable_scope("circulant{}".format(i)):
         feature_size = activation.get_shape().as_list()[-1]
         num_hidden = config["hidden"][i] or feature_size
         kernel_initializer = tf.random_normal_initializer(
-          stddev=1/np.sqrt(num_hidden))
+          stddev=alpha/np.sqrt(num_hidden))
         bias_initializer = tf.random_normal_initializer(stddev=0.01)
         cls_layer = layers.CirculantLayer(feature_size, num_hidden,
                                           kernel_initializer=kernel_initializer,
@@ -137,12 +139,14 @@ class MnistModelCirculant(BaseModel):
                                           use_diag=config["use_diag"],
                                           use_bias=config["use_bias"])
         activation = cls_layer.matmul(activation)
-        activation = tf.nn.tanh(activation)
+        activation = tf.nn.leaky_relu(activation, 0.5)
+        tf.summary.histogram("activation_{}".format(alpha), activation)
 
     # classification layer
-    with tf.name_scope("classification"):
+    with tf.variable_scope("classification"):
+      feature_size = activation.get_shape().as_list()[-1]
       kernel_initializer = tf.random_normal_initializer(
-        stddev=1/np.sqrt(n_classes))
+        stddev=alpha/np.sqrt(n_classes))
       bias_initializer = tf.random_normal_initializer(stddev=0.01)
       cls_layer = layers.CirculantLayer(feature_size, n_classes,
                                        kernel_initializer=kernel_initializer,
@@ -150,6 +154,7 @@ class MnistModelCirculant(BaseModel):
                                        use_diag=config["use_diag"],
                                        use_bias=config["use_bias"])
       activation = cls_layer.matmul(activation)
+      tf.summary.histogram("classification", activation)
     return activation
 
 
