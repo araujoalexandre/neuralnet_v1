@@ -248,7 +248,7 @@ class Cifar10BaseModel:
     return tf.layers.flatten(activation)
 
 
-class Cifar10ModelDense(BaseModel, Cifar10BaseModel):
+class Cifar10ModelConv(BaseModel, Cifar10BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
@@ -274,6 +274,58 @@ class Cifar10ModelDense(BaseModel, Cifar10BaseModel):
       self._activation_summary(activation)
 
     return activation
+
+
+class Cifar10ModelDense(BaseModel, Cifar10BaseModel):
+
+  def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
+
+    config = FLAGS.dense
+
+    config = FLAGS.circulant
+    if type(config['hidden']) == int:
+      config['hidden'] = [config['hidden']] * config['n_layers']
+    assert config["n_layers"] == len(config["hidden"])
+
+    reg_fn = getattr(tf.keras.regularizers, FLAGS.reg_norm, None)
+    if reg_fn is None:
+      regularizer = None
+    else:
+      regularizer = reg_fn(l=FLAGS.weight_decay_rate)
+
+    activation = tf.layers.flatten(model_input)
+
+    for i in range(config['n_layers']):
+      with tf.variable_scope('dense{}'.format(layer)):
+        feature_size = activation.get_shape().as_list()[-1]
+        num_hidden = config['hidden'][i] or feature_size
+        initializer = tf.random_normal_initializer(
+          stddev=1/np.sqrt(feature_size))
+        bias_initializer = tf.random_normal_initializer(stddev=0.01)
+        activation = tf.layers.dense(activation, num_hidden,
+                                     use_bias=config['use_bias'],
+                                     activation=tf.nn.relu,
+                                     kernel_initializer=initializer,
+                                     kernel_regularizer=regularizer,
+                                     bias_initializer=bias_initializer,
+                                     bias_regularizer=regularizer)
+        self._activation_summary(x)
+
+    # classification layer
+    with tf.variable_scope("classification"):
+      feature_size = activation.get_shape().as_list()[-1]
+      initializer = tf.random_normal_initializer(stddev=1/np.sqrt(feature_size))
+      bias_initializer = tf.random_normal_initializer(stddev=0.01)
+      activation = tf.layers.dense(activation, num_hidden,
+                                   use_bias=config['use_bias'],
+                                   activation=None,
+                                   kernel_initializer=initializer,
+                                   kernel_regularizer=regularizer,
+                                   bias_initializer=bias_initializer,
+                                   bias_regularizer=regularizer)
+      self._activation_summary(x)
+    return activation
+
 
 
 class Cifar10ModelGivens(BaseModel, Cifar10BaseModel):
