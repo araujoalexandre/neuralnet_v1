@@ -38,7 +38,9 @@ class MnistModelDense(BaseModel):
       feature_size = activation.get_shape().as_list()[-1]
       num_hidden = config['hidden'][i] or feature_size
       initializer = tf.random_normal_initializer(stddev=1/np.sqrt(feature_size))
-      activation = tf.layers.dense(activation, num_hidden, activation=tf.nn.relu,
+      activation = tf.layers.dense(activation, num_hidden,
+                                   use_bias=config['use_bias'],
+                                   activation=tf.nn.relu,
                                    kernel_initializer=initializer)
       tf.summary.histogram('Mnist/Dense/Layer{}'.format(i), activation)
 
@@ -46,6 +48,7 @@ class MnistModelDense(BaseModel):
     feature_size = activation.get_shape().as_list()[-1]
     initializer = tf.random_normal_initializer(stddev=1/np.sqrt(feature_size))
     activation = tf.layers.dense(activation, n_classes, activation=None,
+                                 use_bias=config['use_bias'],
                                  kernel_initializer=initializer)
     return activation
 
