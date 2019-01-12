@@ -131,8 +131,7 @@ class CirculantLayer:
         initializer=kernel_initializer, regularizer=regularizer)
 
     if diag_initializer is None:
-      stddev = 1/np.sqrt(size)
-      diag_initializer = tf.random_normal_initializer(stddev=stddev)
+      diag_initializer = np.float32(np.random.choice([-1, 1], size=[shape_out]))
 
     if bias_initializer is None:
       bias_initializer = tf.constant_initializer(0.1)
@@ -142,28 +141,43 @@ class CirculantLayer:
         self.padding = False
 
     if use_diag:
-      self.diag = tf.get_variable(name='diag', shape=shape,
+      self.diag = tf.get_variable(name='diag', # shape=[shape_out],
         initializer=diag_initializer, regularizer=regularizer)
     if use_bias:
       self.bias = tf.get_variable(name="bias", shape=[shape_out],
         initializer=bias_initializer, regularizer=regularizer)
 
-
   def matmul(self, input_data):
     padding_size = (np.abs(self.size - self.shape_in))
     paddings = ((0, 0), (padding_size, 0))
     data = tf.pad(input_data, paddings) if self.padding else input_data
-    if self.use_diag:
-      data = np.multiply(data, self.diag)
     act_fft = tf.spectral.rfft(data)
-    kernel_fft = tf.spectral.rfft(self.kernel[::-1])
+    kernel_fft = tf.spectral.rfft(self.kernel)
     ret_mul = tf.multiply(act_fft, kernel_fft)
     ret = tf.spectral.irfft(ret_mul)
     ret = tf.cast(ret, tf.float32)
-    ret = tf.manip.roll(ret, 1, axis=1)
     ret = ret[..., :self.shape_out]
+    if self.use_diag:
+      ret = tf.multiply(ret, self.diag)
     if self.use_bias:
       ret = ret + self.bias
     return ret
+
+#   def matmul(self, input_data):
+#     padding_size = (np.abs(self.size - self.shape_in))
+#     paddings = ((0, 0), (padding_size, 0))
+#     data = tf.pad(input_data, paddings) if self.padding else input_data
+#     if self.use_diag:
+#       data = np.multiply(data, self.diag)
+#     act_fft = tf.spectral.rfft(data)
+#     kernel_fft = tf.spectral.rfft(self.kernel[::-1])
+#     ret_mul = tf.multiply(act_fft, kernel_fft)
+#     ret = tf.spectral.irfft(ret_mul)
+#     ret = tf.cast(ret, tf.float32)
+#     ret = tf.manip.roll(ret, 1, axis=1)
+#     ret = ret[..., :self.shape_out]
+#     if self.use_bias:
+#       ret = ret + self.bias
+#     return ret
 
 
