@@ -254,11 +254,23 @@ class Trainer(object):
               'run_metadata': run_meta
             }
 
+          fetches = [train_op, global_step, loss, learning_rate]
+          if gradients_norm != 0:
+            fetches += [gradients_norm]
+          else:
+            grad_norm_val = 0
+
           batch_start_time = time.time()
-          (_, global_step_val, loss_val, learning_rate_val, grad_norm_val) = sess.run(
-              [train_op, global_step, loss, learning_rate, gradients_norm], **profile_args)
+          fetches_values = sess.run(fetches, **profile_args)
           seconds_per_batch = time.time() - batch_start_time
           examples_per_second = self.batch_size / seconds_per_batch
+
+          global_step_val = fetches_values[1]
+          loss_val = fetches_values[2]
+          learning_rate_val = fetches_values[3]
+
+          if gradients_norm != 0:
+            grad_norm_val = fetches_values[4]
 
           if FLAGS.gradients['compute_hessian'] and global_step_val != 0 and \
              global_step_val % FLAGS.gradients['hessian_every_n_step'] == 0:
@@ -279,7 +291,7 @@ class Trainer(object):
             opts = (tf.profiler.ProfileOptionBuilder(
                     tf.profiler.ProfileOptionBuilder.time_and_memory())
                     .with_step(global_step_val)
-                    .with_timeline_output('./profile.logs').build())
+                    .with_timeline_output('~/profile.logs').build())
             profiler.profile_graph(options=opts)
 
 
