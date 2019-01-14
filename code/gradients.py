@@ -146,9 +146,6 @@ class ComputeAndProcessGradients:
       gradients_norm = gradients_norm / len(gradients)
       tf.add_to_collection("gradients_norm", gradients_norm)
 
-      if not self.config['perturbed_gradients']:
-        return gradients
-
       norm_threshold = self.config['perturbed_threshold']
       activate_noise = tf.cond(tf.less(gradients_norm, norm_threshold),
                        true_fn=lambda: tf.constant(1.),
@@ -191,7 +188,10 @@ class ComputeAndProcessGradients:
       self._define_hessian_graph(loss)
 
     # to help convergence, inject noise in gradients
-    gradients = self._perturbed_gradients(gradients)
+    if self.config['perturbed_gradients']:
+      gradients = self._perturbed_gradients(gradients)
+    else:
+      tf.add_to_collection("gradients_norm", 0)
 
     # to regularize, clip the value of the gradients
     if self.config['clip_gradient_norm'] > 0:
