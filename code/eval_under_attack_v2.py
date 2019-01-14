@@ -26,19 +26,12 @@ from cleverhans.model import Model
 from config import YParams
 from config import hparams as FLAGS
 
+# np.random.seed(seed=0)
+
 def find_class_by_name(name, modules):
   """Searches the provided modules for the named class and returns it."""
   modules = [getattr(module, name, None) for module in modules]
   return next(a for a in modules if a)
-
-
-def get_ensemble_accuracy(preds, labels):
-  labels = np.array(labels)
-  mean_proba = np.mean(preds, axis=0)
-  hards_preds = np.argmax(mean_proba, axis=1)
-  labels = np.array(labels)
-  accuracy = np.mean(np.equal(hards_preds, labels))
-  return accuracy
 
 
 class Evaluate:
@@ -108,7 +101,7 @@ class Evaluate:
         join(train_dir, 'model.ckpt-{}.index'.format(best_ckpt)))
     return best_ckpt_path[-1][:-6], int(best_ckpt)
 
-  def eval(self, train_dir, model_id):
+  def eval(self, train_dir):
     """Run the evaluation under attack.
 
     Args:
@@ -128,12 +121,10 @@ class Evaluate:
       epoch = ((global_step_val*train_batch_size) / n_train_files)
 
     config = tf.ConfigProto(
-      # device_count={'GPU': 2},
       log_device_placement=False,
       allow_soft_placement=True
     )
 
-    adv_examples = []
     # generate adv exemples
     with tf.Session(config=config) as sess:
       logging.info("Generate adv examples.")
@@ -149,7 +140,6 @@ class Evaluate:
         self.loss, self.acc, self.preds, self.preds_adv,
         self.loss_adv, self.acc_adv, self.labels_batch]
 
-      model_proba, model_proba_adv = [], []
       while True:
         try:
           batch_start_time = time.time()
@@ -165,60 +155,18 @@ class Evaluate:
           logging.info(msg.format(acc_val, acc_adv_val, loss_val,
                       loss_adv_val, examples_per_second))
 
-          # save the label (only for the first model) 
-          # save the batch predictions
-          if model_id == 0:
-            self.target.extend(labels.ravel().tolist())
-          model_proba.extend(preds_val)
-          model_proba_adv.extend(preds_adv_val)
-
         except tf.errors.OutOfRangeError:
 
-          # save the model predictions
-          self.proba[model_id, :, :] = np.array(model_proba)
-          self.proba_adv[model_id, :, :] = np.array(model_proba_adv)
-
-          msg = ("Final - model {}: images/adv: Acc: {:.5f}/{:.5f}"
-                     " | Avg Loss: {:.5f}/{:.5f}")
-          logging.info(msg.format(model_id, acc_val, acc_adv_val,
-                                  loss_val, loss_adv_val))
+          msg = ("Final: images/adv: Acc: {:.5f}/{:.5f} | Avg Loss: {:.5f}/{:.5f}")
+          logging.info(msg.format(acc_val, acc_adv_val, loss_val, loss_adv_val))
           logging.info("Done evaluation of adversarial examples.")
           break
+    return acc_val, acc_adv_val
 
-  def eval_loop(self):
-    dataset_size = getattr(self.reader, "n_{}_files".format(self.dataset))
-    n_classes = self.reader.n_classes
-    self.proba = np.zeros((len(self.models_dir), dataset_size, n_classes))
-    self.proba_adv = np.zeros((len(self.models_dir), dataset_size, n_classes))
-    self.target = []
-    ensemble_scores = {}
-
-    record_file_name ="ensemble_score_{}".format(
-      self.flags_dict.attack_method)
-    if self.flags_dict.noise_in_eval:
-      record_file_name += "_with_noise"
-    else:
-      record_file_name += "_without_noise"
-    record_file = join(self.flags_dict.path, "{}.txt".format(record_file_name))
-
-    model_id = 0
-    with open(record_file, 'w') as f:
-      f.write("models\tcumul_acc\tcumul_acc_adv\n")
-      for folder in self.models_dir:
-        self.eval(folder, model_id)
-        model_id += 1
-        accuracy = get_ensemble_accuracy(self.proba, self.target)
-        accuracy_adv = get_ensemble_accuracy(self.proba_adv, self.target)
-        ensemble_scores[model_id] = [accuracy, accuracy_adv]
-        f.write("{}\t{}\t{}\n".format(model_id, accuracy, accuracy_adv))
-        f.flush()
-        logging.info("Ensemble {}: images/adv: {:.5f}/{:.5f}".format(
-          model_id, accuracy, accuracy_adv))
-    return ensemble_scores
 
   def run(self):
 
-    tf.set_random_seed(0)  # for reproducibility
+    # tf.set_random_seed(0)  # for reproducibility
     self.flags_dict = FLAGS
 
     # Setup logging & log the version.
@@ -231,14 +179,7 @@ class Evaluate:
       os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(
         map(str, range(FLAGS.eval_num_gpu)))
 
-    # we load all folders from the path for the ensemble
-    self.models_dir = tf.gfile.Glob(join(FLAGS.path, "*"))
-    def match(path):
-      pattern = r"[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}.[0-9]{2}.[0-9]{2}$"
-      path = basename(normpath(path))
-      return re.match(pattern, path)
-    self.models_dir = list(filter(lambda x: match(x), self.models_dir))
-    self.models_dir = sorted(self.models_dir)
+    train_dir = join(FLAGS.path, FLAGS.train_dir)
 
     if self.flags_dict.eval_num_gpu:
       self.batch_size = \
@@ -290,13 +231,17 @@ class Evaluate:
       self.saver = tf.train.Saver(tf.global_variables())
       logging.info("Built evaluation graph")
 
-      scores = self.eval_loop()
-      logging.info("Compute ensemble accuracy: ")
-      for key in sorted(scores.keys()):
-        accuracy, accuracy_adv = scores[key]
-        logging.info("Ensemble {}: images/adv: Acc: {:.5f}/{:.5f}".format(
-          key, accuracy, accuracy_adv))
-      logging.info("Done evaluation under attack.")
+      acc_val, acc_adv_val = self.eval(train_dir)
+
+      attack = self.flags_dict.attack_method
+      eps = self.flags_dict.attack['FastGradientMethod']['eps']
+      norm = self.flags_dict.attack['FastGradientMethod']['ord']
+      record_file_name = "score_{}_{}_{}.txt".format(attack, norm, eps)
+      record_file = join("{}_logs".format(train_dir),
+                         record_file_name)
+      with open(record_file, 'w') as f:
+        f.write("{:.5f}\t{:.5f}".format(acc_val, acc_adv_val))
+
 
 if __name__ == '__main__':
   evaluate = Evaluate()
