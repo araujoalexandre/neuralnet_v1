@@ -425,6 +425,55 @@ class Cifar10ModelCirculant(BaseModel, Cifar10BaseModel):
 
 
 
+class Cifar10ModelLowRank(BaseModel, Cifar10BaseModel):
+
+  def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
+
+    config = FLAGS.low_rank
+    if type(config['hidden']) == int:
+      config['hidden'] = [config['hidden']] * config['n_layers']
+    assert config["n_layers"] == len(config["hidden"])
+
+    reg_fn = getattr(tf.keras.regularizers, FLAGS.reg_norm, None)
+    if reg_fn is None:
+      regularizer = None
+    else:
+      regularizer = reg_fn(l=FLAGS.weight_decay_rate)
+
+    rank = config['rank']
+    activation = tf.layers.flatten(model_input)
+
+    for i in range(config["n_layers"]):
+      with tf.variable_scope("lowrank{}".format(i)):
+        feature_size = activation.get_shape().as_list()[-1]
+        num_hidden = config["hidden"][i] or feature_size
+        kernel_initializer = tf.random_normal_initializer(
+          stddev=1/np.sqrt(num_hidden))
+        bias_initializer = tf.random_normal_initializer(stddev=0.01)
+        cls_layer = layers.LowRankLayer(rank, feature_size, num_hidden,
+                                        kernel_initializer=kernel_initializer,
+                                        bias_initializer=bias_initializer,
+                                        use_bias=config["use_bias"],
+                                        regularizer=regularizer)
+        activation = cls_layer.matmul(activation)
+        activation = tf.nn.leaky_relu(activation, 0.5)
+        self._activation_summary(activation)
+
+    # classification layer
+    with tf.name_scope("classification"):
+      kernel_initializer = tf.random_normal_initializer(
+        stddev=1/np.sqrt(n_classes))
+      bias_initializer = tf.random_normal_initializer(stddev=0.01)
+      cls_layer = layers.LowRankLayer(rank, feature_size, n_classes,
+                                      kernel_initializer=kernel_initializer,
+                                      bias_initializer=bias_initializer,
+                                      use_bias=config["use_bias"],
+                                      regularizer=regularizer)
+      activation = cls_layer.matmul(activation)
+      self._activation_summary(activation)
+    return activation
+
+
 class Cifar10ModelToeplitz(BaseModel, Cifar10BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
