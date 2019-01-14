@@ -282,7 +282,6 @@ class Cifar10ModelDense(BaseModel, Cifar10BaseModel):
 
     config = FLAGS.dense
 
-    config = FLAGS.circulant
     if type(config['hidden']) == int:
       config['hidden'] = [config['hidden']] * config['n_layers']
     assert config["n_layers"] == len(config["hidden"])
@@ -296,7 +295,7 @@ class Cifar10ModelDense(BaseModel, Cifar10BaseModel):
     activation = tf.layers.flatten(model_input)
 
     for i in range(config['n_layers']):
-      with tf.variable_scope('dense{}'.format(layer)):
+      with tf.variable_scope('dense{}'.format(i)):
         feature_size = activation.get_shape().as_list()[-1]
         num_hidden = config['hidden'][i] or feature_size
         initializer = tf.random_normal_initializer(
@@ -309,21 +308,21 @@ class Cifar10ModelDense(BaseModel, Cifar10BaseModel):
                                      kernel_regularizer=regularizer,
                                      bias_initializer=bias_initializer,
                                      bias_regularizer=regularizer)
-        self._activation_summary(x)
+        self._activation_summary(activation)
 
     # classification layer
     with tf.variable_scope("classification"):
       feature_size = activation.get_shape().as_list()[-1]
-      initializer = tf.random_normal_initializer(stddev=1/np.sqrt(feature_size))
+      initializer = tf.random_normal_initializer(stddev=1/np.sqrt(n_classes))
       bias_initializer = tf.random_normal_initializer(stddev=0.01)
-      activation = tf.layers.dense(activation, num_hidden,
+      activation = tf.layers.dense(activation, n_classes,
                                    use_bias=config['use_bias'],
                                    activation=None,
                                    kernel_initializer=initializer,
                                    kernel_regularizer=regularizer,
                                    bias_initializer=bias_initializer,
                                    bias_regularizer=regularizer)
-      self._activation_summary(x)
+      self._activation_summary(activation)
     return activation
 
 
