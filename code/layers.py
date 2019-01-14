@@ -180,4 +180,29 @@ class CirculantLayer:
 #       ret = ret + self.bias
 #     return ret
 
+class LowRankLayer:
+
+  def __init__(self, rank, shape_in, shape_out, kernel_initializer=None,
+    bias_initializer=None, regularizer=None, use_bias=True):
+
+    self.use_bias = use_bias
+
+    self.kernel1 = tf.get_variable(name='kernel1', shape=(shape_in, rank),
+      initializer=kernel_initializer, regularizer=regularizer)
+    self.kernel2 = tf.get_variable(name='kernel2', shape=(rank, shape_out),
+      initializer=kernel_initializer, regularizer=regularizer)
+
+    if bias_initializer is None:
+      bias_initializer = tf.constant_initializer(0.01)
+
+    if use_bias:
+      self.bias = tf.get_variable(name="bias", shape=[shape_out],
+        initializer=bias_initializer, regularizer=regularizer)
+
+  def matmul(self, input_data):
+    weights = tf.matmul(self.kernel1, self.kernel2)
+    ret = tf.matmul(input_data, weights)
+    if self.use_bias:
+      ret = ret + self.bias
+    return ret
 
