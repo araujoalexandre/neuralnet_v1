@@ -385,14 +385,18 @@ class Cifar10ModelCirculant(BaseModel, Cifar10BaseModel):
       regularizer = reg_fn(l=FLAGS.weight_decay_rate)
 
     alpha = config['alpha']
-    activation = tf.layers.flatten(model_input)
+
+    if config['with_conv']:
+      activation = self.convolutional_layers(model_input)
+    else:
+      activation = tf.layers.flatten(model_input)
 
     for i in range(config["n_layers"]):
       with tf.variable_scope("circulant{}".format(i)):
         feature_size = activation.get_shape().as_list()[-1]
         num_hidden = config["hidden"][i] or feature_size
         kernel_initializer = tf.random_normal_initializer(
-          stddev=alpha/np.sqrt(num_hidden))
+          stddev=alpha/np.sqrt(feature_size + num_hidden))
         bias_initializer = tf.random_normal_initializer(stddev=0.01)
         cls_layer = layers.CirculantLayer(feature_size, num_hidden,
                                           kernel_initializer=kernel_initializer,
@@ -401,13 +405,13 @@ class Cifar10ModelCirculant(BaseModel, Cifar10BaseModel):
                                           use_bias=config["use_bias"],
                                           regularizer=regularizer)
         activation = cls_layer.matmul(activation)
-        activation = tf.nn.leaky_relu(activationi, 0.5)
-        self._activation_summary(x)
+        activation = tf.nn.leaky_relu(activation, 0.5)
+        self._activation_summary(activation)
 
     # classification layer
     with tf.name_scope("classification"):
       kernel_initializer = tf.random_normal_initializer(
-        stddev=alpha/np.sqrt(n_classes))
+        stddev=alpha/np.sqrt(feature_size + n_classes))
       bias_initializer = tf.random_normal_initializer(stddev=0.01)
       cls_layer = layers.CirculantLayer(feature_size, n_classes,
                                        kernel_initializer=kernel_initializer,
@@ -416,7 +420,7 @@ class Cifar10ModelCirculant(BaseModel, Cifar10BaseModel):
                                        use_bias=config["use_bias"],
                                        regularizer=regularizer)
       activation = cls_layer.matmul(activation)
-      self._activation_summary(x)
+      self._activation_summary(activation)
     return activation
 
 
