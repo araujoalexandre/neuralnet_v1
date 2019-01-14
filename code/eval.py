@@ -9,6 +9,7 @@ from os.path import join, basename, exists
 import models
 import losses
 import readers
+from utils import make_summary
 
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
@@ -33,14 +34,6 @@ class Evaluate:
   def __init__(self):
 
    self.wait = 20
-
-  def make_summary(self, name, value, global_step_val):
-    """Creates a tf.Summary proto with the given name and value."""
-    summary = tf.Summary()
-    val = summary.value.add()
-    val.tag = str(name)
-    val.simple_value = float(value)
-    self.summary_writer.add_summary(summary, global_step_val)
 
   def build_graph(self):
     """Creates the Tensorflow graph for evaluation.
@@ -68,7 +61,6 @@ class Evaluate:
 
     with tf.name_scope("train_input"):
       images_batch, labels_batch = self.reader.input_fn()
-    tf.summary.histogram("model/input_raw", images_batch)
 
     tower_inputs = tf.split(images_batch, num_towers)
     tower_labels = tf.split(labels_batch, num_towers)
@@ -90,7 +82,6 @@ class Evaluate:
     logits = tf.concat(tower_logits, 0)
     self.predictions = tf.argmax(logits, axis=1, output_type=tf.int32)
     self.labels = tf.cast(labels_batch, tf.float32)
-    self.summary_op = tf.summary.merge_all()
 
     self.loss, self.loss_update_op = tf.metrics.mean(tf.stack(
                                                      tower_label_losses))
@@ -158,7 +149,7 @@ class Evaluate:
       while True:
         try:
           batch_start_time = time.time()
-          sess.run([self.loss_update_op, self.acc_update_op, self.summary_op])
+          sess.run([self.loss_update_op, self.acc_update_op])
           loss_val, accuracy_val = sess.run([self.loss, self.accuracy])
           seconds_per_batch = time.time() - batch_start_time
           examples_per_second = self.batch_size / seconds_per_batch
@@ -171,9 +162,9 @@ class Evaluate:
         except tf.errors.OutOfRangeError:
           logging.info("Done with batched inference.")
 
-          self.make_summary("accuracy", accuracy_val, global_step_val)
-          self.make_summary("loss", loss_val, global_step_val)
-          self.make_summary("epoch", epoch, global_step_val)
+          make_summary("accuracy", accuracy_val, self.summary_writer, global_step_val)
+          make_summary("loss", loss_val, self.summary_writer, global_step_val)
+          make_summary("epoch", epoch, self.summary_writer, global_step_val)
           self.summary_writer.flush()
 
           msg = ("final: epoch: {:.2f} | step: {} | accuracy: {:.5f} | avg loss: {:.5f}")
