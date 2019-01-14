@@ -142,7 +142,7 @@ class LearningRate:
     config = FLAGS.piecewise_constant
     boundaries = config['boundaries']
     values = config['values']
-    assert len(boundaries) == (len(values) + 1)
+    assert (len(boundaries) + 1) == len(values)
     learning_rate = tf.train.piecewise_constant(
       self.global_step,
       boundaries=boundaries,
