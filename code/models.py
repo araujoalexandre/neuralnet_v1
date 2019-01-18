@@ -574,6 +574,32 @@ class RandomModel:
       noise = tf.random_normal(tf.shape(x), mean=0, stddev=1)
       noise = final_noise_scale * noise
 
+    elif sensitivity_norm == 'exp':
+      laplace_shape = tf.shape(x)
+      loc = tf.zeros(laplace_shape, dtype=tf.float32)
+      scale = tf.ones(laplace_shape,  dtype=tf.float32)
+      noise = tf.distributions.Laplace(loc, scale).sample()
+      noise = final_noise_scale * noise
+      noise = tf.abs(noise)
+
+    elif sensitivity_norm == 'weibull':
+      k = 3
+      eps = 10e-8
+      alpha = ((k - 1) / k)**(1 / k)
+      U = tf.random_uniform(tf.shape(x), minval=eps, maxval=1)
+      X = (-tf.log(U) + alpha**k)**(1 / k) - alpha
+      tensor = tf.zeros_like(x) + 0.5
+      dist = tf.distributions.Bernoulli(probs=tensor)
+      B = 2 * dist.sample() - 1
+      B = tf.cast(B, tf.float32)
+      X = B * X
+      noise = X / 0.3425929
+      # noise = tf.debugging.check_numerics(noise, "nan in noise")
+      noise = final_noise_scale * noise
+
+    else:
+      raise ValueError("wrong sensitivity_norm")
+
     return x + noise
 
   def _dp_mult(self, sensitivity_norm, output_dim=None):
@@ -586,8 +612,15 @@ class RandomModel:
     elif sensitivity_norm == 'l1':
       # Use the Laplace mechanism
       return self.config['attack_norm_bound'] / dp_eps
+    elif sensitivity_norm == 'exp':
+      # Use the Laplace mechanism
+      return self.config['attack_norm_bound'] / dp_eps
+    elif sensitivity_norm == 'weibull':
+      # Use the Gaussian mechanism
+      return self.config['attack_norm_bound'] * \
+           np.sqrt(2 * np.log(1.25 / dp_del)) / dp_eps
     else:
-      return 0
+      raise ValueError("wrong sensitivity_norm")
 
 
   def _conv(self, name, x, filter_size, in_filters, out_filters,
