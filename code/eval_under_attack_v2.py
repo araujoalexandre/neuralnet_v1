@@ -240,7 +240,7 @@ class Evaluate:
       record_file = join("{}_logs".format(train_dir),
                          record_file_name)
       with open(record_file, 'w') as f:
-        f.write("{:.5f}\t{:.5f}".format(acc_val, acc_adv_val))
+        f.write("{:.5f}\t{:.5f}\n".format(acc_val, acc_adv_val))
 
 
 if __name__ == '__main__':
