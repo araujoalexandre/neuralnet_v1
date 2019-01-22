@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import flags
 from tensorflow import logging
+import t3f
 
 import layers
 import utils
@@ -606,33 +607,56 @@ class Cifar10ModelLowRank(BaseModel, Cifar10BaseModel):
     return activation
 
 
-class Cifar10ModelToeplitz(BaseModel, Cifar10BaseModel):
+
+class Cifar10ModelTensorTrain(BaseModel, Cifar10BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
-    activation = self.convolutional_layers(model_input)
+    config = FLAGS.tensor_train
+    if type(config['hidden']) == int:
+      config['hidden'] = [config['hidden']] * config['n_layers']
+    assert config["n_layers"] == len(config["hidden"])
 
-    with tf.variable_scope('toeplitz1') as scope:
-      feature_size = activation.get_shape().as_list()[-1]
-      layer1 = layers.ToeplitzLayer(feature_size, 384)
-      activation = layer1.matmul(activation)
-      activation = tf.nn.relu(activation)
+    reg_fn = getattr(tf.keras.regularizers, FLAGS.reg_norm, None)
+    if reg_fn is None:
+      regularizer = None
+    else:
+      regularizer = reg_fn(l=FLAGS.weight_decay_rate)
+
+    rank = config['rank']
+    tt_shape = [(16, 16, 6, 2), (16, 16, 6, 2)]
+
+    activation = tf.layers.flatten(model_input)
+
+    for i in range(config["n_layers"]):
+      with tf.variable_scope("tensor_train{}".format(i), reuse=False):
+        feature_size = activation.get_shape().as_list()[-1]
+        num_hidden = config["hidden"][i] or feature_size
+        bias_initializer = tf.random_normal_initializer(stddev=0.01)
+        cls_layer = layers.TensorTrainLayer(rank, tt_shape, num_hidden,
+                                            bias_initializer=bias_initializer,
+                                            use_bias=config["use_bias"],
+                                            regularizer=regularizer)
+        activation = cls_layer.matmul(activation)
+        # activation = tf.nn.leaky_relu(activation, 0.5)
+        activation = tf.nn.relu(activation)
+        self._activation_summary(activation)
+
+    tt_shape = [(96, 32), (5, 2)]
+
+    # classification layer
+    with tf.variable_scope("classification", reuse=False):
+      bias_initializer = tf.random_normal_initializer(stddev=0.01)
+      cls_layer = layers.TensorTrainLayer(rank, tt_shape, n_classes,
+                                          bias_initializer=bias_initializer,
+                                          use_bias=config["use_bias"],
+                                          regularizer=regularizer)
+      activation = cls_layer.matmul(activation)
       self._activation_summary(activation)
-
-    with tf.variable_scope('toeplitz2') as scope:
-      feature_size = activation.get_shape().as_list()[-1]
-      layer2 = layers.ToeplitzLayer(feature_size, 192)
-      activation = layer2.matmul(activation)
-      activation = tf.nn.relu(activation)
-      self._activation_summary(activation)
-
-    with tf.variable_scope('toeplitz3') as scope:
-      feature_size = activation.get_shape().as_list()[-1]
-      layer3 = layers.ToeplitzLayer(feature_size, 10)
-      activation = layer3.matmul(activation)
-      self._activation_summary(activation)
-
     return activation
+
+
+
 
 
 
