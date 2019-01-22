@@ -391,6 +391,7 @@ class Cifar10ModelCirculant(BaseModel, Cifar10BaseModel):
     else:
       activation = tf.layers.flatten(model_input)
 
+    k = 1
     for i in range(config["n_layers"]):
       with tf.variable_scope("circulant{}".format(i)):
         feature_size = activation.get_shape().as_list()[-1]
@@ -405,7 +406,10 @@ class Cifar10ModelCirculant(BaseModel, Cifar10BaseModel):
                                           use_bias=config["use_bias"],
                                           regularizer=regularizer)
         activation = cls_layer.matmul(activation)
-        activation = tf.nn.leaky_relu(activation, 0.5)
+        if k % config['non_linear'] == 0:
+          activation = tf.nn.leaky_relu(activation, config['leaky_slope'])
+          # activation = tf.nn.relu(activation)
+        k += 1
         self._activation_summary(activation)
 
     # classification layer
