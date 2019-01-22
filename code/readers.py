@@ -212,8 +212,7 @@ class CIFAR10Reader(BaseReader):
     if self.use_gray_scale:
       image = tf.image.rgb_to_grayscale(image)
     image = tf.cast(image, dtype=tf.float32)
-    image = tf.reshape(image, (3, self.height, self.width))
-    image = tf.transpose(image, [1, 2, 0])
+    image = tf.reshape(image, (self.height, self.width, 3))
     if FLAGS.per_image_standardization:
       image = tf.image.per_image_standardization(image)
     else:
@@ -257,8 +256,7 @@ class CIFAR100Reader(BaseReader):
     # Decode the string as an RGB JPEG.
     image = tf.decode_raw(image_buffer, tf.uint8)
     image = tf.cast(image, dtype=tf.float32)
-    image = tf.reshape(image, (3, self.height, self.width))
-    image = tf.transpose(image, [1, 2, 0])
+    image = tf.reshape(image, (self.height, self.width, 3))
     if FLAGS.per_image_standardization:
       image = tf.image.per_image_standardization(image)
     else:
