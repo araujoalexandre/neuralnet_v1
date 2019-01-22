@@ -174,5 +174,6 @@ class LearningRate:
     strategy = FLAGS.lr_strategy
     logging.info("Using '{}' strategy for learning rate".format(strategy))
     learning_rate = getattr(self, strategy)()
+    tf.add_to_collection('learning_rate', learning_rate)
     tf.summary.scalar('learning_rate', learning_rate)
     return learning_rate
