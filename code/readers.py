@@ -46,27 +46,37 @@ class BaseReader:
     return features['image'], label
 
   def input_fn(self):
+
+    config = FLAGS.readers_params
+    self.cache_dataset = config['cache_dataset']
+    self.drop_remainder = config['drop_remainder']
+    # self.cache_dataset = True
+    # self.drop_remainder = True
+
     # Force all input processing onto CPU in order to reserve the GPU for
     # the forward inference and back-propagation.
+    shuffle = True if self.is_training else False
+    sloppy = True if self.is_training else False
     with tf.device('/cpu:0'):
       with tf.name_scope('batch_processing'):
-        files = tf.data.Dataset.list_files(self.files)
-        dataset = files.apply(tf.data.experimental.parallel_interleave(
-          tf.data.TFRecordDataset, cycle_length=self.num_parallel_readers))
-        dataset = dataset.apply(tf.data.experimental.map_and_batch(
-            map_func=self._parse_and_processed, batch_size=self.batch_size,
-            num_parallel_calls=self.num_parallel_calls))
-        dataset = dataset.prefetch(buffer_size=self.prefetch_buffer_size)
+        dataset = tf.data.TFRecordDataset(self.files,
+                        num_parallel_reads=self.num_parallel_readers)
+        dataset = dataset.map(self._parse_and_processed,
+                          num_parallel_calls=self.num_parallel_calls)
         if self.is_training:
-          dataset = dataset.shuffle(buffer_size=3*self.batch_size)
+          dataset = dataset.shuffle(buffer_size=5*self.batch_size)
+        dataset = dataset.batch(self.batch_size,
+                                drop_remainder=self.drop_remainder)
+        if self.is_training:
           dataset = dataset.repeat()
+          if self.cache_dataset:
+            dataset = dataset.cache()
+          # else:
+          #   dataset = dataset.prefetch(buffer_size=self.prefetch_buffer_size)
         iterator = dataset.make_one_shot_iterator()
         image_batch, label_batch = iterator.get_next()
     label_batch = self._maybe_one_hot_encode(label_batch)
-    # Display the training images in the visualizer.
-    tf.summary.image('images', image_batch)
     return image_batch, label_batch
-
 
 
 class MNISTReader(BaseReader):
