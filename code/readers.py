@@ -188,6 +188,9 @@ class CIFAR10Reader(BaseReader):
     self.num_parallel_readers = readers_params['num_parallel_readers']
     self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
 
+    # use grey scale
+    self.use_gray_scale = readers_params['grayscale']
+
     self.files = gfile.Glob(join(
       FLAGS.data_dir, 'cifar10', FLAGS.data_pattern))
 
@@ -206,6 +209,8 @@ class CIFAR10Reader(BaseReader):
     """
     # Decode the string as an RGB JPEG.
     image = tf.decode_raw(image_buffer, tf.uint8)
+    if self.use_gray_scale:
+      image = tf.image.rgb_to_grayscale(image)
     image = tf.cast(image, dtype=tf.float32)
     image = tf.reshape(image, (3, self.height, self.width))
     image = tf.transpose(image, [1, 2, 0])
