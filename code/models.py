@@ -572,6 +572,7 @@ class Cifar10ModelLowRank(BaseModel, Cifar10BaseModel):
       regularizer = reg_fn(l=FLAGS.weight_decay_rate)
 
     rank = config['rank']
+    alpha = config['alpha']
     activation = tf.layers.flatten(model_input)
 
     for i in range(config["n_layers"]):
@@ -579,7 +580,7 @@ class Cifar10ModelLowRank(BaseModel, Cifar10BaseModel):
         feature_size = activation.get_shape().as_list()[-1]
         num_hidden = config["hidden"][i] or feature_size
         kernel_initializer = tf.random_normal_initializer(
-          stddev=1/np.sqrt(num_hidden))
+          stddev=alpha/np.sqrt(num_hidden))
         bias_initializer = tf.random_normal_initializer(stddev=0.01)
         cls_layer = layers.LowRankLayer(rank, feature_size, num_hidden,
                                         kernel_initializer=kernel_initializer,
@@ -593,7 +594,7 @@ class Cifar10ModelLowRank(BaseModel, Cifar10BaseModel):
     # classification layer
     with tf.name_scope("classification"):
       kernel_initializer = tf.random_normal_initializer(
-        stddev=1/np.sqrt(n_classes))
+        stddev=alpha/np.sqrt(n_classes))
       bias_initializer = tf.random_normal_initializer(stddev=0.01)
       cls_layer = layers.LowRankLayer(rank, feature_size, n_classes,
                                       kernel_initializer=kernel_initializer,
