@@ -131,7 +131,8 @@ class Evaluate:
       time.sleep(self.wait)
       return last_global_step_val
 
-    with tf.Session() as sess:
+    config = tf.ConfigProto(allow_soft_placement=True)
+    with tf.Session(config=config) as sess:
       logging.info("Loading checkpoint for eval: {}".format(latest_checkpoint))
 
       # Restores from checkpoint
@@ -175,9 +176,9 @@ class Evaluate:
 
           break
 
-        except Exception as e:
-          logging.info("Unexpected exception: {}".format(e))
-          break
+        # except Exception as e:
+        #   logging.info("Unexpected exception: {}".format(e))
+        #   break
 
       return global_step_val
 
