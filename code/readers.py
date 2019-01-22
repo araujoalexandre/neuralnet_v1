@@ -249,3 +249,171 @@ class CIFAR100Reader(BaseReader):
     else:
       image = (image / 255 - 0.5) * 2
     return image
+
+
+class YT8MAggregatedFeatureReader(BaseReader):
+  """Reads TFRecords of pre-aggregated Examples.
+
+  The TFRecords must contain Examples with a sparse int64 'labels' feature and
+  a fixed length float32 feature, obtained from the features in 'feature_name'.
+  The float features are assumed to be an average of dequantized values.
+  """
+  def __init__(self, batch_size, is_training=False, *args, **kwargs):
+
+    self.batch_size = batch_size
+    self.is_training = is_training
+    self.n_train_files = 3888919
+    self.n_test_files = 1112356 # public
+    # self.n_test_files = 1133323 # private
+    self.n_classes = 3862
+    self.batch_shape = (None, 1152)
+
+    self.feature_sizes = [1024, 128]
+    self.feature_names = ["mean_rgb", "mean_audio"]
+
+    readers_params = FLAGS.readers_params
+    self.num_parallel_calls = readers_params['num_parallel_calls']
+    self.num_parallel_readers = readers_params['num_parallel_readers']
+    self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
+
+    self.files = gfile.Glob(join(
+      FLAGS.data_dir, 'yt8m', 'video', FLAGS.data_pattern))
+
+    if not self.files:
+      raise IOError("Unable to find training files. data_pattern='{}'.".format(
+        data["data_pattern"]))
+    logging.info("Number of training TFRecord files: {}.".format(
+      len(self.files)))
+
+  def _image_preprocessing(self, video):
+    # no preprocessing done
+    return video
+
+  def _parse_fn(self, example_serialized):
+    """Parses an Example proto containing a training example of an image.
+    Args:
+      example_serialized: scalar Tensor tf.string containing a serialized
+        Example protocol buffer.
+    Returns:
+      image_buffer: Tensor tf.string containing the contents of a JPEG file.
+      label: Tensor tf.int32 containing the label.
+    """
+    feature_map = {"id": tf.FixedLenFeature([], tf.string),
+                   "labels": tf.VarLenFeature(tf.int64),
+                   "mean_rgb": tf.FixedLenFeature(1024, tf.float32),
+                   "mean_audio": tf.FixedLenFeature(128, tf.float32)}
+
+    features = tf.parse_single_example(example_serialized, features=feature_map)
+    # features = tf.parse_example(example_serialized, features=feature_map)
+    labels = tf.sparse_to_indicator(features["labels"], self.n_classes)
+    concatenated_features = tf.concat([
+        features[name] for name in self.feature_names], 0)
+    return concatenated_features, labels
+
+
+class YT8MFrameFeatureReader(BaseReader):
+  """Reads TFRecords of SequenceExamples.
+
+  The TFRecords must contain SequenceExamples with the sparse in64 'labels'
+  context feature and a fixed length byte-quantized feature vector, obtained
+  from the features in 'feature_names'. The quantized features will be mapped
+  back into a range between min_quantized_value and max_quantized_value.
+  """
+
+  def __init__(self, batch_size, is_training=False, *args, **kwargs):
+
+    self.batch_size = batch_size
+    self.is_training = is_training
+    self.n_train_files = 3888919
+    self.n_test_files = 1112356 # public
+    # self.n_test_files = 1133323 # private
+    self.n_classes = 3862
+    self.batch_shape = (None, 300, 1152)
+
+    self.feature_sizes = [1024, 128]
+    self.feature_names = ["rgb", "audio"]
+    self.max_frames = 300
+
+    self.max_quantized_value = 2
+    self.min_quantized_value = -2
+
+    readers_params = FLAGS.readers_params
+    self.num_parallel_calls = readers_params['num_parallel_calls']
+    self.num_parallel_readers = readers_params['num_parallel_readers']
+    self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
+
+    self.files = gfile.Glob(join(
+      FLAGS.data_dir, 'yt8m', 'frame', FLAGS.data_pattern))
+
+    if not self.files:
+      raise IOError("Unable to find training files. data_pattern='{}'.".format(
+        data["data_pattern"]))
+    logging.info("Number of training TFRecord files: {}.".format(
+      len(self.files)))
+
+  def get_video_matrix(self, features, feature_size):
+    """Decodes features from an input string and quantizes it.
+
+    Args:
+      features: raw feature values
+      feature_size: length of each frame feature vector
+      max_frames: number of frames (rows) in the output feature_matrix
+
+    Returns:
+      feature_matrix: matrix of all frame-features
+      num_frames: number of frames in the sequence
+    """
+    decoded_features = tf.reshape(
+        tf.cast(tf.decode_raw(features, tf.uint8), tf.float32),
+        [-1, feature_size])
+
+    num_frames = tf.minimum(tf.shape(decoded_features)[0], self.max_frames)
+    feature_matrix = Dequantize(decoded_features,
+                                      self.max_quantized_value,
+                                      self.min_quantized_value)
+    feature_matrix = resize_axis(feature_matrix, 0, self.max_frames)
+    return feature_matrix, num_frames
+
+  def _image_preprocessing(self, video):
+    # no preprocessing
+    return video
+
+  def _parse_fn(self, example_serialized):
+    """Parses an Example proto containing a training example of an image.
+    Args:
+      example_serialized: scalar Tensor tf.string containing a serialized
+        Example protocol buffer.
+    Returns:
+      image_buffer: Tensor tf.string containing the contents of a JPEG file.
+      label: Tensor tf.int32 containing the label.
+    """
+    num_features = len(self.feature_names)
+    context_features = {"id": tf.FixedLenFeature([], tf.string),
+                        "labels": tf.VarLenFeature(tf.int64)}
+    sequence_features={
+        feature_name : tf.FixedLenSequenceFeature([], dtype=tf.string)
+        for feature_name in self.feature_names}
+
+    contexts, features = tf.parse_single_sequence_example(
+        example_serialized,
+        context_features=context_features,
+        sequence_features=sequence_features)
+
+    # read ground truth labels
+    labels = (tf.cast(
+        tf.sparse_to_dense(contexts["labels"].values, (self.n_classes,), 1,
+            validate_indices=False),
+        tf.bool))
+
+    feature_matrices = [None] * num_features  # an array of different features
+    for feature_index in range(num_features):
+      feature_matrix, num_frames_in_this_feature = self.get_video_matrix(
+          features[self.feature_names[feature_index]],
+          self.feature_sizes[feature_index])
+      feature_matrices[feature_index] = feature_matrix
+
+    # concatenate different features
+    video_matrix = tf.concat(feature_matrices, 1)
+    return video_matrix, labels
+
+
