@@ -187,6 +187,15 @@ class ComputeAndProcessGradients:
     if self.config['compute_hessian']:
       self._define_hessian_graph(loss)
 
+    # if "acdc" in FLAGS.model.lower():
+    #   for grad, var in gradients:
+    #     if "diag" in var.name:
+    #       tf.logging.info("multiply diag grad to {}".format(var.name))
+    #       grad = tf.multiply(grad, 24)
+    #     if "kernel" in var.name:
+    #       tf.logging.info("multiply kernel grad to {}".format(var.name))
+    #       grad = tf.multiply(grad, 12)
+
     # to help convergence, inject noise in gradients
     if self.config['perturbed_gradients']:
       gradients = self._perturbed_gradients(gradients)
