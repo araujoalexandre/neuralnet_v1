@@ -71,28 +71,29 @@ class GivensLayer_v2:
 
 class ToeplitzLayer:
 
-  def __init__(self, shape_in, shape_out, kernel_initializer=None,
-    bias_initializer=None, kernel_regularizer=None, bias_regularizer=None):
+  def __init__(self, shape_in, shape_out, alpha,
+    use_bias=True, bias_initializer=None, regularizer=None):
 
+    self.use_bias = use_bias
     self.shape_in, self.shape_out = shape_in, shape_out
-    self.kernel_initializer = kernel_initializer
-    self.bias_initializer = bias_initializer
-    self.kernel_regularizer = kernel_regularizer
-    self.bias_regularizer = bias_regularizer
 
     self.padding = True
     if shape_out < shape_in:
         self.padding = False
 
     self.size = np.max([shape_in, shape_out])
-    scale = 1/np.sqrt(self.size)
+    scale = alpha/np.sqrt(shape_out)
     self.k1 = np.random.normal(scale=scale, size=self.size).tolist()
     self.k2 = np.random.normal(scale=scale, size=self.size).tolist()
     circ = [0] + list(np.roll(self.k2, -1)[::-1][1:]) + self.k1
     kernel = tf.convert_to_tensor(np.float32(circ))
 
     self.kernel = tf.get_variable(name='kernel',
-      initializer=kernel, regularizer=self.kernel_regularizer)
+      initializer=kernel, regularizer=regularizer)
+
+    if use_bias:
+      self.bias = tf.get_variable(name="bias", shape=[shape_out],
+        initializer=bias_initializer, regularizer=regularizer)
 
   def matmul(self, input_data):
     padding_size = (np.abs(self.size*2 - self.shape_in))
@@ -104,7 +105,10 @@ class ToeplitzLayer:
     ret = tf.spectral.irfft(ret_mul)
     ret = tf.cast(ret, tf.float32)
     ret = tf.manip.roll(ret, 1, axis=1)
-    return ret[..., :self.shape_out]
+    ret = ret[..., :self.shape_out]
+    if self.use_bias:
+      ret = ret + self.bias
+    return ret
 
 
 class CirculantLayer:
