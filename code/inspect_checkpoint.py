@@ -58,7 +58,7 @@ def print_tensors_in_checkpoint_file(file_name, tensor_name, all_tensors,
       total_params = 0
       filtered_var = ''
       for line in var.split('\n'):
-        if 'Adam' not in line:
+        if 'adam' not in line.lower() and 'momentum' not in line.lower():
           filtered_var += '{}\n'.format(line)
       for params in re.findall('\[[0-9,]+\]', filtered_var):
         params = params.replace('[', '').replace(']', '').split(',')
