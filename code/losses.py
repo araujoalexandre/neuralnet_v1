@@ -24,6 +24,21 @@ class BaseLoss(object):
     raise NotImplementedError()
 
 
+class CrossEntropyLoss(BaseLoss):
+  """Calculate the cross entropy loss between the predictions and labels.
+  """
+
+  def calculate_loss(self, labels=None, logits=None, **unused_params):
+    with tf.name_scope("loss_xent"):
+      predictions = tf.nn.sigmoid(logits)
+      epsilon = 10e-6
+      float_labels = tf.cast(labels, tf.float32)
+      cross_entropy_loss = float_labels * tf.log(predictions + epsilon) + (
+          1 - float_labels) * tf.log(1 - predictions + epsilon)
+      cross_entropy_loss = tf.negative(cross_entropy_loss)
+      return tf.reduce_mean(tf.reduce_sum(cross_entropy_loss, 1))
+
+
 class SoftmaxCrossEntropyWithLogits(BaseLoss):
 
   def calculate_loss(self, labels=None, logits=None, **unused_params):
@@ -43,3 +58,9 @@ class SoftmaxCrossEntropyWithLogits(BaseLoss):
       return tf.losses.sparse_softmax_cross_entropy(
             labels=labels, logits=logits)
 
+class SigmoidCrossEntropyWithLogits(BaseLoss):
+
+  def calculate_loss(self, labels=None, logits=None, **unused_params):
+    with tf.name_scope('loss'):
+      return tf.losses.sigmoid_cross_entropy(
+                  labels, logits, weights=1.0, label_smoothing=0)
