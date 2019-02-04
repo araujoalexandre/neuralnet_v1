@@ -1,45 +1,61 @@
 
 default: &DEFAULT
-  path: &path                 /pwrwork/rech/jvd/ubx31mc/neuralnet/youtube_circulant_with_dense
+  path: &path                 /pwrwork/rech/jvd/ubx31mc/neuralnet/youtube_with_tensortrain
   data_dir:                   /pwrwork/rech/jvd/ubx31mc/data
   train_batch_size:           100
   num_epochs:                 35
   start_new_model:            True
-  train_num_gpu:              2
+  train_num_gpu:              4
   clear_devices:              False
   profiler:                   False
   compile:                    False
 
   log_device_placement:       False
-  save_checkpoint_steps:      500 # ckpt per epoch: 60K / (batch_size * gpu) 
+  save_checkpoint_steps:      4000 # ckpt per epoch: 60K / (batch_size * gpu) 
   save_summaries_steps:       60
-  frequency_log_steps:        100
+  frequency_log_steps:        10
 
-  reader:                     CIFAR10Reader
+  reader:                     YT8MAggregatedFeatureReader 
   one_hot_labels:             False
   per_image_standardization:  False
   readers_params:
     num_parallel_calls:       32
-    num_parallel_readers:     16
-    prefetch_buffer_size:     2000
+    num_parallel_readers:     8
+    prefetch_buffer_size:     20000
     cache_dataset:            False
-    drop_remainder:           False
+    drop_remainder:           True
 
-  model:                      Cifar10ModelDense
+  model:                      YoutubeModelTensorTrainWithDense
   dense:
     n_layers:                 1
     hidden:                   0
     use_bias:                 True
   circulant:
-    n_layers:                 40
+    n_layers:                 32
     hidden:                   0
     use_diag:                 True
     use_bias:                 True
-    alpha:                    1.6 # 1.414
+    alpha:                    1.5
   givens:
     n_layers:                 3
     hidden:                   [0, 0, 0]
     n_givens:                 10
+  youtube:
+    n_layers:                 1
+    hidden:                   0
+    use_bias:                 True
+  low_rank:
+    n_layers:                 1
+    hidden:                   0
+    use_bias:                 True
+    rank:                     25
+    alpha:                    1.414
+  tensor_train:
+    n_layers:                 1
+    hidden:                   0
+    rank:                     20
+    use_bias:                 True
+    leaky_slope:              0
   resnet:
     resnet_size:              18
     bottleneck:               False
@@ -69,20 +85,19 @@ default: &DEFAULT
     leakyness:                0.1
 
 
-  loss:                       SoftmaxCrossEntropyWithLogits
+  loss:                       CrossEntropyLoss
   reg_norm:                   l2
   weight_decay_rate:          0.0002
   regularization_penalty:     1.0
   
-  lr_strategy:                piecewise_constant
+  lr_strategy:                exponential_decay
   piecewise_constant:
     boundaries:               [40000, 60000, 80000]
-    # values:                   [0.01, 0.005, 0.001, 0.0001]
-    values:                   [0.0005, 0.00025, 0.00005, 0.00001]
+    values:                   [0.01, 0.005, 0.001, 0.0001]
   exponential_decay:
-    base_lr:                  0.0005
-    lr_decay:                 1
-    lr_decay_examples:        400000
+    base_lr:                  0.005
+    lr_decay:                 0.97
+    lr_decay_examples:        4000000
   cyclic_lr:
     base_lr:                  0.01
     min_lr:                   0.001
@@ -103,7 +118,7 @@ default: &DEFAULT
     use_locking:              False
   
   gradients:
-    clip_gradient_norm:       0
+    clip_gradient_norm:       1
     perturbed_gradients:      False
     perturbed_threshold:      0.03
     compute_hessian:          False
@@ -120,12 +135,12 @@ train: &TRAIN
 eval: &EVAL
   <<: *DEFAULT
   eval_batch_size:            200
-  eval_num_gpu:               2
+  eval_num_gpu:               4
   start_eval_from_ckpt:       first
   cherrypick:                 None
   start_new_model:            False
-  stopped_at_n:               180 # number of ckpt
-  noise_in_eval:              True
+  stopped_at_n:               96 # number of ckpt
+  noise_in_eval:              False
 
 eval_train: &EVAL_TRAIN
   <<: *TRAIN
@@ -133,25 +148,5 @@ eval_train: &EVAL_TRAIN
 
 eval_test: &EVAL_TEST
   <<: *EVAL
-  data_pattern:               test*
-
-attack: &ATTACK
-  <<: *DEFAULT
-  <<: *EVAL_TEST
-  eval_num_gpu:               2
-  path:                       /pwrwork/rech/jvd/ubx31mc/neuralnet/fashion_mnist_models
-  data:
-  attack_method:              FastGradientMethod
-  adv_processing:             False
-  attack:
-    CarliniWagnerL2:
-      binary_search_steps:    10 
-      max_iterations:         100
-      learning_rate:          1.0e-2
-      initial_const:          1.0e-3
-    FastGradientMethod:
-      eps:                    0.1
-      clip_min:               -1.0
-      clip_max:               +1.0
-
+  data_pattern:               validate1*
 

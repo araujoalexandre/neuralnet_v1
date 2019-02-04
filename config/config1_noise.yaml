@@ -1,9 +1,9 @@
 
 default: &DEFAULT
-  path: &path                 /pwrwork/rech/jvd/ubx31mc/neuralnet/youtube_circulant_with_dense
+  path: &path                 /pwrwork/rech/jvd/ubx31mc/neuralnet/cifar10_noise_weibull
   data_dir:                   /pwrwork/rech/jvd/ubx31mc/data
   train_batch_size:           100
-  num_epochs:                 35
+  num_epochs:                 360
   start_new_model:            True
   train_num_gpu:              2
   clear_devices:              False
@@ -13,29 +13,27 @@ default: &DEFAULT
   log_device_placement:       False
   save_checkpoint_steps:      500 # ckpt per epoch: 60K / (batch_size * gpu) 
   save_summaries_steps:       60
-  frequency_log_steps:        100
+  frequency_log_steps:        10
 
   reader:                     CIFAR10Reader
   one_hot_labels:             False
   per_image_standardization:  False
   readers_params:
-    num_parallel_calls:       32
+    num_parallel_calls:       64
     num_parallel_readers:     16
     prefetch_buffer_size:     2000
     cache_dataset:            False
     drop_remainder:           False
 
-  model:                      Cifar10ModelDense
+  model:                      Cifar10RandomModel
   dense:
-    n_layers:                 1
-    hidden:                   0
-    use_bias:                 True
+    n_layers:                 3
+    hidden:                   [0, 0, 0]
   circulant:
-    n_layers:                 40
+    n_layers:                 30
     hidden:                   0
     use_diag:                 True
     use_bias:                 True
-    alpha:                    1.6 # 1.414
   givens:
     n_layers:                 3
     hidden:                   [0, 0, 0]
@@ -58,9 +56,9 @@ default: &DEFAULT
   random_model:
     dp_epsilon:               1.0 
     dp_delta:                 0.05
-    attack_norm_bound:        0.1
+    attack_norm_bound:        1.34
     noise_after_n_layers:     1
-    sensitivity_norm:         l2
+    sensitivity_norm:         weibull
     sensitivity_control_scheme: 'bound'
     layer_sensitivity_bounds: ['l2_l2']
   cifar_random_model:
@@ -77,10 +75,9 @@ default: &DEFAULT
   lr_strategy:                piecewise_constant
   piecewise_constant:
     boundaries:               [40000, 60000, 80000]
-    # values:                   [0.01, 0.005, 0.001, 0.0001]
-    values:                   [0.0005, 0.00025, 0.00005, 0.00001]
+    values:                   [0.01, 0.005, 0.001, 0.0001]
   exponential_decay:
-    base_lr:                  0.0005
+    base_lr:                  0.01
     lr_decay:                 1
     lr_decay_examples:        400000
   cyclic_lr:
@@ -91,7 +88,7 @@ default: &DEFAULT
     mode_cyclic_lr:           triangular
     gamma:                    0.99994
   
-  optimizer:                  AdamOptimizer
+  optimizer:                  MomentumOptimizer
   MomentumOptimizer:
     momentum:                 0.9
     use_nesterov:             True
@@ -103,7 +100,7 @@ default: &DEFAULT
     use_locking:              False
   
   gradients:
-    clip_gradient_norm:       0
+    clip_gradient_norm:       5
     perturbed_gradients:      False
     perturbed_threshold:      0.03
     compute_hessian:          False
@@ -119,8 +116,8 @@ train: &TRAIN
 
 eval: &EVAL
   <<: *DEFAULT
-  eval_batch_size:            200
-  eval_num_gpu:               2
+  eval_batch_size:            50
+  eval_num_gpu:               4
   start_eval_from_ckpt:       first
   cherrypick:                 None
   start_new_model:            False
@@ -138,20 +135,27 @@ eval_test: &EVAL_TEST
 attack: &ATTACK
   <<: *DEFAULT
   <<: *EVAL_TEST
-  eval_num_gpu:               2
-  path:                       /pwrwork/rech/jvd/ubx31mc/neuralnet/fashion_mnist_models
+  eval_num_gpu:               4
+  path:                       /pwrwork/rech/jvd/ubx31mc/neuralnet/cifar10_noise_weibull
   data:
   attack_method:              FastGradientMethod
   adv_processing:             False
   attack:
     CarliniWagnerL2:
-      binary_search_steps:    10 
+      binary_search_steps:    10
       max_iterations:         100
+      batch_size:             200
       learning_rate:          1.0e-2
       initial_const:          1.0e-3
-    FastGradientMethod:
-      eps:                    0.1
+    DeepFool:
+      nb_candidate:           10
+      overshoot:              0.02
+      max_iter:               50
       clip_min:               -1.0
       clip_max:               +1.0
-
+    FastGradientMethod:
+      eps:                    0.3
+      ord:                    1
+      clip_min:               -1.0
+      clip_max:               +1.0
 
