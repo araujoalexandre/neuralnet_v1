@@ -9,6 +9,7 @@ from datetime import datetime
 import readers
 import models
 import losses
+import eval_util
 from learning_rate import LearningRate
 from optimizer import Optimizer
 from gradients import ComputeAndProcessGradients
@@ -85,8 +86,10 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
   tower_logits = []
   tower_final_losses = []
   for i in range(num_towers):
+    reuse = tf.AUTO_REUSE
+    reuse = False if i == 0 else True
     with tf.device(device_string.format(i)):
-      with tf.variable_scope("tower", reuse=tf.AUTO_REUSE):
+      with tf.variable_scope("tower", reuse=reuse):
 
           logits = model.create_model(tower_inputs[i],
             n_classes=reader.n_classes, is_training=True)
@@ -129,7 +132,11 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
   with tf.control_dependencies([summary_op]):
     train_op = train_op_cls.make_update()
 
+  logits = tf.concat(tower_logits, 0)
+
   tf.add_to_collection("loss", label_loss)
+  tf.add_to_collection("logits", logits)
+  tf.add_to_collection("labels", labels_batch)
   tf.add_to_collection("learning_rate", learning_rate)
   tf.add_to_collection("summary_op", summary_op)
   tf.add_to_collection("train_op", train_op)
@@ -199,6 +206,8 @@ class Trainer(object):
 
         global_step = tf.train.get_global_step()
         loss = tf.get_collection("loss")[0]
+        logits = tf.get_collection("logits")[0]
+        labels = tf.get_collection("labels")[0]
         learning_rate = tf.get_collection("learning_rate")[0]
         train_op = tf.get_collection("train_op")[0]
         summary_op = tf.get_collection("summary_op")[0]
@@ -254,7 +263,8 @@ class Trainer(object):
               'run_metadata': run_meta
             }
 
-          fetches = [train_op, global_step, loss, learning_rate]
+          fetches = [train_op, global_step, loss,
+                     learning_rate, logits, labels]
           if gradients_norm != 0:
             fetches += [gradients_norm]
           else:
@@ -268,9 +278,11 @@ class Trainer(object):
           global_step_val = fetches_values[1]
           loss_val = fetches_values[2]
           learning_rate_val = fetches_values[3]
+          predictions_val = fetches_values[4]
+          labels_val = fetches_values[5]
 
           if gradients_norm != 0:
-            grad_norm_val = fetches_values[4]
+            grad_norm_val = fetches_values[6]
 
           if FLAGS.gradients['compute_hessian'] and global_step_val != 0 and \
              global_step_val % FLAGS.gradients['hessian_every_n_step'] == 0:
@@ -299,12 +311,32 @@ class Trainer(object):
           if (self.is_master and to_print) or global_step_val == 1:
             epoch = ((global_step_val * self.batch_size)
               / self.reader.n_train_files)
-            message = ("epoch: {:4.2f} | step: {: 5d} | lr: {:.6f} "
-                       "| loss: {:.4f} | imgs/sec: {:5.0f} | "
-                       "Grad norm: {:.4f}")
-            logging.info(message.format(epoch,
-              global_step_val, learning_rate_val,
-              loss_val, examples_per_second, grad_norm_val))
+
+            if "YT8M" in self.reader.__class__.__name__:
+
+              hit_at_one = eval_util.calculate_hit_at_one(predictions_val, labels_val)
+              perr = eval_util.calculate_precision_at_equal_recall_rate(predictions_val,
+                                                                        labels_val)
+              gap = eval_util.calculate_gap(predictions_val, labels_val)
+
+              message = ("epoch: {:4.2f} | step: {: 5d} | lr: {:.6f} "
+                         "| loss: {:.4f} | gap: {:.3f} | imgs/sec: {:5.0f}")
+              values = [epoch, global_step_val, learning_rate_val, loss_val, gap,
+                        examples_per_second]
+              if FLAGS.gradients['perturbed_gradients']:
+                message += " | Grad norm: {:.4f}"
+                values += [grad_norm_val]
+
+            else:
+              message = ("epoch: {:4.2f} | step: {: 5d} | lr: {:.6f} "
+                          "| loss: {:.4f} | imgs/sec: {:5.0f}")
+              values = [epoch, global_step_val, learning_rate_val, loss_val,
+                        examples_per_second]
+              if FLAGS.gradients['perturbed_gradients']:
+                message += " | Grad norm: {:.4f}"
+                values += [grad_norm_val]
+
+            logging.info(message.format(*values))
 
         # End training
         logging.info("{}: Done training -- epoch limit reached.".format(
@@ -334,9 +366,11 @@ class Trainer(object):
   def remove_training_directory(self, train_dir):
     """Removes the training directory."""
     try:
-      logging.info("{}: Removing existing train directory.".format(
-        task_as_string(self.task)))
-      gfile.DeleteRecursively(train_dir)
+      logging.info(("{}: Train dir already exist and start_new_model "
+                    "set to True. To restart model from scratch, "
+                    "delete the directory.").format(task_as_string(self.task)))
+      # gfile.DeleteRecursively(train_dir)
+      sys.exit()
     except:
       logging.error("{}: Failed to delete directory {} when starting a new "
         "model. Please delete it manually and try again.".format(
