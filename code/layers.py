@@ -4,6 +4,8 @@ import tensorflow as tf
 from tensorflow import flags
 from tensorflow import logging
 
+import t3f
+
 from config import hparams as FLAGS
 
 class GivensLayer:
@@ -291,4 +293,36 @@ class LowRankLayer:
     if self.use_bias:
       ret = ret + self.bias
     return ret
+
+class TensorTrainLayer:
+
+  def __init__(self, rank, tt_shape, shape_out,
+               bias_initializer=None, regularizer=None,
+               use_bias=True):
+
+    self.use_bias = use_bias
+    self.tt_shape = tt_shape
+
+    initializer = t3f.lecun_initializer(self.tt_shape, tt_rank=rank)
+    # initializer = t3f.he_initializer(self.tt_shape, tt_rank=rank)
+    # initializer = t3f.glorot_initializer(self.tt_shape, tt_rank=rank)
+    self.weights = t3f.get_variable("tensor_train",
+            initializer=initializer, regularizer=regularizer,
+            trainable=True)
+
+    if bias_initializer is None:
+      bias_initializer = tf.constant_initializer(0.01)
+
+    if use_bias:
+      self.bias = tf.get_variable(name="bias", shape=[shape_out],
+        initializer=bias_initializer, regularizer=regularizer)
+
+  def matmul(self, input_data):
+    activation = t3f.matmul(input_data, self.weights)
+    if self.use_bias:
+      activation = activation + self.bias
+    return activation
+
+
+
 
