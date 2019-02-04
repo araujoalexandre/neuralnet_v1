@@ -1,9 +1,9 @@
 
 default: &DEFAULT
-  path: &path                 /pwrwork/rech/jvd/ubx31mc/neuralnet/youtube_circulant_with_dense
+  path: &path                 /pwrwork/rech/jvd/ubx31mc/neuralnet/cifar10_toeplitz
   data_dir:                   /pwrwork/rech/jvd/ubx31mc/data
   train_batch_size:           100
-  num_epochs:                 35
+  num_epochs:                 360
   start_new_model:            True
   train_num_gpu:              2
   clear_devices:              False
@@ -20,22 +20,33 @@ default: &DEFAULT
   per_image_standardization:  False
   readers_params:
     num_parallel_calls:       32
-    num_parallel_readers:     16
+    num_parallel_readers:     8
     prefetch_buffer_size:     2000
     cache_dataset:            False
     drop_remainder:           False
+    grayscale:                False
 
-  model:                      Cifar10ModelDense
+  model:                      Cifar10ModelToeplitz
   dense:
     n_layers:                 1
     hidden:                   0
-    use_bias:                 True
   circulant:
-    n_layers:                 40
+    n_layers:                 30
     hidden:                   0
     use_diag:                 True
     use_bias:                 True
-    alpha:                    1.6 # 1.414
+    alpha:                    1.414
+    non_linear:               1
+    leaky_slope:              0.3
+    with_conv:                False
+  toeplitz:
+    n_layers:                 20
+    hidden:                   0
+    use_bias:                 True
+    alpha:                    1.414
+    non_linear:               1
+    leaky_slope:              0.5
+    with_conv:                False
   givens:
     n_layers:                 3
     hidden:                   [0, 0, 0]
@@ -103,7 +114,7 @@ default: &DEFAULT
     use_locking:              False
   
   gradients:
-    clip_gradient_norm:       0
+    clip_gradient_norm:       1
     perturbed_gradients:      False
     perturbed_threshold:      0.03
     compute_hessian:          False
@@ -125,7 +136,7 @@ eval: &EVAL
   cherrypick:                 None
   start_new_model:            False
   stopped_at_n:               180 # number of ckpt
-  noise_in_eval:              True
+  noise_in_eval:              False
 
 eval_train: &EVAL_TRAIN
   <<: *TRAIN

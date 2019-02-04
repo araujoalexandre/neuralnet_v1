@@ -1,11 +1,11 @@
 
 default: &DEFAULT
-  path: &path                 /pwrwork/rech/jvd/ubx31mc/neuralnet/youtube_circulant_with_dense
+  path: &path                 /pwrwork/rech/jvd/ubx31mc/neuralnet/cifar10_tensortrain
   data_dir:                   /pwrwork/rech/jvd/ubx31mc/data
-  train_batch_size:           100
-  num_epochs:                 35
+  train_batch_size:           200
+  num_epochs:                 360
   start_new_model:            True
-  train_num_gpu:              2
+  train_num_gpu:              1
   clear_devices:              False
   profiler:                   False
   compile:                    False
@@ -19,23 +19,33 @@ default: &DEFAULT
   one_hot_labels:             False
   per_image_standardization:  False
   readers_params:
-    num_parallel_calls:       32
+    num_parallel_calls:       64
     num_parallel_readers:     16
-    prefetch_buffer_size:     2000
+    prefetch_buffer_size:     1000
     cache_dataset:            False
     drop_remainder:           False
 
-  model:                      Cifar10ModelDense
+  model:                      Cifar10ModelTensorTrain
   dense:
     n_layers:                 1
     hidden:                   0
-    use_bias:                 True
   circulant:
-    n_layers:                 40
+    n_layers:                 30
     hidden:                   0
     use_diag:                 True
     use_bias:                 True
     alpha:                    1.6 # 1.414
+  low_rank:
+    n_layers:                 2
+    hidden:                   0
+    use_bias:                 True
+    rank:                     1
+    alpha:                    1.414
+  tensor_train:
+    n_layers:                 1
+    hidden:                   0
+    rank:                     7
+    use_bias:                 True
   givens:
     n_layers:                 3
     hidden:                   [0, 0, 0]
@@ -120,12 +130,12 @@ train: &TRAIN
 eval: &EVAL
   <<: *DEFAULT
   eval_batch_size:            200
-  eval_num_gpu:               2
+  eval_num_gpu:               1
   start_eval_from_ckpt:       first
   cherrypick:                 None
   start_new_model:            False
   stopped_at_n:               180 # number of ckpt
-  noise_in_eval:              True
+  noise_in_eval:              False
 
 eval_train: &EVAL_TRAIN
   <<: *TRAIN
@@ -134,24 +144,4 @@ eval_train: &EVAL_TRAIN
 eval_test: &EVAL_TEST
   <<: *EVAL
   data_pattern:               test*
-
-attack: &ATTACK
-  <<: *DEFAULT
-  <<: *EVAL_TEST
-  eval_num_gpu:               2
-  path:                       /pwrwork/rech/jvd/ubx31mc/neuralnet/fashion_mnist_models
-  data:
-  attack_method:              FastGradientMethod
-  adv_processing:             False
-  attack:
-    CarliniWagnerL2:
-      binary_search_steps:    10 
-      max_iterations:         100
-      learning_rate:          1.0e-2
-      initial_const:          1.0e-3
-    FastGradientMethod:
-      eps:                    0.1
-      clip_min:               -1.0
-      clip_max:               +1.0
-
 

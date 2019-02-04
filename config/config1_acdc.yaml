@@ -1,9 +1,9 @@
 
 default: &DEFAULT
-  path: &path                 /pwrwork/rech/jvd/ubx31mc/neuralnet/youtube_circulant_with_dense
+  path: &path                 /pwrwork/rech/jvd/ubx31mc/neuralnet/cifar10_acdc
   data_dir:                   /pwrwork/rech/jvd/ubx31mc/data
   train_batch_size:           100
-  num_epochs:                 35
+  num_epochs:                 360
   start_new_model:            True
   train_num_gpu:              2
   clear_devices:              False
@@ -20,22 +20,32 @@ default: &DEFAULT
   per_image_standardization:  False
   readers_params:
     num_parallel_calls:       32
-    num_parallel_readers:     16
+    num_parallel_readers:     8
     prefetch_buffer_size:     2000
     cache_dataset:            False
     drop_remainder:           False
 
-  model:                      Cifar10ModelDense
+  model:                      Cifar10ModelAcdc
   dense:
     n_layers:                 1
     hidden:                   0
-    use_bias:                 True
   circulant:
-    n_layers:                 40
+    n_layers:                 30
     hidden:                   0
     use_diag:                 True
     use_bias:                 True
-    alpha:                    1.6 # 1.414
+    alpha:                    1.414
+    non_linear:               2
+    with_conv:                False
+  acdc:
+    n_layers:                 10
+    hidden:                   0
+    use_bias:                 True
+    sign_init:                False
+    rand_init:                True
+    normal_init:              False
+    alpha:                    1.414
+    leaky_slope:              0.
   givens:
     n_layers:                 3
     hidden:                   [0, 0, 0]
@@ -77,8 +87,10 @@ default: &DEFAULT
   lr_strategy:                piecewise_constant
   piecewise_constant:
     boundaries:               [40000, 60000, 80000]
-    # values:                   [0.01, 0.005, 0.001, 0.0001]
-    values:                   [0.0005, 0.00025, 0.00005, 0.00001]
+    values:                   [0.01, 0.001, 0.0001, 0.00001]
+    # values:                   [0.0005, 0.00025, 0.00005, 0.00001]
+    # values:                   [0.005, 0.0025, 0.0005, 0.0001]
+    # values:                   [2.0, 0.01, 0.001, 0.0001]
   exponential_decay:
     base_lr:                  0.0005
     lr_decay:                 1
@@ -91,9 +103,9 @@ default: &DEFAULT
     mode_cyclic_lr:           triangular
     gamma:                    0.99994
   
-  optimizer:                  AdamOptimizer
+  optimizer:                  MomentumOptimizer
   MomentumOptimizer:
-    momentum:                 0.9
+    momentum:                 0.65
     use_nesterov:             True
     use_locking:              False
   AdamOptimizer: 
@@ -104,7 +116,7 @@ default: &DEFAULT
   
   gradients:
     clip_gradient_norm:       0
-    perturbed_gradients:      False
+    perturbed_gradients:      True
     perturbed_threshold:      0.03
     compute_hessian:          False
 
@@ -120,12 +132,12 @@ train: &TRAIN
 eval: &EVAL
   <<: *DEFAULT
   eval_batch_size:            200
-  eval_num_gpu:               2
+  eval_num_gpu:               4
   start_eval_from_ckpt:       first
   cherrypick:                 None
   start_new_model:            False
   stopped_at_n:               180 # number of ckpt
-  noise_in_eval:              True
+  noise_in_eval:              False
 
 eval_train: &EVAL_TRAIN
   <<: *TRAIN
@@ -134,24 +146,4 @@ eval_train: &EVAL_TRAIN
 eval_test: &EVAL_TEST
   <<: *EVAL
   data_pattern:               test*
-
-attack: &ATTACK
-  <<: *DEFAULT
-  <<: *EVAL_TEST
-  eval_num_gpu:               2
-  path:                       /pwrwork/rech/jvd/ubx31mc/neuralnet/fashion_mnist_models
-  data:
-  attack_method:              FastGradientMethod
-  adv_processing:             False
-  attack:
-    CarliniWagnerL2:
-      binary_search_steps:    10 
-      max_iterations:         100
-      learning_rate:          1.0e-2
-      initial_const:          1.0e-3
-    FastGradientMethod:
-      eps:                    0.1
-      clip_min:               -1.0
-      clip_max:               +1.0
-
 
