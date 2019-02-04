@@ -36,6 +36,11 @@ def parse_events(events_path, dataset='train'):
     with open(output, 'w') as f:
       f.write("{}\t{:.4f}\n".format(best_step, best_acc))
 
+  if dataset == "train":
+    output = join("{}_logs".format(folder), "best_accuracy_train.txt")
+    with open(output, 'w') as f:
+      f.write("{}\t{:.4f}\n".format(best_step, best_acc))
+
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(
@@ -51,10 +56,10 @@ if __name__ == "__main__":
     if "eval_test" in files:
       events_path["eval_test"] = files
 
-  # try:
-  #   parse_events(events_path["eval_train"], dataset='train')
-  # except Exception as e:
-  #   tf.logging.info("error parsing eval_train: {}".format(e))
+  try:
+    parse_events(events_path["eval_train"], dataset='train')
+  except Exception as e:
+    tf.logging.info("error parsing eval_train: {}".format(e))
 
   try:
     parse_events(events_path["eval_test"], dataset='test')
