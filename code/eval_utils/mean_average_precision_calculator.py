@@ -38,7 +38,7 @@ aps = calculator.peek_map_at_n()
 """
 
 import numpy
-import average_precision_calculator
+from .average_precision_calculator import AveragePrecisionCalculator
 
 
 class MeanAveragePrecisionCalculator(object):
@@ -65,8 +65,7 @@ class MeanAveragePrecisionCalculator(object):
     self._ap_calculators = []  # member of AveragePrecisionCalculator
     self._num_class = num_class  # total number of classes
     for i in range(num_class):
-      self._ap_calculators.append(
-          average_precision_calculator.AveragePrecisionCalculator())
+      self._ap_calculators.append(AveragePrecisionCalculator())
 
   def accumulate(self, predictions, actuals, num_positives=None):
     """Accumulate the predictions and their ground truth labels.
