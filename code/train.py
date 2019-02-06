@@ -6,15 +6,16 @@ import pprint
 from os.path import join, exists
 from datetime import datetime
 
-import readers
 import models
-import losses
-import eval_util
-from learning_rate import LearningRate
-from optimizer import Optimizer
-from gradients import ComputeAndProcessGradients
-from gradients import compute_hessian_and_summary
-from update_ops import UpdateOps
+from dataset import readers
+from train_utils import losses
+from train_utils.learning_rate import LearningRate
+from train_utils.optimizer import Optimizer
+from train_utils.gradients import ComputeAndProcessGradients
+from train_utils.gradients import compute_hessian_and_summary
+from train_utils.gradients import combine_gradients
+from train_utils.update_ops import UpdateOps
+from eval_utils import eval_util
 
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
@@ -76,9 +77,11 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
   learning_rate = LearningRate(global_step, batch_size).get_learning_rate()
   opt = Optimizer(learning_rate).get_optimizer()
 
-  with tf.name_scope("train_input"):
+  with tf.name_scope("input"):
     images_batch, labels_batch = reader.input_fn()
   tf.summary.histogram("model/input_raw", images_batch)
+
+  gradients_cls = ComputeAndProcessGradients()
 
   tower_inputs = tf.split(images_batch, num_towers)
   tower_labels = tf.split(labels_batch, num_towers)
@@ -114,19 +117,21 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
 
           # Incorporate the L2 weight penalties etc.
           final_loss = regularization_penalty * reg_loss + label_loss
+          gradients = gradients_cls.get_gradients(opt, final_loss)
+          tower_gradients.append(gradients)
           tower_final_losses.append(final_loss)
 
   total_loss = tf.stack(tower_final_losses)
-  tf.summary.scalar("loss",
-    tf.reduce_mean(total_loss))
+  full_gradients = combine_gradients(tower_gradients)
 
+  # make summary
+  tf.summary.scalar("loss", tf.reduce_mean(total_loss))
   for variable in tf.trainable_variables():
     tf.summary.histogram(variable.op.name, variable)
 
-  # process and apply gradients
-  gradients_cls = ComputeAndProcessGradients()
-  gradients = gradients_cls.get_gradients(opt, total_loss)
-  train_op_cls = UpdateOps(opt, gradients, global_step)
+  # apply gradients
+  # gradients = gradients_cls.get_gradients(opt, total_loss)
+  train_op_cls = UpdateOps(opt, full_gradients, global_step)
 
   summary_op = tf.summary.merge_all()
   with tf.control_dependencies([summary_op]):
