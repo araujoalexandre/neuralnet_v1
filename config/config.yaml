@@ -1,9 +1,9 @@
 
 default: &DEFAULT
-  path: &path                 /pwrwork/rech/jvd/ubx31mc/neuralnet/youtube_circulant_with_dense
-  data_dir:                   /pwrwork/rech/jvd/ubx31mc/data
+  path: &path                 /srv/osirim/aaraujo/neuralnet/models
+  data_dir:                   /home/aaraujo/data
   train_batch_size:           100
-  num_epochs:                 35
+  num_epochs:                 200
   start_new_model:            True
   train_num_gpu:              2
   clear_devices:              False
@@ -11,13 +11,16 @@ default: &DEFAULT
   compile:                    False
 
   log_device_placement:       False
-  save_checkpoint_steps:      500 # ckpt per epoch: 60K / (batch_size * gpu) 
+  save_checkpoint_steps:      500 # ckpt per epoch: dataset_size / (batch_size * gpu)
   save_summaries_steps:       60
   frequency_log_steps:        100
 
+  # reader:                     YT8MAggregatedFeatureReader
   reader:                     CIFAR10Reader
   one_hot_labels:             False
   per_image_standardization:  False
+  grayscale:                  False
+  data_augmentation:          True
   readers_params:
     num_parallel_calls:       32
     num_parallel_readers:     16
@@ -25,21 +28,42 @@ default: &DEFAULT
     cache_dataset:            False
     drop_remainder:           False
 
-  model:                      Cifar10ModelDense
+  # model:                      YoutubeModelLogistic
+  model:                      WideResnetModel
   dense:
     n_layers:                 1
     hidden:                   0
     use_bias:                 True
+    with_conv:                True
   circulant:
-    n_layers:                 40
+    n_layers:                 2
     hidden:                   0
     use_diag:                 True
     use_bias:                 True
-    alpha:                    1.6 # 1.414
+    alpha:                    1.414
+    with_conv:                False
+    non_linear:               1
+    leaky_slope:              0.1
   givens:
     n_layers:                 3
     hidden:                   [0, 0, 0]
     n_givens:                 10
+  youtube:
+    n_layers:                 1      
+    hidden:                   0      
+    use_bias:                 True   
+  low_rank:                          
+    n_layers:                 1      
+    hidden:                   0      
+    use_bias:                 True   
+    rank:                     25     
+    alpha:                    1.414  
+  tensor_train:                      
+    n_layers:                 1      
+    hidden:                   0      
+    rank:                     20     
+    use_bias:                 True   
+    leaky_slope:              0      
   resnet:
     resnet_size:              18
     bottleneck:               False
@@ -55,6 +79,11 @@ default: &DEFAULT
     final_size:               512
     version:                  2
     data_format:              channels_last
+  wide_resnet:
+    widen_factor:             10
+    depth:                    28
+    leaky_slope:              0.1
+    dropout:                  0.3
   random_model:
     dp_epsilon:               1.0 
     dp_delta:                 0.05
@@ -70,18 +99,22 @@ default: &DEFAULT
 
 
   loss:                       SoftmaxCrossEntropyWithLogits
+  # loss:                       CrossEntropyLoss
   reg_norm:                   l2
   weight_decay_rate:          0.0002
   regularization_penalty:     1.0
   
-  lr_strategy:                piecewise_constant
+  # lr_strategy:                piecewise_constant
+  lr_strategy:                exponential_decay
   piecewise_constant:
-    boundaries:               [40000, 60000, 80000]
+    # boundaries:               [40000, 60000, 80000]
+    boundaries:               [15000, 30000, 40000]
+    values:                   [0.1, 0.02, 0.004, 0.00008]
     # values:                   [0.01, 0.005, 0.001, 0.0001]
-    values:                   [0.0005, 0.00025, 0.00005, 0.00001]
+    # values:                   [0.0005, 0.00025, 0.00005, 0.00001]
   exponential_decay:
-    base_lr:                  0.0005
-    lr_decay:                 1
+    base_lr:                  0.1
+    lr_decay:                 0.97
     lr_decay_examples:        400000
   cyclic_lr:
     base_lr:                  0.01
@@ -91,7 +124,7 @@ default: &DEFAULT
     mode_cyclic_lr:           triangular
     gamma:                    0.99994
   
-  optimizer:                  AdamOptimizer
+  optimizer:                  MomentumOptimizer
   MomentumOptimizer:
     momentum:                 0.9
     use_nesterov:             True
@@ -135,23 +168,42 @@ eval_test: &EVAL_TEST
   <<: *EVAL
   data_pattern:               test*
 
+
+
+
 attack: &ATTACK
   <<: *DEFAULT
   <<: *EVAL_TEST
-  eval_num_gpu:               2
-  path:                       /pwrwork/rech/jvd/ubx31mc/neuralnet/fashion_mnist_models
-  data:
+  eval_batch_size:            50
+  eval_num_gpu:               4
+  
+attack_fgm:
+  <<: *ATTACK
   attack_method:              FastGradientMethod
-  adv_processing:             False
-  attack:
-    CarliniWagnerL2:
-      binary_search_steps:    10 
-      max_iterations:         100
-      learning_rate:          1.0e-2
-      initial_const:          1.0e-3
-    FastGradientMethod:
-      eps:                    0.1
-      clip_min:               -1.0
-      clip_max:               +1.0
+  FastGradientMethod:
+    eps:                      0.1
+    ord:                      2
+    clip_min:                 -1.0
+    clip_max:                 +1.0
+
+attack_carlini:
+  <<: *ATTACK
+  attack_method:              CarliniWagnerL2
+  CarliniWagnerL2:
+    binary_search_steps:      10
+    max_iterations:           100
+    batch_size:               200
+    learning_rate:            1.0e-2
+    initial_const:            1.0e-3
+
+attack_deepfool:
+  <<: *ATTACK
+  attack_method:              DeepFool
+  DeepFool:
+    nb_candidate:             10
+    overshoot:                0.02
+    max_iter:                 50
+    clip_min:                 -1.0
+    clip_max:                 +1.0
 
 
