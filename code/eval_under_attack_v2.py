@@ -7,8 +7,8 @@ import pprint
 from os.path import join, basename, exists, normpath
 
 import models
-import losses
-import readers
+from train_util import losses
+from dataset import readers
 
 import numpy as np
 import tensorflow as tf
@@ -20,13 +20,11 @@ from tensorflow import logging
 from tensorflow.python.client import device_lib
 from tensorflow.python.lib.io import file_io
 
-from attacks import FastGradientMethod
-from cleverhans.model import Model
+from attacks.fgm import FastGradientMethod
 
 from config import YParams
 from config import hparams as FLAGS
 
-# np.random.seed(seed=0)
 
 def find_class_by_name(name, modules):
   """Searches the provided modules for the named class and returns it."""
@@ -166,7 +164,6 @@ class Evaluate:
 
   def run(self):
 
-    # tf.set_random_seed(0)  # for reproducibility
     self.flags_dict = FLAGS
 
     # Setup logging & log the version.
