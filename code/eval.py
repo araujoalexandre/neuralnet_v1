@@ -7,8 +7,8 @@ import pprint
 from os.path import join, basename, exists
 
 import models
-import losses
-import readers
+from train_utils import losses
+from dataset import readers
 from utils import make_summary
 
 import tensorflow as tf
