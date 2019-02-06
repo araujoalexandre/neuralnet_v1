@@ -44,7 +44,7 @@ class UpdateOps:
     ops_before_update = tf.group(*ops_before_update)
     with tf.control_dependencies([ops_before_update]):
       train_op = self.optimizer.apply_gradients(self.gradients,
-        global_step=self.global_step, name='train_step')
+        global_step=self.global_step)
 
     if self.config['parseval_update']:
       self._perseval_update()
@@ -52,6 +52,6 @@ class UpdateOps:
     ops_after_update = tf.get_collection("ops_after_update")
     ops_after_update = tf.group(*ops_after_update)
     with tf.control_dependencies([ops_after_update]):
-        train_op = tf.no_op(name='train')
+        train_op = tf.no_op()
 
     return train_op
