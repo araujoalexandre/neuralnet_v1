@@ -156,7 +156,6 @@ class Cifar10ModelCirculant(Cifar10BaseModel):
         activation = cls_layer.matmul(activation)
         if k % config['non_linear'] == 0:
           activation = tf.nn.leaky_relu(activation, config['leaky_slope'])
-          # activation = tf.nn.relu(activation)
         k += 1
         self._activation_summary(activation)
 
