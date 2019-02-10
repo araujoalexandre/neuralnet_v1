@@ -200,23 +200,14 @@ class ComputeAndProcessGradients:
       Hv = _hessian_vector_product(loss, var_list, vec_placeholder)
       tf.add_to_collection("Hv", Hv)
 
-  def get_gradients(self, opt, loss):
+  def get_gradients(self, opt, loss, *args, **kwargs):
 
-    gradients = opt.compute_gradients(loss)
+    gradients = opt.compute_gradients(loss, *args, **kwargs)
     self._gradients_summary(gradients)
 
     # compute and record summary of hessians eigenvals
     if self.config['compute_hessian']:
       self._define_hessian_graph(loss)
-
-    # if "acdc" in FLAGS.model.lower():
-    #   for grad, var in gradients:
-    #     if "diag" in var.name:
-    #       tf.logging.info("multiply diag grad to {}".format(var.name))
-    #       grad = tf.multiply(grad, 24)
-    #     if "kernel" in var.name:
-    #       tf.logging.info("multiply kernel grad to {}".format(var.name))
-    #       grad = tf.multiply(grad, 12)
 
     # to help convergence, inject noise in gradients
     if self.config['perturbed_gradients']:
