@@ -177,3 +177,22 @@ def AddEpochSummary(summary_writer,
           "| MAP: {3:.3f} | GAP: {4:.3f} | Avg_Loss: {5:3f}").format(
           epoch_id, avg_hit_at_one, avg_perr, mean_ap, gap, avg_loss)
   return info
+
+
+class MessageBuilder:
+
+  def __init__(self):
+    self.msg = []
+
+  def add(self, name, value, format=None):
+    metric_str = "{}: ".format(name)
+    if fill:
+      metric_str += "{x:^{format}}".format(x=value, format=format)
+    else:
+      metric_str += "{}".format(value)
+    self.msg.append(metric_str)
+
+  def get_message(self):
+    return " | ".join(self.msg)
+
+
