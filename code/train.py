@@ -16,6 +16,7 @@ from train_utils.gradients import compute_hessian_and_summary
 from train_utils.gradients import combine_gradients
 from train_utils.update_ops import UpdateOps
 from eval_utils import eval_util
+from utils import MessageBuilder
 
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
@@ -317,31 +318,22 @@ class Trainer(object):
             epoch = ((global_step_val * self.batch_size)
               / self.reader.n_train_files)
 
-            if "YT8M" in self.reader.__class__.__name__:
-
-              hit_at_one = eval_util.calculate_hit_at_one(predictions_val, labels_val)
-              perr = eval_util.calculate_precision_at_equal_recall_rate(predictions_val,
-                                                                        labels_val)
-              gap = eval_util.calculate_gap(predictions_val, labels_val)
-
-              message = ("epoch: {:4.2f} | step: {: 5d} | lr: {:.6f} "
-                         "| loss: {:.4f} | gap: {:.3f} | imgs/sec: {:5.0f}")
-              values = [epoch, global_step_val, learning_rate_val, loss_val, gap,
-                        examples_per_second]
-              if FLAGS.gradients['perturbed_gradients']:
-                message += " | Grad norm: {:.4f}"
-                values += [grad_norm_val]
-
+            message = MessageBuilder()
+            message.add("epoch", epoch, format="4.2f")
+            message.add("step", global_step_val, format=" 5d")
+            message.add("lr", learning_rate_val, format=".6f")
+            if self.coordinate_descent:
+              message.add("img loss", img_loss_val, format=".4f")
+              message.add("adv loss", adv_loss_val, format=".4f")
             else:
-              message = ("epoch: {:4.2f} | step: {: 5d} | lr: {:.6f} "
-                          "| loss: {:.4f} | imgs/sec: {:5.0f}")
-              values = [epoch, global_step_val, learning_rate_val, loss_val,
-                        examples_per_second]
-              if FLAGS.gradients['perturbed_gradients']:
-                message += " | Grad norm: {:.4f}"
-                values += [grad_norm_val]
-
-            logging.info(message.format(*values))
+              message.add("loss", loss_val, fill=".4f")
+            if "YT8M" in self.reader.__class__.__name__:
+              gap = eval_util.calculate_gap(predictions_val, labels_val)
+              message.add("gap", gap, format=".3f")
+            message.add("imgs/sec", examples_per_second, format="5.0f")
+            if FLAGS.gradients['perturbed_gradients']:
+              message.add("grad norm", grad_norm_val, format=".4f")
+            logging.info(message.get_message())
 
         # End training
         logging.info("{}: Done training -- epoch limit reached.".format(
