@@ -224,6 +224,10 @@ class CIFAR10Reader(BaseReader):
       image = self._data_augmentation(image)
     if FLAGS.per_image_standardization:
       image = tf.image.per_image_standardization(image)
+    elif FLAGS.dataset_standardization:
+      mean = [125.3, 123.0, 113.9]
+      std  = [63.0,  62.1,  66.7]
+      image = (image - mean) / std
     else:
       image = (image / 255 - 0.5) * 2
     return image
