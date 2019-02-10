@@ -13,7 +13,7 @@ class UpdateOps:
     self.gradients = gradients
     self.global_step = global_step
 
-  def _perseval_update(self):
+  def _parseval_update(self):
     beta = self.config['parseval_step']
     parseval_convs = tf.get_collection("parseval_convs")
     parseval_dense = tf.get_collection("parseval_dense")
@@ -47,7 +47,7 @@ class UpdateOps:
         global_step=self.global_step)
 
     if self.config['parseval_update']:
-      self._perseval_update()
+      self._parseval_update()
 
     ops_after_update = tf.get_collection("ops_after_update")
     ops_after_update = tf.group(*ops_after_update)
