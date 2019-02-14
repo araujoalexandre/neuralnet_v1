@@ -12,18 +12,89 @@ class WideResnetModel(BaseModel):
      https://arxiv.org/abs/1605.07146
   """
 
-  def _conv(self, name, x, filter_size, in_filters, out_filters, strides):
+  def _get_noise(self, x):
+    """Pixeldp noise layer."""
+
+    if self.is_training and self.train_with_noise:
+      noise_activate = tf.constant(1.0)
+    else:
+      if FLAGS.noise_in_eval:
+        noise_activate = tf.constant(1.0)
+      else:
+        noise_activate = tf.constant(0.0)
+
+    loc = tf.zeros(tf.shape(x), dtype=tf.float32)
+    scale = tf.ones(tf.shape(x), dtype=tf.float32)
+
+    if self.distributions == 'l1':
+      noise = tf.distributions.Laplace(loc, scale).sample()
+      scale = self.scale_noise / tf.sqrt(2)
+      noise = noise_activate * scale * noise
+
+    elif self.distributions == 'l2':
+      noise = tf.distributions.Normal(loc, scale).sample()
+      scale = self.scale_noise
+      noise = noise_activate * scale * noise
+
+    elif self.distributions == 'exp':
+      noise = tf.distributions.Exponential(rate=scale).sample()
+      scale = 1 / self.scale_noise
+      noise = noise_activate * scale * noise
+
+    elif self.distributions == 'weibull':
+      k = 3
+      eps = 10e-8
+      alpha = ((k - 1) / k)**(1 / k)
+      U = tf.random_uniform(tf.shape(x), minval=eps, maxval=1)
+      X = (-tf.log(U) + alpha**k)**(1 / k) - alpha
+      tensor = tf.zeros_like(x) + 0.5
+      dist = tf.distributions.Bernoulli(probs=tensor)
+      B = 2 * dist.sample() - 1
+      B = tf.cast(B, tf.float32)
+      X = B * X
+      noise = X / 0.3425929
+      scale = self.scale_noise
+      noise = noise_activate * scale * noise
+
+    else:
+      raise ValueError("Distributions is not recognised.")
+
+    return noise
+
+  def _conv_with_noise(self, name, x, filter_size, in_filters, out_filters,
+                       strides):
 
     assert(strides[1] == strides[2])
     stride = strides[1]
 
-    # with tf.variable_scope(name):
-    #   n = filter_size * filter_size * out_filters
-    #   shape = [filter_size, filter_size, in_filters, out_filters]
-    #   kernel = tf.get_variable('kernel', shape,
-    #     initializer=tf.random_normal_initializer(stddev=np.sqrt(2.0/n)),
-    #     regularizer=self.regularizer)
-    #   x = tf.nn.conv2d(x, kernel, strides, padding='SAME')
+    with tf.variable_scope(name):
+      n = filter_size * filter_size * out_filters
+      shape = [filter_size, filter_size, in_filters, out_filters]
+      kernel = tf.get_variable('kernel', shape,
+        initializer=tf.random_normal_initializer(stddev=np.sqrt(2.0/n)),
+        regularizer=self.regularizer)
+
+      # layer_sensivity == 'l2_l2'
+      if self.distributions in ['l2', 'weibull']:
+        sensitivity_rescaling = np.ceil(filter_size / stride)
+        k = kernel / sensitivity_rescaling
+        x = tf.nn.conv2d(x, k, strides, padding='SAME')
+
+      # layer_sensivity == 'l1_l1'
+      elif self.distributions in ['l1', 'exp']:
+        k = l1_normalize(kernel, dim=[0, 1, 3])
+        x = tf.nn.conv2d(x, k, strides, padding='SAME')
+
+      else:
+         raise ValueError('sensitivity_norm is not recognised')
+
+    noise = self._get_noise(x)
+    return x + noise
+
+  def _conv(self, name,  x, filter_size, in_filters, out_filters, strides):
+
+    assert(strides[1] == strides[2])
+    stride = strides[1]
 
     n = filter_size * filter_size * out_filters
     kernel_initializer = tf.random_normal_initializer(stddev=np.sqrt(2.0/n))
@@ -85,6 +156,9 @@ class WideResnetModel(BaseModel):
     self.depth = self.config['depth']
     self.leaky_slope = config['leaky_slope']
     self.dropout = config['dropout']
+    self.train_with_noise = config['train_with_noise']
+    self.distributions = config['distributions']
+    self.scale_noise = config['scale_noise']
 
     assert(self.depth - 4) % 6 == 0, 'depth should be 6n+4'
     n = (self.depth - 4) // 6
@@ -102,7 +176,12 @@ class WideResnetModel(BaseModel):
       filter_size = 3
       in_filters  = x.get_shape()[-1]
       out_filters = 16
-      x = self._conv("init_conv", x, filter_size, in_filters, out_filters, [1, 1, 1, 1])
+      if self.train_with_noise:
+        x = self._conv_with_noise(
+          "init_conv", x, filter_size, in_filters, out_filters, [1, 1, 1, 1])
+      else:
+        x = self._conv(
+          "init_conv", x, filter_size, in_filters, out_filters, [1, 1, 1, 1])
       x = self._batch_normalization(x)
       x = tf.nn.leaky_relu(x, self.leaky_slope)
 
