@@ -186,7 +186,7 @@ class MessageBuilder:
 
   def add(self, name, value, format=None):
     metric_str = "{}: ".format(name)
-    if fill:
+    if format:
       metric_str += "{x:^{format}}".format(x=value, format=format)
     else:
       metric_str += "{}".format(value)
