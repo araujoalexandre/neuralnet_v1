@@ -2,7 +2,7 @@
 default: &DEFAULT
   path: &path                 /srv/osirim/aaraujo/neuralnet/models
   data_dir:                   /home/aaraujo/data
-  train_batch_size:           100
+  train_batch_size:           200
   num_epochs:                 200
   start_new_model:            True
   train_num_gpu:              2
@@ -11,14 +11,14 @@ default: &DEFAULT
   compile:                    False
 
   log_device_placement:       False
-  save_checkpoint_steps:      500 # ckpt per epoch: dataset_size / (batch_size * gpu)
+  save_checkpoint_steps:      250 # ckpt per epoch: dataset_size / (batch_size * gpu)
   save_summaries_steps:       60
   frequency_log_steps:        100
 
-  # reader:                     YT8MAggregatedFeatureReader
   reader:                     CIFAR10Reader
   one_hot_labels:             False
   per_image_standardization:  False
+  dataset_standardization:    False
   grayscale:                  False
   data_augmentation:          True
   readers_params:
@@ -28,7 +28,6 @@ default: &DEFAULT
     cache_dataset:            False
     drop_remainder:           False
 
-  # model:                      YoutubeModelLogistic
   model:                      WideResnetModel
   dense:
     n_layers:                 1
@@ -84,6 +83,9 @@ default: &DEFAULT
     depth:                    28
     leaky_slope:              0.1
     dropout:                  0.3
+    train_with_noise:         True
+    distributions:            l2
+    scale_noise:              0.3
   random_model:
     dp_epsilon:               1.0 
     dp_delta:                 0.05
@@ -99,19 +101,14 @@ default: &DEFAULT
 
 
   loss:                       SoftmaxCrossEntropyWithLogits
-  # loss:                       CrossEntropyLoss
   reg_norm:                   l2
   weight_decay_rate:          0.0002
   regularization_penalty:     1.0
   
-  # lr_strategy:                piecewise_constant
-  lr_strategy:                exponential_decay
+  lr_strategy:                piecewise_constant
   piecewise_constant:
-    # boundaries:               [40000, 60000, 80000]
-    boundaries:               [15000, 30000, 40000]
+    boundaries:               [7500, 15000, 20000]
     values:                   [0.1, 0.02, 0.004, 0.00008]
-    # values:                   [0.01, 0.005, 0.001, 0.0001]
-    # values:                   [0.0005, 0.00025, 0.00005, 0.00001]
   exponential_decay:
     base_lr:                  0.1
     lr_decay:                 0.97
@@ -142,7 +139,7 @@ default: &DEFAULT
     compute_hessian:          False
 
   update_ops:
-    parseval_update:          True
+    parseval_update:          False
     parseval_step:            0.0003
     parseval_loops:           10
 
@@ -152,12 +149,12 @@ train: &TRAIN
 
 eval: &EVAL
   <<: *DEFAULT
-  eval_batch_size:            200
-  eval_num_gpu:               2
+  eval_batch_size:            400
+  eval_num_gpu:               0
   start_eval_from_ckpt:       first
   cherrypick:                 None
   start_new_model:            False
-  stopped_at_n:               180 # number of ckpt
+  stopped_at_n:               100 # number of ckpt
   noise_in_eval:              True
 
 eval_train: &EVAL_TRAIN
@@ -171,39 +168,61 @@ eval_test: &EVAL_TEST
 
 
 
-attack: &ATTACK
+attack_fgsm: &ATTACK_FGSM
+  <<: *DEFAULT
+  <<: *EVAL_TEST
+  eval_batch_size:            100
+  eval_num_gpu:               2
+  attack_method:              FastGradientMethod
+  FastGradientMethod:
+    eps:                      0.3
+    ord:                      inf
+    clip_min:                 -1.0
+    clip_max:                 +1.0
+    sample:                   1
+
+attack_carlini: &ATTACK_CARLINI
   <<: *DEFAULT
   <<: *EVAL_TEST
   eval_batch_size:            50
-  eval_num_gpu:               4
-  
-attack_fgm:
-  <<: *ATTACK
-  attack_method:              FastGradientMethod
-  FastGradientMethod:
-    eps:                      0.1
-    ord:                      2
-    clip_min:                 -1.0
-    clip_max:                 +1.0
-
-attack_carlini:
-  <<: *ATTACK
+  eval_num_gpu:               1
   attack_method:              CarliniWagnerL2
   CarliniWagnerL2:
-    binary_search_steps:      10
-    max_iterations:           100
+    binary_search_steps:      9
+    max_iterations:           40
     batch_size:               200
     learning_rate:            1.0e-2
     initial_const:            1.0e-3
+    sample:                   1
 
-attack_deepfool:
-  <<: *ATTACK
-  attack_method:              DeepFool
-  DeepFool:
-    nb_candidate:             10
-    overshoot:                0.02
-    max_iter:                 50
+attack_pgd: &ATTACK_PGD
+  <<: *DEFAULT
+  <<: *EVAL_TEST
+  eval_batch_size:            200
+  eval_num_gpu:               1
+  attack_method:              ProjectedGradientDescent
+  ProjectedGradientDescent:
+    rand_minmax:              0.3
+    eps:                      0.3
+    eps_iter:                 0.06
+    nb_iter:                  10
+    ord:                      inf
     clip_min:                 -1.0
     clip_max:                 +1.0
+    sample:                   1
 
+attack_fgsm_esp:
+  <<: *ATTACK_FGSM
+  FastGradientMethod:
+    sample:                   100
+
+attack_carlini_esp:
+  <<: *ATTACK_CARLINI
+  CarliniWagnerL2:
+    sample:                   100
+
+attack_pgd_esp:
+  <<: *ATTACK_PGD
+  ProjectedGradientDescent:
+    sample:                   100
 
