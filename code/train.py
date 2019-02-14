@@ -3,6 +3,7 @@ import os, sys
 import json
 import time
 import pprint
+from collections import OrderedDict
 from os.path import join, exists
 from datetime import datetime
 
@@ -19,7 +20,6 @@ from eval_utils import eval_util
 from utils import MessageBuilder
 
 import tensorflow as tf
-import tensorflow.contrib.slim as slim
 from tensorflow import app
 from tensorflow import gfile
 from tensorflow import logging
@@ -132,11 +132,11 @@ def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty
 
   # apply gradients
   # gradients = gradients_cls.get_gradients(opt, total_loss)
-  train_op_cls = UpdateOps(opt, full_gradients, global_step)
+  train_op_cls = UpdateOps(opt)
 
   summary_op = tf.summary.merge_all()
   with tf.control_dependencies([summary_op]):
-    train_op = train_op_cls.make_update()
+    train_op = train_op_cls.make_update(full_gradients, global_step)
 
   logits = tf.concat(tower_logits, 0)
 
@@ -241,7 +241,6 @@ class Trainer(object):
         save_checkpoint_steps=FLAGS.save_checkpoint_steps,
         save_summaries_steps=10,
         save_summaries_secs=None,
-        # log_step_count_steps=10*FLAGS.frequency_log_steps,
         log_step_count_steps=0,
         config=self.config,
       )
@@ -269,26 +268,34 @@ class Trainer(object):
               'run_metadata': run_meta
             }
 
-          fetches = [train_op, global_step, loss,
-                     learning_rate, logits, labels]
+          fetches = OrderedDict(
+             train_op=train_op,
+             global_step=global_step,
+             loss=loss,
+             learning_rate=learning_rate,
+             logits=logits,
+             labels=labels
+          )
+
           if gradients_norm != 0:
-            fetches += [gradients_norm]
+            fetches['gradients_norm'] = gradients_norm
           else:
             grad_norm_val = 0
 
           batch_start_time = time.time()
-          fetches_values = sess.run(fetches, **profile_args)
+          values = sess.run(list(fetches.values()), **profile_args)
+          fetches_values = OrderedDict(zip(fetches.keys(), values))
           seconds_per_batch = time.time() - batch_start_time
           examples_per_second = self.batch_size / seconds_per_batch
 
-          global_step_val = fetches_values[1]
-          loss_val = fetches_values[2]
-          learning_rate_val = fetches_values[3]
-          predictions_val = fetches_values[4]
-          labels_val = fetches_values[5]
+          global_step_val = fetches_values['global_step']
+          loss_val = fetches_values['loss']
+          learning_rate_val = fetches_values['learning_rate']
+          predictions_val = fetches_values['logits']
+          labels_val = fetches_values['labels']
 
           if gradients_norm != 0:
-            grad_norm_val = fetches_values[6]
+            grad_norm_val = fetches_values['gradients_norm']
 
           if FLAGS.gradients['compute_hessian'] and global_step_val != 0 and \
              global_step_val % FLAGS.gradients['hessian_every_n_step'] == 0:
@@ -322,11 +329,7 @@ class Trainer(object):
             message.add("epoch", epoch, format="4.2f")
             message.add("step", global_step_val, format=" 5d")
             message.add("lr", learning_rate_val, format=".6f")
-            if self.coordinate_descent:
-              message.add("img loss", img_loss_val, format=".4f")
-              message.add("adv loss", adv_loss_val, format=".4f")
-            else:
-              message.add("loss", loss_val, fill=".4f")
+            message.add("loss", loss_val, format=".4f")
             if "YT8M" in self.reader.__class__.__name__:
               gap = eval_util.calculate_gap(predictions_val, labels_val)
               message.add("gap", gap, format=".3f")
