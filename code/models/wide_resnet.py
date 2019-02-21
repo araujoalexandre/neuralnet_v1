@@ -12,34 +12,52 @@ class WideResnetModel(BaseModel):
      https://arxiv.org/abs/1605.07146
   """
 
+  def l1_normalize(self, x, dim, epsilon=1e-12, name=None):
+    """Normalizes along dimension `dim` using an L1 norm.
+    For a 1-D tensor with `dim = 0`, computes
+        output = x / max(sum(abs(x)), epsilon)
+    For `x` with more dimensions, independently normalizes each 1-D slice along
+    dimension `dim`.
+    Args:
+      x: A `Tensor`.
+      dim: Dimension along which to normalize.  A scalar or a vector of
+        integers.
+      epsilon: A lower bound value for the norm. Will use `sqrt(epsilon)` as the
+        divisor if `norm < sqrt(epsilon)`.
+      name: A name for this operation (optional).
+    Returns:
+      A `Tensor` with the same shape as `x`.
+    """
+    with tf.name_scope(name, "l1_normalize", [x]) as name:
+      abs_sum = tf.reduce_sum(tf.abs(x), dim, keep_dims = True)
+      x_inv_norm = tf.reciprocal(tf.maximum(abs_sum, epsilon))
+      return tf.multiply(x, x_inv_norm, name=name)
+
   def _get_noise(self, x):
     """Pixeldp noise layer."""
 
-    if self.is_training and self.train_with_noise:
+    train_with_noise = self.is_training and self.train_with_noise
+    if train_with_noise or (self.train_with_noise and FLAGS.noise_in_eval):
       noise_activate = tf.constant(1.0)
+      logging.info(
+        "train/eval with noise - noise sd {:.2f}".format(self.scale_noise))
     else:
-      if FLAGS.noise_in_eval:
-        noise_activate = tf.constant(1.0)
-      else:
-        noise_activate = tf.constant(0.0)
+      noise_activate = tf.constant(0.0)
 
     loc = tf.zeros(tf.shape(x), dtype=tf.float32)
     scale = tf.ones(tf.shape(x), dtype=tf.float32)
 
     if self.distributions == 'l1':
       noise = tf.distributions.Laplace(loc, scale).sample()
-      scale = self.scale_noise / tf.sqrt(2)
-      noise = noise_activate * scale * noise
+      noise = noise_activate * (self.scale_noise / tf.sqrt(2.)) * noise
 
     elif self.distributions == 'l2':
       noise = tf.distributions.Normal(loc, scale).sample()
-      scale = self.scale_noise
-      noise = noise_activate * scale * noise
+      noise = noise_activate * self.scale_noise * noise
 
     elif self.distributions == 'exp':
       noise = tf.distributions.Exponential(rate=scale).sample()
-      scale = 1 / self.scale_noise
-      noise = noise_activate * scale * noise
+      noise = noise_activate * self.scale_noise * noise
 
     elif self.distributions == 'weibull':
       k = 3
@@ -48,13 +66,10 @@ class WideResnetModel(BaseModel):
       U = tf.random_uniform(tf.shape(x), minval=eps, maxval=1)
       X = (-tf.log(U) + alpha**k)**(1 / k) - alpha
       tensor = tf.zeros_like(x) + 0.5
-      dist = tf.distributions.Bernoulli(probs=tensor)
-      B = 2 * dist.sample() - 1
-      B = tf.cast(B, tf.float32)
-      X = B * X
-      noise = X / 0.3425929
-      scale = self.scale_noise
-      noise = noise_activate * scale * noise
+      bernoulli = tf.distributions.Bernoulli(probs=tensor).sample()
+      B = tf.cast(2 * bernoulli - 1, tf.float32)
+      noise = B * X / 0.3425929
+      noise = noise_activate * self.scale_noise * noise
 
     else:
       raise ValueError("Distributions is not recognised.")
@@ -82,7 +97,7 @@ class WideResnetModel(BaseModel):
 
       # layer_sensivity == 'l1_l1'
       elif self.distributions in ['l1', 'exp']:
-        k = l1_normalize(kernel, dim=[0, 1, 3])
+        k = self.l1_normalize(kernel, dim=[0, 1, 3])
         x = tf.nn.conv2d(x, k, strides, padding='SAME')
 
       else:
