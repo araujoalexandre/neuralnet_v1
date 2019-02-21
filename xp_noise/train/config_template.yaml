@@ -1,7 +1,7 @@
 
 default: &DEFAULT
-  path: &path                 /srv/osirim/aaraujo/neuralnet/models
-  data_dir:                   /home/aaraujo/data
+  path: &path                 /pwrproj/rech/zbe/urz85ee/models
+  data_dir:                   /pwrproj/rech/zbe/urz85ee/data
   train_batch_size:           200
   num_epochs:                 200
   start_new_model:            True
@@ -149,8 +149,8 @@ train: &TRAIN
 
 eval: &EVAL
   <<: *DEFAULT
-  eval_batch_size:            400
-  eval_num_gpu:               0
+  eval_batch_size:            200
+  eval_num_gpu:               2
   start_eval_from_ckpt:       first
   cherrypick:                 None
   start_new_model:            False
@@ -171,8 +171,8 @@ eval_test: &EVAL_TEST
 attack_fgsm: &ATTACK_FGSM
   <<: *DEFAULT
   <<: *EVAL_TEST
-  eval_batch_size:            100
-  eval_num_gpu:               2
+  eval_batch_size:            200
+  eval_num_gpu:               1
   attack_method:              FastGradientMethod
   FastGradientMethod:
     eps:                      0.3
@@ -204,7 +204,7 @@ attack_pgd: &ATTACK_PGD
   ProjectedGradientDescent:
     rand_minmax:              0.3
     eps:                      0.06
-    eps_iter:                 0.015
+    eps_iter:                 0.02
     nb_iter:                  10
     ord:                      inf
     clip_min:                 -1.0
