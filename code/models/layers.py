@@ -4,8 +4,6 @@ import tensorflow as tf
 from tensorflow import flags
 from tensorflow import logging
 
-import t3f
-
 from config import hparams as FLAGS
 
 class GivensLayer:
@@ -299,6 +297,8 @@ class TensorTrainLayer:
   def __init__(self, rank, tt_shape, shape_out,
                bias_initializer=None, regularizer=None,
                use_bias=True):
+
+    import t3f
 
     self.use_bias = use_bias
     self.tt_shape = tt_shape

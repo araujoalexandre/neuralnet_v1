@@ -3,7 +3,6 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import flags
 from tensorflow import logging
-import t3f
 
 from . import layers
 from .base import BaseModel
@@ -398,6 +397,8 @@ class Cifar10ModelLowRank(Cifar10BaseModel):
 class Cifar10ModelTensorTrain(Cifar10BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
+
+    import t3f
 
     config = FLAGS.tensor_train
     if type(config['hidden']) == int:
