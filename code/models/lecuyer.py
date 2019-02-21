@@ -4,13 +4,32 @@ import tensorflow as tf
 from tensorflow import flags
 from tensorflow import logging
 
-from utils import l1_normalize
-
 from .base import BaseModel
 from config import hparams as FLAGS
 
 
 class RandomModel:
+
+  def l1_normalize(self, x, dim, epsilon=1e-12, name=None):
+    """Normalizes along dimension `dim` using an L1 norm.
+    For a 1-D tensor with `dim = 0`, computes
+        output = x / max(sum(abs(x)), epsilon)
+    For `x` with more dimensions, independently normalizes each 1-D slice along
+    dimension `dim`.
+    Args:
+      x: A `Tensor`.
+      dim: Dimension along which to normalize.  A scalar or a vector of
+        integers.
+      epsilon: A lower bound value for the norm. Will use `sqrt(epsilon)` as the
+        divisor if `norm < sqrt(epsilon)`.
+      name: A name for this operation (optional).
+    Returns:
+      A `Tensor` with the same shape as `x`.
+    """
+    with tf.name_scope(name, "l1_normalize", [x]) as name:
+      abs_sum = tf.reduce_sum(tf.abs(x), dim, keep_dims = True)
+      x_inv_norm = tf.reciprocal(tf.maximum(abs_sum, epsilon))
+      return tf.multiply(x, x_inv_norm, name=name)
 
   def _noise_layer(self, x, sensitivity_norm, sensitivity_control_scheme):
     """Pixeldp noise layer."""
@@ -152,7 +171,7 @@ class RandomModel:
           k = kernel
         elif sensitivity_control_scheme == 'bound':
           # Sensitivity 1 by L1 normalization
-          k = l1_normalize(kernel, dim=[0, 1, 3])
+          k = self.l1_normalize(kernel, dim=[0, 1, 3])
 
         # Compute the sensitivity
         l1_norms = tf.reduce_sum(tf.abs(k), [0, 1, 3], keep_dims=True)
