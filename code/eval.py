@@ -211,7 +211,7 @@ class Evaluate:
 
     if os.environ.get('CUDA_VISIBLE_DEVICES') is None:
       if FLAGS.eval_num_gpu == 0:
-        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+        os.environ['CUDA_VISIBLE_DEVICES'] = ''
       else:
         os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(
           map(str, range(FLAGS.eval_num_gpu)))
