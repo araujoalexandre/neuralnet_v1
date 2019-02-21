@@ -24,8 +24,8 @@ class FastGradientMethod:
   :param dtypestr: dtype of the data
   :param kwargs: passed through to super constructor
   """
-  def __init__(self, eps=0.3, ord=np.inf, clip_min=None, clip_max=None,
-               targeted=False, sanity_checks=False, sample=1):
+  def __init__(self, batch_size=1, eps=0.3, ord=np.inf, clip_min=None,
+               clip_max=None, targeted=False, sanity_checks=False, sample=1):
     """
     Create a FastGradientMethod instance.
     :param eps: the epsilon (input variation parameter)
@@ -40,6 +40,7 @@ class FastGradientMethod:
     :params sample: take the esperance of the logits to attack randomized
                          model.
     """
+    self.batch_size = batch_size
     self.eps = eps
     self.ord = ord
     self.clip_min = clip_min
@@ -52,7 +53,8 @@ class FastGradientMethod:
       self.ord = np.inf
 
   def get_name(self):
-    return 'FastGradientMethod_{}_{}'.format(str(self.ord), self.eps)
+    return 'FastGradientMethod_{}_{}_{}'.format(
+      str(self.ord), self.eps, self.sample)
 
   def _optimize_linear(self, grad, eps, ord=np.inf):
     """
@@ -113,12 +115,9 @@ class FastGradientMethod:
     :return: a tensor for the adversarial example
     """
     # compute logits
-    losses = []
-    for i in range(self.sample):
+    if self.sample <= 1:
       logits = fn_logits(x)
-      if i == 0:
-        # Make sure the caller has not passed probs by accident
-        assert logits.op.type != 'Softmax'
+      assert logits.op.type != 'Softmax'
 
       # Using model predictions as ground truth to avoid label leaking
       preds_max = reduce_max(logits, 1, keepdims=True)
@@ -128,19 +127,40 @@ class FastGradientMethod:
 
       # Compute loss
       loss = softmax_cross_entropy_with_logits(labels=y, logits=logits)
-      losses.append(loss)
-    loss = tf.reduce_mean(losses, 0)
+
+    else:
+      tf.logging.info(
+        "Monte Carlo (MC) on attacks, sample: {}".format(self.sample))
+      x_orig = x
+      _, *shape = x.shape.as_list()
+      x = tf.layers.flatten(x)
+      _, dim = x.shape.as_list()
+      x = tf.tile(x, (1, self.sample))
+      x = tf.reshape(x, (-1, *shape))
+      logits = fn_logits(x)
+      assert logits.op.type != 'Softmax'
+
+      # Using model predictions as ground truth to avoid label leaking
+      preds_max = reduce_max(logits, 1, keepdims=True)
+      y = tf.to_float(tf.equal(logits, preds_max))
+      y = tf.stop_gradient(y)
+      y = y / reduce_sum(y, 1, keepdims=True)
+
+      # Compute loss
+      loss = softmax_cross_entropy_with_logits(labels=y, logits=logits)
+      loss = tf.reshape(loss, (-1, self.sample))
+      loss = tf.reduce_mean(loss, axis=1)
 
     if self.targeted:
       loss = -loss
 
     # Define gradient of loss wrt input
-    grad, = tf.gradients(loss, x)
+    grad, = tf.gradients(loss, x_orig)
 
     optimal_perturbation = self._optimize_linear(grad, self.eps, self.ord)
 
     # Add perturbation to original example to obtain adversarial example
-    adv_x = x + optimal_perturbation
+    adv_x = x_orig + optimal_perturbation
 
     # If clipping is needed, reset all values outside of [clip_min, clip_max]
     if (self.clip_min is not None) or (self.clip_max is not None):

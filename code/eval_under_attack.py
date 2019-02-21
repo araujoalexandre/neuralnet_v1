@@ -224,7 +224,8 @@ class Evaluate:
       if attack_cls is None:
         raise ValueError("Attack is not recognized.")
       attack_config = getattr(FLAGS, attack_method)
-      self.attack = attack_cls(**attack_config)
+      self.attack = attack_cls(
+        batch_size=self.batch_size, sample=FLAGS.attack_sample, **attack_config)
 
       self.reader = find_class_by_name(self.flags_dict.reader, [readers])(
         self.batch_size, is_training=False)
