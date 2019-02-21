@@ -87,9 +87,12 @@ class CarliniWagnerL2:
     self.clip_max = clip_max
     self.sample = sample
 
+    tf.logging.info("max_iterations: {}".format(max_iterations))
+    tf.logging.info("batch_size: {}".format(batch_size))
+
   def get_name(self):
-    return 'Carlini_{}_{}'.format(
-      self.max_iterations, self.binary_search_steps)
+    return 'Carlini_{}_{}_{}'.format(
+      self.max_iterations, self.binary_search_steps, self.sample)
 
   def generate(self, x, fn_logits, y=None):
     """
@@ -135,10 +138,24 @@ class CarliniWagnerL2:
     self.newimg = self.newimg * (self.clip_max - self.clip_min) + self.clip_min
 
     # prediction BEFORE-SOFTMAX of the model
-    self.output = []
-    for i in range(self.sample):
-      self.output.append(fn_logits(self.newimg))
-    self.output = tf.reduce_mean(self.output, 0)
+    if self.sample <= 1:
+      self.output = fn_logits(self.newimg)
+    else:
+      tf.logging.info(
+        "Monte Carlo (MC) on attacks, sample: {}".format(self.sample))
+      tf.logging.info("batch_size: {}".format(self.batch_size))
+      _, *shape_img = self.newimg.shape.as_list()
+      self.newimg_sample = tf.layers.flatten(self.newimg)
+      _, dim = self.newimg_sample.shape.as_list()
+      self.newimg_sample = tf.tile(
+        self.newimg_sample, (1, self.sample))
+      self.newimg_sample = tf.reshape(
+        self.newimg_sample, (self.batch_size*self.sample, *shape_img))
+      logits = fn_logits(self.newimg_sample)
+      assert logits.op.type != 'Softmax'
+      _, dim = logits.shape.as_list()
+      logits = tf.reshape(logits, (self.batch_size, self.sample, dim))
+      self.output = tf.reduce_mean(logits, axis=1)
 
     # distance to the input data
     self.other = (tf.tanh(self.timg) + 1) / \
@@ -291,6 +308,8 @@ class CarliniWagnerL2:
         for e, (l2, sc, ii) in enumerate(zip(l2s, scores, nimg)):
           lab = np.argmax(batchlab[e])
           if l2 < bestl2[e] and compare(sc, lab):
+          # if l2 < bestl2[e]:
+          #   if compare(sc, lab):
             bestl2[e] = l2
             bestscore[e] = np.argmax(sc)
           if l2 < o_bestl2[e] and compare(sc, lab):

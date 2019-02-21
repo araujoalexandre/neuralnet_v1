@@ -30,6 +30,7 @@ class ProjectedGradientDescent:
   FGM_CLASS = FastGradientMethod
 
   def __init__(self,
+               batch_size=1,
                rand_minmax=0.3,
                eps=0.3,
                eps_iter=0.05,
@@ -62,6 +63,7 @@ class ProjectedGradientDescent:
     """
 
     # Save attack-specific parameters
+    self.batch_size = batch_size
     self.eps = eps
     self.rand_init = rand_minmax > 0
     self.rand_minmax = rand_minmax
@@ -71,7 +73,7 @@ class ProjectedGradientDescent:
     self.ord = ord
     self.clip_min = clip_min
     self.clip_max = clip_max
-    self.sample = 1
+    self.sample = sample
 
     if isinstance(eps, float) and isinstance(eps_iter, float):
       # If these are both known at compile time, we can check before anything
@@ -87,8 +89,8 @@ class ProjectedGradientDescent:
     self.sanity_checks = sanity_checks
 
   def get_name(self):
-    return 'ProjectedGradientDescent_{}_{}_{}_{}'.format(
-      self.rand_minmax, self.eps, self.eps_iter, self.nb_iter)
+    return 'ProjectedGradientDescent_{}_{}_{}_{}_{}'.format(
+      self.rand_minmax, self.eps, self.eps_iter, self.nb_iter, self.sample)
 
   def generate(self, x, fn_logits, y=None):
     """
@@ -141,6 +143,7 @@ class ProjectedGradientDescent:
       del model_preds
 
     fgm_params = {
+        'batch_size': self.batch_size,
         'eps': self.eps_iter,
         'ord': self.ord,
         'clip_min': self.clip_min,
