@@ -7,9 +7,13 @@ from config import hparams as FLAGS
 
 class UpdateOps:
 
-  def __init__(self, optimizer):
+  def __init__(self, optimizer, with_update=True):
     self.config = FLAGS.update_ops
     self.optimizer = optimizer
+    if with_update:
+      self.make_update = self._make_update_with_ops
+    else:
+      self.make_update = self._make_update
 
   def _parseval_update(self):
     beta = self.config['parseval_step']
@@ -36,12 +40,12 @@ class UpdateOps:
       tf.add_to_collection("ops_after_update", ops)
 
 
-  def make_update(self, gradients, global_step):
+  def _make_update_with_ops(self, gradients, global_step=None):
 
     ops_before_update = tf.get_collection("ops_before_update")
     ops_before_update = tf.group(*ops_before_update)
     with tf.control_dependencies([ops_before_update]):
-      train_op = self.optimizer.apply_gradients(gradients,
+      update = self.optimizer.apply_gradients(gradients,
         global_step=global_step)
 
     if self.config['parseval_update']:
@@ -49,7 +53,14 @@ class UpdateOps:
 
     ops_after_update = tf.get_collection("ops_after_update")
     ops_after_update = tf.group(*ops_after_update)
-    with tf.control_dependencies([ops_after_update]):
-        train_op = tf.no_op()
+    with tf.control_dependencies([update, ops_after_update]):
+        final = tf.no_op()
 
-    return train_op
+    return final
+
+  def _make_update(self, gradients, global_step=None):
+    update = self.optimizer.apply_gradients(gradients,
+      global_step=global_step)
+    return update
+
+

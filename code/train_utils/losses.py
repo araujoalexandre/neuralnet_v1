@@ -30,8 +30,8 @@ class CrossEntropyLoss(BaseLoss):
 
   def calculate_loss(self, labels=None, logits=None, **unused_params):
     with tf.name_scope("loss_xent"):
-      predictions = tf.nn.sigmoid(logits)
       epsilon = 10e-6
+      predictions = tf.nn.sigmoid(logits)
       float_labels = tf.cast(labels, tf.float32)
       cross_entropy_loss = float_labels * tf.log(predictions + epsilon) + (
           1 - float_labels) * tf.log(1 - predictions + epsilon)
@@ -43,7 +43,7 @@ class SoftmaxCrossEntropyWithLogits(BaseLoss):
 
   def calculate_loss(self, labels=None, logits=None, **unused_params):
     with tf.name_scope("loss"):
-      if FLAGS.gradients["compute_hessian"]:
+      if FLAGS.gradients["compute_hessian"] or FLAGS.fused_loss is False:
         if not FLAGS.one_hot_labels:
           raise ValueError("Labels needs to be one hot encoded.")
         # We are going to compute the hessian so we can't 
@@ -51,10 +51,12 @@ class SoftmaxCrossEntropyWithLogits(BaseLoss):
         # because the ops are fused and the gradient of the 
         # cross entropy is blocked. Insted we compute it manually.
         # /!\ might not be efficient and not numerically stable
-        labels = tf.cast(labels, tf.float32)
-        proba = tf.nn.softmax(logits)
-        loss = tf.reduce_mean(-tf.reduce_sum(labels * tf.log(proba), axis=1))
-        return loss
+        epsilon = 10e-6
+        predictions = tf.nn.softmax(logits)
+        float_labels = tf.cast(labels, tf.float32)
+        cross_entropy_loss = float_labels * tf.log(predictions + epsilon)
+        cross_entropy_loss = tf.negative(cross_entropy_loss)
+        return tf.reduce_mean(tf.reduce_sum(cross_entropy_loss, 1))
       return tf.losses.sparse_softmax_cross_entropy(
             labels=labels, logits=logits)
 
