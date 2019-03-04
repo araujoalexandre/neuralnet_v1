@@ -203,7 +203,8 @@ class ComputeAndProcessGradients:
   def get_gradients(self, opt, loss, *args, **kwargs):
 
     gradients = opt.compute_gradients(loss, *args, **kwargs)
-    self._gradients_summary(gradients)
+    if self.config['make_gradient_summary']:
+      self._gradients_summary(gradients)
 
     # compute and record summary of hessians eigenvals
     if self.config['compute_hessian']:
