@@ -104,6 +104,19 @@ class WideResnetModel(BaseModel):
          raise ValueError('sensitivity_norm is not recognised')
 
     noise = self._get_noise(x)
+    if self.config['learn_noise_defense']:
+      logging.info('parameterized noise defense activated')
+      shape = noise.shape.as_list()[1:]
+      noise = tf.layers.flatten(noise)
+      feature_size = noise.shape.as_list()[-1]
+      weights = tf.get_variable('weights_noise', (feature_size, ),
+        initializer=tf.random_normal_initializer(stddev=np.sqrt(2.0/feature_size)),
+        regularizer=self.regularizer)
+      biases = tf.get_variable('biases_noise', (feature_size, ),
+        regularizer=self.regularizer)
+      noise = tf.multiply(noise, weights) + biases
+      noise = tf.reshape(noise, (-1, *shape))
+
     return x + noise
 
   def _conv(self, name,  x, filter_size, in_filters, out_filters, strides):
@@ -167,8 +180,8 @@ class WideResnetModel(BaseModel):
     self.config = config = FLAGS.wide_resnet
     self.n_classes = n_classes
     self.is_training = is_training
-    self.k = self.config['widen_factor']
-    self.depth = self.config['depth']
+    self.k = config['widen_factor']
+    self.depth = config['depth']
     self.leaky_slope = config['leaky_slope']
     self.dropout = config['dropout']
     self.train_with_noise = config['train_with_noise']
