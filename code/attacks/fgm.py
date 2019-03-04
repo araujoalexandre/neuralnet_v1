@@ -3,11 +3,6 @@ import numpy as np
 import tensorflow as tf
 
 from cleverhans import utils
-from cleverhans.attacks_tf import SPSAAdam, margin_logit_loss, TensorAdam
-from cleverhans.model import Model, CallableModelWrapper
-from cleverhans.model import wrapper_warning, wrapper_warning_logits
-from cleverhans.compat import reduce_sum, reduce_mean
-from cleverhans.compat import reduce_max
 from cleverhans.compat import softmax_cross_entropy_with_logits
 from cleverhans.utils_tf import clip_eta
 from cleverhans import utils_tf
@@ -19,10 +14,6 @@ class FastGradientMethod:
   implementation extends the attack to other norms, and is therefore called
   the Fast Gradient Method.
   Paper link: https://arxiv.org/abs/1412.6572
-  :param model: cleverhans.model.Model
-  :param sess: optional tf.Session
-  :param dtypestr: dtype of the data
-  :param kwargs: passed through to super constructor
   """
   def __init__(self, batch_size=1, eps=0.3, ord=np.inf, clip_min=None,
                clip_max=None, targeted=False, sanity_checks=False, sample=1):
@@ -87,17 +78,18 @@ class FastGradientMethod:
       optimal_perturbation = sign * tied_for_max / num_ties
     elif ord == 2:
       square = tf.maximum(avoid_zero_div,
-                          reduce_sum(tf.square(grad),
+                          tf.reduce_sum(tf.square(grad),
                                      reduction_indices=red_ind,
                                      keepdims=True))
       optimal_perturbation = grad / tf.sqrt(square)
+      optimal_perturbation = tf.stop_gradient(optimal_perturbation)
     else:
       raise NotImplementedError("Only L-inf, L1 and L2 norms are "
                                 "currently implemented.")
 
     # Scale perturbation to be the solution for the norm=eps rather than
     # norm=1 problem
-    scaled_perturbation = utils_tf.mul(eps, optimal_perturbation)
+    scaled_perturbation = tf.multiply(eps, optimal_perturbation)
     return scaled_perturbation
 
   def generate(self, x, fn_logits, y=None):
@@ -114,16 +106,17 @@ class FastGradientMethod:
               Labels should be one-hot-encoded.
     :return: a tensor for the adversarial example
     """
+    x_orig = x
     # compute logits
     if self.sample <= 1:
       logits = fn_logits(x)
       assert logits.op.type != 'Softmax'
 
       # Using model predictions as ground truth to avoid label leaking
-      preds_max = reduce_max(logits, 1, keepdims=True)
+      preds_max = tf.reduce_max(logits, 1, keepdims=True)
       y = tf.to_float(tf.equal(logits, preds_max))
       y = tf.stop_gradient(y)
-      y = y / reduce_sum(y, 1, keepdims=True)
+      y = y / tf.reduce_sum(y, 1, keepdims=True)
 
       # Compute loss
       loss = softmax_cross_entropy_with_logits(labels=y, logits=logits)
@@ -131,7 +124,6 @@ class FastGradientMethod:
     else:
       tf.logging.info(
         "Monte Carlo (MC) on attacks, sample: {}".format(self.sample))
-      x_orig = x
       _, *shape = x.shape.as_list()
       x = tf.layers.flatten(x)
       _, dim = x.shape.as_list()
@@ -141,10 +133,10 @@ class FastGradientMethod:
       assert logits.op.type != 'Softmax'
 
       # Using model predictions as ground truth to avoid label leaking
-      preds_max = reduce_max(logits, 1, keepdims=True)
+      preds_max = tf.reduce_max(logits, 1, keepdims=True)
       y = tf.to_float(tf.equal(logits, preds_max))
       y = tf.stop_gradient(y)
-      y = y / reduce_sum(y, 1, keepdims=True)
+      y = y / tf.reduce_sum(y, 1, keepdims=True)
 
       # Compute loss
       loss = softmax_cross_entropy_with_logits(labels=y, logits=logits)
@@ -163,14 +155,11 @@ class FastGradientMethod:
     adv_x = x_orig + optimal_perturbation
 
     # If clipping is needed, reset all values outside of [clip_min, clip_max]
-    if (self.clip_min is not None) or (self.clip_max is not None):
+    if self.sanity_checks and \
+       ( (self.clip_min is not None) or (self.clip_max is not None) ):
       # We don't currently support one-sided clipping
       assert self.clip_min is not None and self.clip_max is not None
       adv_x = utils_tf.clip_by_value(adv_x, self.clip_min, self.clip_max)
-
-    if self.sanity_checks:
-      with tf.control_dependencies(asserts):
-        adv_x = tf.identity(adv_x)
 
     return adv_x
 

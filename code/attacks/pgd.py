@@ -1,14 +1,11 @@
 """
 The ProjectedGradientDescent attack.
 """
-import warnings
-
 import numpy as np
 import tensorflow as tf
 
-from cleverhans.compat import reduce_max
 from cleverhans import utils_tf
-from cleverhans.utils_tf import clip_eta
+from cleverhans.utils_tf import clip_eta, clip_by_value
 
 from .fgm import FastGradientMethod
 
@@ -40,7 +37,7 @@ class ProjectedGradientDescent:
                clip_max=None,
                y_target=None,
                sample=1,
-               sanity_checks=True):
+               sanity_checks=False):
     """
     Create a ProjectedGradientDescent instance.
     Take in a dictionary of parameters and applies attack-specific checks
@@ -74,6 +71,7 @@ class ProjectedGradientDescent:
     self.clip_min = clip_min
     self.clip_max = clip_max
     self.sample = sample
+    self.sanity_checks = sanity_checks
 
     if isinstance(eps, float) and isinstance(eps_iter, float):
       # If these are both known at compile time, we can check before anything
@@ -86,7 +84,6 @@ class ProjectedGradientDescent:
     # Check if order of the norm is acceptable given current implementation
     if self.ord not in [np.inf, 1, 2]:
       raise ValueError("Norm order must be either np.inf, 1, or 2.")
-    self.sanity_checks = sanity_checks
 
   def get_name(self):
     return 'ProjectedGradientDescent_{}_{}_{}_{}_{}'.format(
@@ -105,11 +102,11 @@ class ProjectedGradientDescent:
     asserts = []
 
     # If a data range was specified, check that the input was in that range
-    if self.clip_min is not None:
+    if self.sanity_checks and self.clip_min is not None:
       asserts.append(
         utils_tf.assert_greater_equal(x, tf.cast(self.clip_min, x.dtype)))
 
-    if self.clip_max is not None:
+    if self.sanity_checks and self.clip_max is not None:
       asserts.append(
         utils_tf.assert_less_equal(x, tf.cast(self.clip_max, x.dtype)))
 
@@ -126,7 +123,7 @@ class ProjectedGradientDescent:
     eta = clip_eta(eta, self.ord, self.eps)
     adv_x = x + eta
     if self.clip_min is not None or self.clip_max is not None:
-      adv_x = utils_tf.clip_by_value(adv_x, self.clip_min, self.clip_max)
+      adv_x = clip_by_value(adv_x, self.clip_min, self.clip_max)
 
     if self.y_target is not None:
       y = self.y_target
@@ -136,7 +133,7 @@ class ProjectedGradientDescent:
       targeted = False
     else:
       model_preds = fn_logits(x)
-      preds_max = reduce_max(model_preds, 1, keepdims=True)
+      preds_max = tf.reduce_max(model_preds, 1, keepdims=True)
       y = tf.to_float(tf.equal(model_preds, preds_max))
       y = tf.stop_gradient(y)
       targeted = False
@@ -148,7 +145,8 @@ class ProjectedGradientDescent:
         'ord': self.ord,
         'clip_min': self.clip_min,
         'clip_max': self.clip_max,
-        'sample': self.sample
+        'sample': self.sample,
+        'sanity_checks': self.sanity_checks
     }
     if self.ord == 1:
       raise NotImplementedError("It's not clear that FGM is a good inner loop"
@@ -159,10 +157,29 @@ class ProjectedGradientDescent:
 
     fgm_attack = self.FGM_CLASS(**fgm_params)
 
-    def cond(i, _):
-      return tf.less(i, self.nb_iter)
+    # def cond(i, _):
+    #   return tf.less(i, self.nb_iter)
 
-    def body(i, adv_x):
+    # def body(i, adv_x):
+    #   adv_x = fgm_attack.generate(adv_x, fn_logits)
+
+    #   # Clipping perturbation eta to self.ord norm ball
+    #   eta = adv_x - x
+    #   eta = clip_eta(eta, self.ord, self.eps)
+    #   adv_x = x + eta
+
+    #   # Redo the clipping.
+    #   # FGM already did it, but subtracting and re-adding eta can add some
+    #   # small numerical error.
+    #   if self.clip_min is not None or self.clip_max is not None:
+    #     adv_x = clip_by_value(adv_x, self.clip_min, self.clip_max)
+
+    #   return i + 1, adv_x
+
+    # _, adv_x = tf.while_loop(cond, body, (tf.zeros([]), adv_x), back_prop=True,
+    #                          maximum_iterations=self.nb_iter)
+
+    for i in range(self.nb_iter):
       adv_x = fgm_attack.generate(adv_x, fn_logits)
 
       # Clipping perturbation eta to self.ord norm ball
@@ -174,21 +191,17 @@ class ProjectedGradientDescent:
       # FGM already did it, but subtracting and re-adding eta can add some
       # small numerical error.
       if self.clip_min is not None or self.clip_max is not None:
-        adv_x = utils_tf.clip_by_value(adv_x, self.clip_min, self.clip_max)
-
-      return i + 1, adv_x
-
-    _, adv_x = tf.while_loop(cond, body, (tf.zeros([]), adv_x), back_prop=True,
-                             maximum_iterations=self.nb_iter)
+        adv_x = clip_by_value(adv_x, self.clip_min, self.clip_max)
 
     # Asserts run only on CPU.
     # When multi-GPU eval code tries to force all PGD ops onto GPU, this
     # can cause an error.
-    common_dtype = tf.float64
-    asserts.append(utils_tf.assert_less_equal(tf.cast(self.eps_iter,
-                                                      dtype=common_dtype),
-                                              tf.cast(self.eps, dtype=common_dtype)))
-    if self.ord == np.inf and self.clip_min is not None:
+    if self.sanity_checks:
+      common_dtype = tf.float64
+      asserts.append(utils_tf.assert_less_equal(
+        tf.cast(self.eps_iter, dtype=common_dtype),
+        tf.cast(self.eps, dtype=common_dtype)))
+    if self.sanity_checks and self.ord == np.inf and self.clip_min is not None:
       # The 1e-6 is needed to compensate for numerical error.
       # Without the 1e-6 this fails when e.g. eps=.2, clip_min=.5,
       # clip_max=.7
