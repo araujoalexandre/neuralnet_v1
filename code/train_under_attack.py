@@ -527,7 +527,10 @@ def main():
   task = type("TaskSpec", (object,), task_data)
 
   # Setup logging & log the version.
-  logging.set_verbosity(logging.INFO)
+  if not FLAGS.debug:
+    logging.set_verbosity(logging.INFO)
+  else:
+    logging.set_verbosity(logging.DEBUG)
   logging.info("{}: Tensorflow version: {}.".format(
     task_as_string(task), tf.__version__))
 
