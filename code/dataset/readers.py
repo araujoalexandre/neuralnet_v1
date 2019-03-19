@@ -99,7 +99,7 @@ class MNISTReader(BaseReader):
     if not self.files:
       raise IOError("Unable to find files in data_dir '{}'.".format(
         data['data_dir']))
-    logging.info("Number of training TFRecord files: {}.".format(
+    logging.info("Number of TFRecord files: {}.".format(
       len(self.files)))
 
   def _image_preprocessing(self, image_buffer):
@@ -145,7 +145,7 @@ class FashionMNISTReader(BaseReader):
     if not self.files:
       raise IOError("Unable to find files in data_dir '{}'.".format(
         data['data_dir']))
-    logging.info("Number of training TFRecord files: {}.".format(
+    logging.info("Number of TFRecord files: {}.".format(
       len(self.files)))
 
   def _image_preprocessing(self, image_buffer):
@@ -197,7 +197,7 @@ class CIFAR10Reader(BaseReader):
     if not self.files:
       raise IOError("Unable to find training files. data_pattern='{}'.".format(
         data["data_pattern"]))
-    logging.info("Number of training TFRecord files: {}.".format(
+    logging.info("Number of TFRecord files: {}.".format(
       len(self.files)))
 
   def _data_augmentation(self, image):
@@ -261,7 +261,7 @@ class CIFAR100Reader(BaseReader):
     if not self.files:
       raise IOError("Unable to find training files. data_pattern='{}'.".format(
         data["data_pattern"]))
-    logging.info("Number of training TFRecord files: {}.".format(
+    logging.info("Number of TFRecord files: {}.".format(
       len(self.files)))
 
   def _data_augmentation(self, image):
@@ -322,9 +322,9 @@ class YT8MAggregatedFeatureReader(BaseReader):
       FLAGS.data_dir, 'yt8m', 'video', FLAGS.data_pattern))
 
     if not self.files:
-      raise IOError("Unable to find training files. data_pattern='{}'.".format(
+      raise IOError("Unable to find files. data_pattern='{}'.".format(
         FLAGS.data_pattern))
-    logging.info("Number of training TFRecord files: {}.".format(
+    logging.info("Number of TFRecord files: {}.".format(
       len(self.files)))
 
   def _image_preprocessing(self, video):
@@ -390,7 +390,7 @@ class YT8MFrameFeatureReader(BaseReader):
     if not self.files:
       raise IOError("Unable to find training files. data_pattern='{}'.".format(
         FLAGS.data_pattern))
-    logging.info("Number of training TFRecord files: {}.".format(
+    logging.info("Number of TFRecord files: {}.".format(
       len(self.files)))
 
   def get_video_matrix(self, features, feature_size):
