@@ -115,7 +115,12 @@ class WideResnetModel(BaseModel):
       biases = tf.get_variable('biases_noise', (feature_size, ),
         regularizer=self.regularizer)
       noise = tf.multiply(noise, weights) + biases
+      logging.info('get learned noise summary')
+      tf.summary.histogram('weights_noise', weights)
+      tf.summary.histogram('biases_noise', biases)
+      tf.summary.histogram('noise', noise)
       noise = tf.reshape(noise, (-1, *shape))
+      tf.add_to_collection('learned_noise', noise)
 
     return x + noise
 
