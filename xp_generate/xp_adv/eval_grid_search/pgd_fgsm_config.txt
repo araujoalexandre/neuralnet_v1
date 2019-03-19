@@ -1,0 +1,28 @@
+attack_fgm_{norm}_{eps_title}: &ATTACK_FGM_{norm_maj}_{eps_title}
+  <<: *DEFAULT
+  <<: *EVAL_TEST
+  eval_batch_size:            200
+  eval_num_gpu:               1
+  attack_sample:              1
+  attack_method:              FastGradientMethod
+  FastGradientMethod:
+    eps:                      {eps}
+    ord:                      {norm}
+    clip_min:                 -1.0
+    clip_max:                 +1.0
+
+attack_pgd_{norm}_{eps_title}: &ATTACK_PGD_{norm_maj}_{eps_title}
+  <<: *DEFAULT
+  <<: *EVAL_TEST
+  eval_batch_size:            200
+  eval_num_gpu:               1
+  attack_sample:              1
+  attack_method:              ProjectedGradientDescent
+  ProjectedGradientDescent:
+    rand_minmax:              0.3
+    eps:                      {eps}
+    eps_iter:                 0.02
+    nb_iter:                  10
+    ord:                      {norm}
+    clip_min:                 -1.0
+    clip_max:                 +1.0
