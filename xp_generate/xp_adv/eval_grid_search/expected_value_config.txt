@@ -1,0 +1,11 @@
+
+attack_fgm_{norm}_{eps_title}_mc_{sample}:
+  <<: *ATTACK_FGM_{norm_maj}_{eps_title}
+  eval_batch_size:            {batch_size}
+  attack_sample:              {sample}
+
+attack_pgd_{norm}_{eps_title}_mc_{sample}:
+  <<: *ATTACK_PGD_{norm_maj}_{eps_title}
+  eval_batch_size:            {batch_size}
+  attack_sample:              {sample}
+

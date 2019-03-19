@@ -1,0 +1,5 @@
+
+attack_carlini_mc_{sample}:
+  <<: *ATTACK_CARLINI
+  eval_batch_size:            {batch_size}
+  attack_sample:              {sample}
