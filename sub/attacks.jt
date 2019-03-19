@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#BSUB -J eval
+#BSUB -J attack
 #BSUB -gpu "num=4:mode=exclusive_process:mps=no:j_exclusive=yes"
 #BSUB -n 1
 #BSUB -R "span[ptile=1]"
@@ -11,17 +11,21 @@
 ml anaconda/py3 cudnn nccl
 source activate tensorflow1.12-py3
 
-PROJECT_PATH="/linkhome/rech/grpgen/ubx31mc/neuralnet"
-
 export LD_LIBRARY_PATH=/pwrlocal/pub/openmpi/2.1.2/arch/gcc-4.8/lib:/pwrlocal/pub/cudnn/7.1.4/lib64:/pwrlocal/pub/nccl/2.2.13-1/lib:$LD_LIBRARY_PATH
 
+CODE_PATH="$PROJECTDIR/code"
 TRAIN_DIR="$WORKDIR/models/{}"
 LOGS_DIR=$TRAIN_DIR"_logs"
 CONFIG_FILE="$LOGS_DIR/model_flags.yaml"
 
-export CUDA_VISIBLE_DEVICES='0,1,2,3';
-python3 $PROJECTDIR/code/eval.py \
-        --config_file=$CONFIG_FILE \
-	--config_name=eval_test \
-	--train_dir=$TRAIN_DIR \
-        &>> "$LOGS_DIR/log_eval_test.logs" & 
+# for attack in 'attack_fgm' 'attack_pgd' 'attack_carlini' 
+for ATTACK in 'attack_carlini'
+do
+  export CUDA_VISIBLE_DEVICES='0';
+  python3 $PROJECTDIR/code/eval_v2.py \
+          --config_file=$CONFIG_FILE \
+  	  --config_name=$ATTACK \
+  	  --train_dir=$TRAIN_DIR \
+          &>> "$LOGS_DIR/log_"$ATTACK".logs" & 
+  wait
+done

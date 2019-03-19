@@ -23,7 +23,7 @@ mkdir $LOGS_DIR
 cp $CONFIG_PATH $LOGS_DIR"/model_flags.yaml"
 
 export CUDA_VISIBLE_DEVICES='0,1'; 
-python3 $CODE_PATH/train.py \
+python3 $CODE_PATH/train_under_attack.py \
 	--config_file=$CONFIG_PATH \
 	--config_name=train \
 	--train_dir=$TRAIN_DIR \
