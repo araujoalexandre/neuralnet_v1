@@ -16,6 +16,7 @@ class MnistModelDense(BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
+    self.is_training = is_training
     config = FLAGS.dense
     assert config['n_layers'] == len(config['hidden'])
 
@@ -52,6 +53,7 @@ class MnistModelGivens(BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
+    self.is_training = is_training
     config = FLAGS.givens
     if type(config['hidden']) == int:
       config['hidden'] = [config['hidden']] * config['n_layers']
@@ -78,6 +80,7 @@ class MnistModelGivens_v2(BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
+    self.is_training = is_training
     config = FLAGS.givens
     assert config['n_layers'] == len(config['hidden'])
 
@@ -105,6 +108,7 @@ class MnistModelCirculant(BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
+    self.is_training = is_training
     config = FLAGS.circulant
     if type(config['hidden']) == int:
       config['hidden'] = [config['hidden']] * config['n_layers']
@@ -149,6 +153,7 @@ class MnistModelToeplitz(BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
+    self.is_training = is_training
     activation = tf.layers.flatten(model_input)
     feature_size = activation.get_shape().as_list()[-1]
 

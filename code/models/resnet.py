@@ -450,6 +450,7 @@ class ResnetModel(BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
+    self.is_training = is_training
     config = FLAGS.resnet
 
     output = Resnet(
