@@ -216,10 +216,11 @@ class CIFAR10Reader(BaseReader):
     """
     # Decode the string as an RGB JPEG.
     image = tf.decode_raw(image_buffer, tf.uint8)
+    image = tf.reshape(image, (self.height, self.width, 3))
     if self.use_gray_scale:
       image = tf.image.rgb_to_grayscale(image)
+      image = tf.reshape(image, (1, self.height * self.width))
     image = tf.cast(image, dtype=tf.float32)
-    image = tf.reshape(image, (self.height, self.width, 3))
     if self.use_data_augmentation and self.is_training:
       image = self._data_augmentation(image)
     if FLAGS.per_image_standardization:
