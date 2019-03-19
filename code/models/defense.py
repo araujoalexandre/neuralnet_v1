@@ -77,3 +77,57 @@ class DefenseVsAttack(BaseModel):
       return logits, logits_under_attack
 
 
+
+class ImaginaryDefense(BaseModel):
+
+  def create_model(self, x, n_classes, is_training, *args, **kwargs):
+    """Build the core model within the graph."""
+
+    self.is_training = is_training
+    config = FLAGS.imaginary_defense
+    use_orig = config['use_orig']
+    use_real = config['use_real']
+    use_imag = config['use_imag']
+    share_weights = config['share_weights']
+
+
+    x_complex = tf.cast(x, tf.complex64)
+    x_fft = tf.spectral.fft(x_complex)
+    x_real = tf.real(x_fft)
+    x_imag = tf.imag(x_fft)
+    if share_weights:
+      logits_array = []
+      resnet_defense = WideResnetModel()
+      with tf.variable_scope('network', reuse=tf.AUTO_REUSE):
+        if use_orig:
+          logits = resnet_defense.create_model(x, n_classes, is_training)
+          logits_array.append(logits)
+        if use_real:
+          logits_real = resnet_defense.create_model(x_real, n_classes, is_training)
+          logits_array.append(logits_real)
+        if use_imag:
+          logits_imag = resnet_defense.create_model(x_imag, n_classes, is_training)
+          logits_array.append(logits_imag)
+
+    elif not share_weights:
+      logits_array = []
+      resnet_defense = WideResnetModel()
+      if use_orig:
+        with tf.variable_scope('network'):
+          logits = resnet_defense.create_model(x, n_classes, is_training)
+          logits_array.append(logits)
+      if use_real:
+        with tf.variable_scope('network_real'):
+          logits_real = resnet_defense.create_model(x_real, n_classes, is_training)
+          logits_array.append(logits_real)
+      if use_imag:
+        with tf.variable_scope('network_imag'):
+          logits_imag = resnet_defense.create_model(x_imag, n_classes, is_training)
+          logits_array.append(logits_imag)
+
+    final_logits = tf.reduce_mean(logits_array, 0)
+    return final_logits
+
+
+
+
