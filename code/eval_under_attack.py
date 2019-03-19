@@ -4,6 +4,8 @@ import time
 import os
 import re
 import pprint
+import pickle
+from collections import OrderedDict
 from functools import partial
 from os.path import join, basename, exists, normpath
 
@@ -26,6 +28,13 @@ import attacks
 from config import YParams
 from config import hparams as FLAGS
 
+
+def pickle_dump(file, path):
+    """
+        function to dump picke object
+    """
+    with open(path, 'wb') as f:
+        pickle.dump(file, f, -1)
 
 def find_class_by_name(name, modules):
   """Searches the provided modules for the named class and returns it."""
@@ -61,6 +70,7 @@ class Evaluate:
     with tf.name_scope("train_input"):
       images_batch, self.labels_batch = self.reader.input_fn()
       tf.summary.histogram("model/input_raw", images_batch)
+      self.images_batch = images_batch
 
     # get loss and logits from real examples
     logits_batch = self._predict(
@@ -76,16 +86,15 @@ class Evaluate:
       return self._predict(x, self.num_towers,
                 self.device_string, self.reader.n_classes, False)
 
-    images_adv_batch = self.attack.generate(images_batch, fn_logits)
+    self.images_adv_batch = self.attack.generate(images_batch, fn_logits)
     logits_adv_batch = self._predict(
-      images_adv_batch, self.num_towers, self.device_string,
+      self.images_adv_batch, self.num_towers, self.device_string,
       self.reader.n_classes, False)
 
     losses_adv_batch = self.loss_fn.calculate_loss(
       logits=logits_adv_batch, labels=self.labels_batch)
     preds_adv_batch = tf.argmax(
       logits_adv_batch, axis=1, output_type=tf.int32)
-
 
     self.loss, self.loss_update_op = tf.metrics.mean(losses_batch)
     self.acc, self.acc_update_op = tf.metrics.accuracy(
@@ -141,27 +150,69 @@ class Evaluate:
       self.saver.restore(sess, best_checkpoint)
       sess.run(tf.local_variables_initializer())
 
-      # get tf variables from graph
-      fetches = [
-        self.loss_update_op, self.acc_update_op,
-        self.loss_adv_update_op, self.acc_adv_update_op,
-        self.loss, self.acc, self.preds, self.preds_adv,
-        self.loss_adv, self.acc_adv, self.labels_batch]
+      fetches = OrderedDict(
+         loss_update_op=self.loss_update_op,
+         acc_update_op=self.acc_update_op,
+         loss_adv_update_op=self.loss_adv_update_op,
+         acc_adv_update_op=self.acc_adv_update_op,
+         images=self.images_batch,
+         images_adv=self.images_adv_batch,
+         loss=self.loss,
+         acc=self.acc,
+         preds=self.preds,
+         preds_adv=self.preds_adv,
+         loss_adv=self.loss_adv,
+         acc_adv=self.acc_adv,
+         labels_batch=self.labels_batch,
+      )
 
+      count = 0
+      id = 0
       while True:
         try:
-          batch_start_time = time.time()
 
-          (*_, loss_val, acc_val, preds_val,
-           preds_adv_val, loss_adv_val, acc_adv_val, labels) = \
-              sess.run(fetches)
+          batch_start_time = time.time()
+          values = sess.run(list(fetches.values()))
+          fetches_values = OrderedDict(zip(fetches.keys(), values))
           seconds_per_batch = time.time() - batch_start_time
           examples_per_second = self.batch_size / seconds_per_batch
 
-          msg = ("images/adv: Acc : {:.5f}/{:.5f}"
-                   " | Avg Loss: {:.5f}/{:.5f} | imgs/sec: {:.2f}")
-          logging.info(msg.format(acc_val, acc_adv_val, loss_val,
-                      loss_adv_val, examples_per_second))
+          images_val = fetches_values['images']
+          images_adv_val = fetches_values['images_adv']
+          loss_val = fetches_values['loss']
+          acc_val = fetches_values['acc']
+          preds_val = fetches_values['preds']
+          preds_adv_val = fetches_values['preds_adv']
+          loss_adv_val = fetches_values['loss_adv']
+          acc_adv_val = fetches_values['acc_adv']
+          labels = fetches_values['labels_batch']
+          count += self.batch_size
+
+          # dump images and images_adv
+          sample = FLAGS.attack_sample
+          name_var = dict(train_dir=train_dir, sample=sample, id=id)
+          path_img_adv = '{train_dir}_logs/dump_carlini_images_adv_{sample}_{id}.pkl'
+          path_img     = '{train_dir}_logs/dump_carlini_images_{sample}_{id}.pkl'
+          path_img_adv = path_img_adv.format(**name_var)
+          path_img     = path_img.format(**name_var)
+          pickle_dump(images_adv_val, path_img_adv)
+          pickle_dump(images_val, path_img)
+          id += 1
+
+          message_data = {
+            'count': count,
+            'total': self.reader.n_test_files,
+            'acc': acc_val,
+            'acc_adv': acc_adv_val,
+            'loss': loss_val,
+            'loss_adv': loss_adv_val,
+            'imgs_sec': examples_per_second,
+          }
+          message = ("{count}/{total} | "
+                     "images/adv: Acc : {acc:.5f}/{acc_adv:.5f} | "
+                     "avg loss: {loss:.5f}/{loss_adv:.5f} | "
+                     "imgs/sec: {imgs_sec:.2f}")
+          logging.info(message.format(**message_data))
 
         except tf.errors.OutOfRangeError:
 
