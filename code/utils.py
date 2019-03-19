@@ -163,12 +163,19 @@ class MessageBuilder:
   def __init__(self):
     self.msg = []
 
-  def add(self, name, value, format=None):
+  def add(self, name, values, align=">", width=0, format=None):
     metric_str = "{}: ".format(name)
-    if format:
-      metric_str += "{x:^{format}}".format(x=value, format=format)
-    else:
-      metric_str += "{}".format(value)
+    values_str = []
+    if type(values) != list:
+      values = [values]
+    for value in values:
+      if format:
+        values_str.append("{value:{align}{width}{format}}".format(
+          value=value, align=align, width=width, format=format))
+      else:
+        values_str.append("{value:{align}{width}}".format(
+          value=value, align=align, width=width))
+    metric_str += '/'.join(values_str)
     self.msg.append(metric_str)
 
   def get_message(self):
