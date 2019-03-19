@@ -337,7 +337,10 @@ class Evaluate:
   def run(self):
 
     # Setup logging & log the version.
-    tf.logging.set_verbosity(logging.INFO)
+    if not FLAGS.debug:
+      tf.logging.set_verbosity(logging.INFO)
+    else:
+      tf.logging.set_verbosity(logging.DEBUG)
     logging.info("Tensorflow version: {}.".format(tf.__version__))
 
     self.train_dir = join(FLAGS.path, FLAGS.train_dir)
