@@ -376,7 +376,7 @@ class Evaluate:
     logging.info(pp.pformat(FLAGS.values()))
 
     self.config = tf.ConfigProto(
-      log_device_placement=False,
+      log_device_placement=FLAGS.log_device_placement,
       allow_soft_placement=True)
 
     with tf.Graph().as_default():
