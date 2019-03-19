@@ -25,6 +25,7 @@ class YoutubeModelLogistic(BaseModel):
       model in the 'predictions' key. The dimensions of the tensor are
       batch_size x num_classes."""
 
+    self.is_training = is_training
     config = FLAGS.youtube
 
     if type(config['hidden']) == int:

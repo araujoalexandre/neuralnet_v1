@@ -16,6 +16,7 @@ class DefenseVsAttack(BaseModel):
   def create_model(self, x, n_classes, is_training, *args, **kwargs):
     """Build the core model within the graph."""
 
+    self.is_training = is_training
     resnet_defense = WideResnetModel()
 
     if not is_training:

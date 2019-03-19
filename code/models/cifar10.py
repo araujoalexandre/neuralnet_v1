@@ -67,6 +67,7 @@ class Cifar10ModelDense(Cifar10BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
+    self.is_training = is_training
     config = FLAGS.dense
 
     if type(config['hidden']) == int:
@@ -119,6 +120,8 @@ class Cifar10ModelDense(Cifar10BaseModel):
 class Cifar10ModelCirculant(Cifar10BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
+
+    self.is_training = is_training
 
     config = FLAGS.circulant
     if type(config['hidden']) == int:
@@ -178,6 +181,8 @@ class Cifar10ModelCirculantWithDense(Cifar10BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
+    self.is_training = is_training
+
     config = FLAGS.circulant
     if type(config['hidden']) == int:
       config['hidden'] = [config['hidden']] * config['n_layers']
@@ -236,6 +241,8 @@ class Cifar10ModelToeplitz(Cifar10BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
+    self.is_training = is_training
+
     config = FLAGS.toeplitz
     if type(config['hidden']) == int:
       config['hidden'] = [config['hidden']] * config['n_layers']
@@ -285,6 +292,8 @@ class Cifar10ModelToeplitz(Cifar10BaseModel):
 class Cifar10ModelAcdc(Cifar10BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
+
+    self.is_training = is_training
 
     config = FLAGS.acdc
     if type(config['hidden']) == int:
@@ -347,6 +356,8 @@ class Cifar10ModelLowRank(Cifar10BaseModel):
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
+    self.is_training = is_training
+
     config = FLAGS.low_rank
     if type(config['hidden']) == int:
       config['hidden'] = [config['hidden']] * config['n_layers']
@@ -399,6 +410,7 @@ class Cifar10ModelTensorTrain(Cifar10BaseModel):
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
     import t3f
+    self.is_training = is_training
 
     config = FLAGS.tensor_train
     if type(config['hidden']) == int:
