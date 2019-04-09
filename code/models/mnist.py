@@ -11,6 +11,50 @@ from .base import BaseModel
 from config import hparams as FLAGS
 
 
+class MnistModelLeNet(BaseModel):
+
+  def create_model(self, x, n_classes, is_training, *args, **kwargs):
+
+    self.is_training = is_training
+
+    init = tf.truncated_normal_initializer(stddev=0.01)
+    reg = tf.keras.regularizers.l2(0.0005)
+
+    x = tf.layers.conv2d(
+           inputs=x,
+           filters=32,
+           kernel_size=[5, 5],
+           padding="same",
+           activation=tf.nn.relu,
+           kernel_initializer=init,
+           kernel_regularizer=reg,
+           name='conv1')
+    x = tf.layers.max_pooling2d(x, pool_size=[2, 2], strides=2)
+    x = tf.layers.conv2d(
+           inputs=x,
+           filters=64,
+           kernel_size=[5, 5],
+           padding="same",
+           activation=tf.nn.relu,
+           kernel_initializer=init,
+           kernel_regularizer=reg,
+           name='conv2')
+    x = tf.layers.max_pooling2d(x, pool_size=[2, 2], strides=2)
+    x = tf.layers.flatten(x)
+    x = tf.layers.dense(
+           inputs=x,
+           units=1024,
+           use_bias=True,
+           activation=tf.nn.relu,
+           kernel_initializer=init,
+           kernel_regularizer=reg,
+           name='dense1')
+    x = tf.layers.dropout(x, rate=0.4, training=is_training)
+    x = tf.layers.dense(x, units=10,
+             kernel_initializer=init, kernel_regularizer=reg)
+    return x
+
+
 
 class MnistModelDense(BaseModel):
 
@@ -38,69 +82,6 @@ class MnistModelDense(BaseModel):
     activation = tf.layers.dense(activation, n_classes, activation=None,
                                  use_bias=config['use_bias'],
                                  kernel_initializer=initializer)
-    return activation
-
-
-class MnistModelGivens(BaseModel):
-
-  def _givens_layers(self, activation, n_givens, shape_in, shape_out=None):
-    for i in range(n_givens):
-      givens_layer = layers.GivensLayer(shape_in)
-      activation = givens_layer.matmul(activation)
-    if shape_out is not None:
-      activation = activation[..., :shape_out]
-    return activation
-
-  def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
-
-    self.is_training = is_training
-    config = FLAGS.givens
-    if type(config['hidden']) == int:
-      config['hidden'] = [config['hidden']] * config['n_layers']
-    assert config["n_layers"] == len(config["hidden"])
-
-    activation = tf.layers.flatten(model_input)
-
-    for i in range(config['n_layers']):
-      feature_size = activation.get_shape().as_list()[-1]
-      num_hidden = config['hidden'][i] or feature_size
-      activation = self._givens_layers(activation, config['n_givens'],
-        feature_size, num_hidden)
-      activation = tf.nn.relu(activation)
-      tf.summary.histogram('Mnist/Givens/Layer{}'.format(i), activation)
-
-    # classification layer
-    activation = self._givens_layers(activation, config['n_givens'],
-      feature_size, n_classes)
-
-    return activation
-
-
-class MnistModelGivens_v2(BaseModel):
-
-  def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
-
-    self.is_training = is_training
-    config = FLAGS.givens
-    assert config['n_layers'] == len(config['hidden'])
-
-    activation = tf.layers.flatten(model_input)
-
-    for i in range(config['n_layers']):
-      with tf.variable_scope('givens{}'.format(i)):
-        feature_size = activation.get_shape().as_list()[-1]
-        num_hidden = config['hidden'][i] or feature_size
-        cls_layer = layers.GivensLayer_v2(feature_size, num_hidden,
-                                       config['n_givens'])
-        activation = cls_layer.matmul(activation)
-        activation = tf.nn.tanh(activation)
-        tf.summary.histogram('Mnist/Givens/Layer{}'.format(i), activation)
-
-    # classification layer
-    cls_layer = layers.GivensLayer_v2(feature_size, n_classes,
-                                     config['n_givens'])
-    activation = cls_layer.matmul(activation)
-
     return activation
 
 
