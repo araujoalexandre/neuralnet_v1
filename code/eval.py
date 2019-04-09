@@ -122,15 +122,6 @@ class Evaluate:
       images_adv_batch = self.attack.generate(images_batch, fn_logits)
       tf.add_to_collection('processed_img_adv', images_adv_batch)
 
-      perturbation = tf.reshape(images_adv_batch, (-1, 1024)) - \
-                     tf.reshape(images_batch, (-1, 1024))
-      l2dist = tf.reduce_mean(
-        tf.sqrt(tf.reduce_sum(tf.pow(perturbation, 2), [1])))
-      print_op = tf.print(l2dist)
-      with tf.control_dependencies([print_op]):
-        images_adv_batch = tf.identity(images_adv_batch)
-
-
       logits_adv_batch, losses_adv_batch = self._predict(
         images_adv_batch, labels_batch, num_towers, device_string,
         n_classes, is_training=False, compute_loss=True)
@@ -207,6 +198,9 @@ class Evaluate:
       # Restores from checkpoint
       self.saver.restore(sess, best_checkpoint)
       sess.run(tf.local_variables_initializer())
+
+      # pass session to attack class for Carlini Attack
+      self.attack.sess = sess
 
       fetches = OrderedDict(
          loss_update_op=tf_get('loss_update_op'),
