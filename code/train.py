@@ -482,6 +482,11 @@ def main():
   # Setup logging & log the version.
   if not FLAGS.debug:
     logging.set_verbosity(logging.INFO)
+    # export TF_CPP_MIN_LOG_LEVEL=3
+    # 0 = all messages are logged (default behavior)
+    # 1 = INFO messages are not printed
+    # 2 = INFO and WARNING messages are not printed
+    # 3 = INFO, WARNING, and ERROR messages are not printed
   else:
     logging.set_verbosity(logging.DEBUG)
   logging.info("{}: Tensorflow version: {}.".format(
