@@ -63,230 +63,146 @@ class Cifar10BaseModel(BaseModel):
     return tf.layers.flatten(activation)
 
 
-class Cifar10ModelDense(Cifar10BaseModel):
+class Cifar10Model(Cifar10BaseModel):
 
-  def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
-
-    self.is_training = is_training
-    config = FLAGS.dense
-
-    if type(config['hidden']) == int:
-      config['hidden'] = [config['hidden']] * config['n_layers']
-    assert config["n_layers"] == len(config["hidden"])
-
-    reg_fn = getattr(tf.keras.regularizers, FLAGS.reg_norm, None)
-    if reg_fn is None:
-      regularizer = None
-    else:
-      regularizer = reg_fn(l=FLAGS.weight_decay_rate)
-
-    if config['with_conv']:
-      activation = self.convolutional_layers(model_input)
-    else:
-      activation = tf.layers.flatten(model_input)
-
-    for i in range(config['n_layers']):
-      with tf.variable_scope('dense{}'.format(i)):
-        feature_size = activation.get_shape().as_list()[-1]
-        num_hidden = config['hidden'][i] or feature_size
+  def dense(self, x, n_layers):
+    for i in range(n_layers):
+      with tf.variable_scope("dense{}".format(i)):
+        feature_size = x.get_shape().as_list()[-1]
+        num_hidden = self.config["hidden_size"][i] or feature_size
         initializer = tf.random_normal_initializer(
           stddev=1/np.sqrt(feature_size))
         bias_initializer = tf.random_normal_initializer(stddev=0.01)
-        activation = tf.layers.dense(activation, num_hidden,
-                                     use_bias=config['use_bias'],
-                                     activation=tf.nn.relu,
-                                     kernel_initializer=initializer,
-                                     kernel_regularizer=regularizer,
-                                     bias_initializer=bias_initializer,
-                                     bias_regularizer=regularizer)
-        self._activation_summary(activation)
+        x = tf.layers.dense(x, num_hidden,
+                            use_bias=self.config["use_bias"],
+                            kernel_initializer=initializer,
+                            kernel_regularizer=self.regularizer,
+                            bias_initializer=bias_initializer,
+                            bias_regularizer=self.regularizer)
+        x = tf.nn.leaky_relu(x, self.config["leaky_slope"])
+        self._activation_summary(x)
+    return x
 
-    # classification layer
-    with tf.variable_scope("classification"):
-      feature_size = activation.get_shape().as_list()[-1]
-      initializer = tf.random_normal_initializer(stddev=1/np.sqrt(n_classes))
-      bias_initializer = tf.random_normal_initializer(stddev=0.01)
-      activation = tf.layers.dense(activation, n_classes,
-                                   use_bias=config['use_bias'],
-                                   activation=None,
-                                   kernel_initializer=initializer,
-                                   kernel_regularizer=regularizer,
-                                   bias_initializer=bias_initializer,
-                                   bias_regularizer=regularizer)
-      self._activation_summary(activation)
-    return activation
-
-
-class Cifar10ModelCirculant(Cifar10BaseModel):
-
-  def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
-
-    self.is_training = is_training
-
-    config = FLAGS.circulant
-    if type(config['hidden']) == int:
-      config['hidden'] = [config['hidden']] * config['n_layers']
-    assert config["n_layers"] == len(config["hidden"])
-
-    reg_fn = getattr(tf.keras.regularizers, FLAGS.reg_norm, None)
-    if reg_fn is None:
-      regularizer = None
-    else:
-      regularizer = reg_fn(l=FLAGS.weight_decay_rate)
-
-    alpha = config['alpha']
-
-    if config['with_conv']:
-      activation = self.convolutional_layers(model_input)
-    else:
-      activation = tf.layers.flatten(model_input)
-
+  def circulant(self, x, n_layers):
     k = 1
-    for i in range(config["n_layers"]):
+    alpha = self.config["alpha"]
+    for i in range(n_layers):
       with tf.variable_scope("circulant{}".format(i)):
-        feature_size = activation.get_shape().as_list()[-1]
-        num_hidden = config["hidden"][i] or feature_size
+        feature_size = x.get_shape().as_list()[-1]
+        num_hidden = self.config["hidden_size"][i] or feature_size
         kernel_initializer = tf.random_normal_initializer(
           stddev=alpha/np.sqrt(feature_size + num_hidden))
         bias_initializer = tf.random_normal_initializer(stddev=0.01)
         cls_layer = layers.CirculantLayer(feature_size, num_hidden,
                                           kernel_initializer=kernel_initializer,
                                           bias_initializer=bias_initializer,
-                                          use_diag=config["use_diag"],
-                                          use_bias=config["use_bias"],
-                                          regularizer=regularizer)
-        activation = cls_layer.matmul(activation)
-        if k % config['non_linear'] == 0:
-          activation = tf.nn.leaky_relu(activation, config['leaky_slope'])
+                                          use_diag=self.config["use_diag"],
+                                          use_bias=self.config["use_bias"],
+                                          regularizer=self.regularizer)
+        x = cls_layer.matmul(x)
+        if k % self.config["non_linear"] == 0:
+          x = tf.nn.leaky_relu(x, self.config["leaky_slope"])
         k += 1
-        self._activation_summary(activation)
+        self._activation_summary(x)
+    return x
 
-    # classification layer
-    with tf.name_scope("classification"):
-      kernel_initializer = tf.random_normal_initializer(
-        stddev=alpha/np.sqrt(feature_size + n_classes))
-      bias_initializer = tf.random_normal_initializer(stddev=0.01)
-      cls_layer = layers.CirculantLayer(feature_size, n_classes,
-                                       kernel_initializer=kernel_initializer,
-                                       bias_initializer=bias_initializer,
-                                       use_diag=config["use_diag"],
-                                       use_bias=config["use_bias"],
-                                       regularizer=regularizer)
-      activation = cls_layer.matmul(activation)
-      self._activation_summary(activation)
-    return activation
-
-
-class Cifar10ModelCirculantWithDense(Cifar10BaseModel):
-
-  def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
-
-    self.is_training = is_training
-
-    config = FLAGS.circulant
-    if type(config['hidden']) == int:
-      config['hidden'] = [config['hidden']] * config['n_layers']
-    assert config["n_layers"] == len(config["hidden"])
-
-    reg_fn = getattr(tf.keras.regularizers, FLAGS.reg_norm, None)
-    if reg_fn is None:
-      regularizer = None
-    else:
-      regularizer = reg_fn(l=FLAGS.weight_decay_rate)
-
-    alpha = config['alpha']
-
-    if config['with_conv']:
-      activation = self.convolutional_layers(model_input)
-    else:
-      activation = tf.layers.flatten(model_input)
-
+  def toeplitz(self, x, n_layers):
     k = 1
-    for i in range(config["n_layers"]):
-      with tf.variable_scope("circulant{}".format(i)):
-        feature_size = activation.get_shape().as_list()[-1]
-        num_hidden = config["hidden"][i] or feature_size
-        kernel_initializer = tf.random_normal_initializer(
-          stddev=alpha/np.sqrt(feature_size + num_hidden))
-        bias_initializer = tf.random_normal_initializer(stddev=0.01)
-        cls_layer = layers.CirculantLayer(feature_size, num_hidden,
-                                          kernel_initializer=kernel_initializer,
-                                          bias_initializer=bias_initializer,
-                                          use_diag=config["use_diag"],
-                                          use_bias=config["use_bias"],
-                                          regularizer=regularizer)
-        activation = cls_layer.matmul(activation)
-        if k % config['non_linear'] == 0:
-          activation = tf.nn.leaky_relu(activation, config['leaky_slope'])
-        k += 1
-        self._activation_summary(activation)
-
-    # classification layer
-    with tf.variable_scope("classification"):
-      feature_size = activation.get_shape().as_list()[-1]
-      initializer = tf.random_normal_initializer(stddev=1/np.sqrt(n_classes))
-      bias_initializer = tf.random_normal_initializer(stddev=0.01)
-      activation = tf.layers.dense(activation, n_classes,
-                                   use_bias=config['use_bias'],
-                                   activation=None,
-                                   kernel_initializer=initializer,
-                                   kernel_regularizer=regularizer,
-                                   bias_initializer=bias_initializer,
-                                   bias_regularizer=regularizer)
-      self._activation_summary(activation)
-    return activation
-
-
-class Cifar10ModelToeplitz(Cifar10BaseModel):
-
-  def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
-
-    self.is_training = is_training
-
-    config = FLAGS.toeplitz
-    if type(config['hidden']) == int:
-      config['hidden'] = [config['hidden']] * config['n_layers']
-    assert config["n_layers"] == len(config["hidden"])
-
-    reg_fn = getattr(tf.keras.regularizers, FLAGS.reg_norm, None)
-    if reg_fn is None:
-      regularizer = None
-    else:
-      regularizer = reg_fn(l=FLAGS.weight_decay_rate)
-
-    alpha = config['alpha']
-
-    if config['with_conv']:
-      activation = self.convolutional_layers(model_input)
-    else:
-      activation = tf.layers.flatten(model_input)
-
-    k = 1
-    for i in range(config["n_layers"]):
+    alpha = self.config["alpha"]
+    for i in range(n_layers):
       with tf.variable_scope("toeplitz{}".format(i)):
-        feature_size = activation.get_shape().as_list()[-1]
-        num_hidden = config["hidden"][i] or feature_size
+        feature_size = x.get_shape().as_list()[-1]
+        num_hidden = self.config["hidden_size"][i] or feature_size
         bias_initializer = tf.random_normal_initializer(stddev=0.01)
         cls_layer = layers.ToeplitzLayer(feature_size, num_hidden, alpha,
                                          bias_initializer=bias_initializer,
-                                         use_bias=config["use_bias"],
-                                         regularizer=regularizer)
-        activation = cls_layer.matmul(activation)
-        if k % config['non_linear'] == 0:
-          activation = tf.nn.leaky_relu(activation, config['leaky_slope'])
+                                         use_bias=self.config["use_bias"],
+                                         regularizer=self.regularizer)
+        x = cls_layer.matmul(x)
+        if k % self.config["non_linear"] == 0:
+          x = tf.nn.leaky_relu(x, self.config["leaky_slope"])
         k += 1
-        self._activation_summary(activation)
+        self._activation_summary(x)
+    return x
 
-    # classification layer
+  def dense_last(self, x):
+    alpha = self.config["alpha"]
     with tf.variable_scope("classification"):
+      feature_size = x.get_shape().as_list()[-1]
+      initializer = tf.random_normal_initializer(
+        stddev=1/np.sqrt(feature_size))
       bias_initializer = tf.random_normal_initializer(stddev=0.01)
-      cls_layer = layers.ToeplitzLayer(feature_size, n_classes, alpha,
+      x = tf.layers.dense(x, self.n_classes,
+                          use_bias=self.config["use_bias"],
+                          kernel_initializer=initializer,
+                          kernel_regularizer=self.regularizer,
+                          bias_initializer=bias_initializer,
+                          bias_regularizer=self.regularizer)
+      self._activation_summary(x)
+    return x
+
+  def circulant_last(self, x):
+    alpha = self.config["alpha"]
+    with tf.variable_scope("classification"):
+      feature_size = x.get_shape().as_list()[-1]
+      kernel_initializer = tf.random_normal_initializer(
+        stddev=alpha/np.sqrt(feature_size))
+      bias_initializer = tf.random_normal_initializer(stddev=0.01)
+      cls_layer = layers.CirculantLayer(feature_size, self.n_classes,
+                                        kernel_initializer=kernel_initializer,
+                                        bias_initializer=bias_initializer,
+                                        use_diag=self.config["use_diag"],
+                                        use_bias=self.config["use_bias"],
+                                        regularizer=self.regularizer)
+      x = cls_layer.matmul(x)
+      self._activation_summary(x)
+    return x
+
+  def toeplitz_last(self, x):
+    alpha = self.config["alpha"]
+    with tf.variable_scope("classification"):
+      feature_size = x.get_shape().as_list()[-1]
+      bias_initializer = tf.random_normal_initializer(stddev=0.01)
+      cls_layer = layers.ToeplitzLayer(feature_size, self.n_classes, alpha,
                                        bias_initializer=bias_initializer,
-                                       use_bias=config["use_bias"],
-                                       regularizer=regularizer)
-      activation = cls_layer.matmul(activation)
-      self._activation_summary(activation)
-    return activation
+                                       use_bias=self.config["use_bias"],
+                                       regularizer=self.regularizer)
+      x = cls_layer.matmul(x)
+      self._activation_summary(x)
+    return x
+
+
+  def create_model(self, x, n_classes, is_training, *args, **kwargs):
+
+    self.is_training = is_training
+    self.config = config = FLAGS.cifar_model
+    self.n_classes = n_classes
+
+    if type(config["hidden_size"]) == int:
+      config["hidden_size"] = [config["hidden_size"]] * config["n_layers"]
+    assert config["n_layers"] == len(config["hidden_size"])
+
+    self.regularizer = None
+    reg_fn = getattr(tf.keras.regularizers, FLAGS.reg_norm, None)
+    if reg_fn is not None:
+      self.regularizer = reg_fn(l=FLAGS.weight_decay_rate)
+
+    # conv layers
+    if config["with_conv"]:
+      x = self.convolutional_layers(x)
+    else:
+      x = tf.layers.flatten(x)
+
+    # hidden layers
+    hidden_layers = getattr(self, config["hidden_layers"])
+    x = hidden_layers(x, self.config["n_layers"])
+
+    # classification
+    classification_layer = getattr(self, config["classification"]+"_last")
+    x = classification_layer(x)
+    return x
+
+
 
 
 class Cifar10ModelAcdc(Cifar10BaseModel):
@@ -294,6 +210,7 @@ class Cifar10ModelAcdc(Cifar10BaseModel):
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
     self.is_training = is_training
+    self.n_classes = n_classes
 
     config = FLAGS.acdc
     if type(config['hidden']) == int:
@@ -402,7 +319,6 @@ class Cifar10ModelLowRank(Cifar10BaseModel):
       activation = cls_layer.matmul(activation)
       self._activation_summary(activation)
     return activation
-
 
 
 class Cifar10ModelTensorTrain(Cifar10BaseModel):

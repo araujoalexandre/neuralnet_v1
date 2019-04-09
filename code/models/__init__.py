@@ -7,3 +7,4 @@ from .resnet import *
 from .wide_resnet import *
 from .youtube import *
 from .defense import *
+from .logistic import *
