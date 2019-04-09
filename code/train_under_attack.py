@@ -368,14 +368,14 @@ class Trainer(object):
 
             message = MessageBuilder()
             message.add("epoch", epoch, format="4.2f")
-            message.add("step", global_step_val, format=" 5d")
+            message.add("step", global_step_val, width=5, format=".0f")
             message.add("lr", learning_rate_val, format=".6f")
             message.add("img loss", loss_img_val, format=".4f")
             message.add("adv loss", -loss_adv_val, format=".4f")
             if "YT8M" in self.reader.__class__.__name__:
               gap = eval_util.calculate_gap(predictions_val, labels_val)
               message.add("gap", gap, format=".3f")
-            message.add("imgs/sec", examples_per_second, format="5.0f")
+            message.add("imgs/sec", examples_per_second, width=5, format=".0f")
             if FLAGS.gradients['perturbed_gradients']:
               message.add("grad norm", grad_norm_val, format=".4f")
             logging.info(message.get_message())
