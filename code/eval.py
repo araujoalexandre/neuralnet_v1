@@ -337,7 +337,7 @@ class Evaluate:
       tf.logging.set_verbosity(logging.DEBUG)
     logging.info("Tensorflow version: {}.".format(tf.__version__))
 
-    self.train_dir = join(FLAGS.path, FLAGS.train_dir)
+    self.train_dir = FLAGS.train_dir
     self.logs_dir = "{}_logs".format(self.train_dir)
 
     if FLAGS.eval_num_gpu:
