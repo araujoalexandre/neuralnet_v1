@@ -1,7 +1,17 @@
-# TensorFlow Research Library to train Deep Neural Network with structured matrices
+# TensorFlow Research Library
 
+Setup library
 
 ```
-mkdir data
-python3 code/generate_tfrecords.py --output_dir=`pwd`/data
+git clone https://github.com/araujoalexandre/neuralnet.git
+export PROJECTDIR=`pwd`/neuralnet
+
+# define the data folder
+mkdir /path/to/data
+export DATADIR=/path/to/data
+# download and processed datasets 
+python3 code/generate_tfrecords.py --output_dir=$DATADIR
+
+# define the models folder
+export WORKDIR=/path/to/models
 ```
