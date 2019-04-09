@@ -320,7 +320,7 @@ class Evaluate:
           logging.info(message.get_message())
           logging.info("Done with batched inference.")
 
-          if FLAGS.stopped_at_n:
+          if self.stopped_at_n:
            self.counter += 1
 
           break
@@ -418,11 +418,20 @@ class Evaluate:
           filename_suffix=filename_suffix,
           graph=tf.get_default_graph())
 
+        if FLAGS.stopped_at_n == "auto":
+          one_epoch = self.reader.n_train_files / \
+              (FLAGS.train_batch_size * FLAGS.train_num_gpu)
+          self.stopped_at_n = (FLAGS.num_epochs * one_epoch) // FLAGS.save_checkpoint_steps
+        else:
+          self.stopped_at_n = FLAGS.stopped_at_n
+        logging.info("Making evaluation for {} ckpts.".format(
+          self.stopped_at_n))
+
         self.best_global_step = None
         self.best_accuracy = None
         self.counter = 0
         last_global_step_val = 0
-        while self.counter < FLAGS.stopped_at_n:
+        while self.counter < self.stopped_at_n:
           last_global_step_val = self.eval_loop(last_global_step_val)
         path = join(self.logs_dir, "best_accuracy.txt")
         with open(path, 'w') as f:
