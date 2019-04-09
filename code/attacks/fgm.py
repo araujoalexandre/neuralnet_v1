@@ -2,11 +2,6 @@
 import numpy as np
 import tensorflow as tf
 
-from cleverhans import utils
-from cleverhans.compat import softmax_cross_entropy_with_logits
-from cleverhans.utils_tf import clip_eta
-from cleverhans import utils_tf
-
 class FastGradientMethod:
   """
   This attack was originally implemented by Goodfellow et al. (2015) with the
@@ -119,29 +114,47 @@ class FastGradientMethod:
       y = y / tf.reduce_sum(y, 1, keepdims=True)
 
       # Compute loss
-      loss = softmax_cross_entropy_with_logits(labels=y, logits=logits)
+      loss = tf.losses.softmax_cross_entropy(onehot_labels=y, logits=logits)
 
     else:
       tf.logging.info(
         "Monte Carlo (MC) on attacks, sample: {}".format(self.sample))
-      _, *shape = x.shape.as_list()
-      x = tf.layers.flatten(x)
-      _, dim = x.shape.as_list()
-      x = tf.tile(x, (1, self.sample))
-      x = tf.reshape(x, (-1, *shape))
-      logits = fn_logits(x)
-      assert logits.op.type != 'Softmax'
+      eot_loss = []
+      for i in range(self.sample):
+        logits = fn_logits(x)
+        if i == 0:
+          assert logits.op.type != 'Softmax'
 
-      # Using model predictions as ground truth to avoid label leaking
-      preds_max = tf.reduce_max(logits, 1, keepdims=True)
-      y = tf.to_float(tf.equal(logits, preds_max))
-      y = tf.stop_gradient(y)
-      y = y / tf.reduce_sum(y, 1, keepdims=True)
+        # Using model predictions as ground truth to avoid label leaking
+        preds_max = tf.reduce_max(logits, 1, keepdims=True)
+        y = tf.to_float(tf.equal(logits, preds_max))
+        y = tf.stop_gradient(y)
+        y = y / tf.reduce_sum(y, 1, keepdims=True)
 
-      # Compute loss
-      loss = softmax_cross_entropy_with_logits(labels=y, logits=logits)
-      loss = tf.reshape(loss, (-1, self.sample))
-      loss = tf.reduce_mean(loss, axis=1)
+        # Compute loss
+        loss = tf.losses.softmax_cross_entropy(onehot_labels=y, logits=logits)
+        eot_loss.append(loss)
+      loss = tf.reduce_mean(eot_loss, 0)
+
+
+      # _, *shape = x.shape.as_list()
+      # x = tf.layers.flatten(x)
+      # _, dim = x.shape.as_list()
+      # x = tf.tile(x, (1, self.sample))
+      # x = tf.reshape(x, (-1, *shape))
+      # logits = fn_logits(x)
+      # assert logits.op.type != 'Softmax'
+
+      # # Using model predictions as ground truth to avoid label leaking
+      # preds_max = tf.reduce_max(logits, 1, keepdims=True)
+      # y = tf.to_float(tf.equal(logits, preds_max))
+      # y = tf.stop_gradient(y)
+      # y = y / tf.reduce_sum(y, 1, keepdims=True)
+
+      # # Compute loss
+      # loss = tf.losses.softmax_cross_entropy_with_logits(labels=y, logits=logits)
+      # loss = tf.reshape(loss, (-1, self.sample))
+      # loss = tf.reduce_mean(loss, axis=1)
 
     if self.targeted:
       loss = -loss
@@ -159,51 +172,8 @@ class FastGradientMethod:
        ( (self.clip_min is not None) or (self.clip_max is not None) ):
       # We don't currently support one-sided clipping
       assert self.clip_min is not None and self.clip_max is not None
-      adv_x = utils_tf.clip_by_value(adv_x, self.clip_min, self.clip_max)
+      adv_x = tf.clip_by_value(adv_x, self.clip_min, self.clip_max)
 
     return adv_x
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

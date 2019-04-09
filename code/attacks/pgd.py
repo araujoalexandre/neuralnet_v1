@@ -86,8 +86,9 @@ class ProjectedGradientDescent:
       raise ValueError("Norm order must be either np.inf, 1, or 2.")
 
   def get_name(self):
-    return 'ProjectedGradientDescent_{}_{}_{}_{}_{}'.format(
-      self.rand_minmax, self.eps, self.eps_iter, self.nb_iter, self.sample)
+    return 'ProjectedGradientDescent_{}_{}_{}_{}_{}_{}'.format(
+      self.rand_minmax, self.eps, self.eps_iter, self.nb_iter, self.sample,
+      self.ord)
 
   def generate(self, x, fn_logits, y=None):
     """
