@@ -5,7 +5,6 @@ import logging
 import numpy as np
 import tensorflow as tf
 
-from cleverhans.attacks.attack import Attack
 from cleverhans.compat import reduce_sum, reduce_max
 from cleverhans.model import CallableModelWrapper, Model, wrapper_warning_logits
 from cleverhans import utils
@@ -196,11 +195,11 @@ class CarliniWagnerL2:
 
     # wrap attack function in py_func
     def cw_wrap(x_val, y_val):
-      return np.array(self.attack(x_val, y_val), dtype=np_dtype)
+      return self.attack(x_val, y_val)
 
-    wrap = tf.py_func(cw_wrap, [x, labels], tf_dtype)
-    wrap.set_shape(x.get_shape())
-    return wrap
+    adv = tf.py_func(cw_wrap, [x, labels], tf_dtype)
+    adv.set_shape(x.get_shape())
+    return adv
 
   def attack(self, imgs, targets):
     """
@@ -213,9 +212,9 @@ class CarliniWagnerL2:
     for i in range(0, len(imgs), self.batch_size):
       _logger.debug(
           ("Running CWL2 attack on instance %s of %s", i, len(imgs)))
-      r.extend(
-          self.attack_batch(
-            imgs[i:i + self.batch_size], targets[i:i + self.batch_size]))
+      adv = self.attack_batch(
+        imgs[i:i + self.batch_size], targets[i:i + self.batch_size])
+      r.extend(adv)
     return np.array(r)
 
   def attack_batch(self, imgs, labs):
@@ -308,8 +307,6 @@ class CarliniWagnerL2:
         for e, (l2, sc, ii) in enumerate(zip(l2s, scores, nimg)):
           lab = np.argmax(batchlab[e])
           if l2 < bestl2[e] and compare(sc, lab):
-          # if l2 < bestl2[e]:
-          #   if compare(sc, lab):
             bestl2[e] = l2
             bestscore[e] = np.argmax(sc)
           if l2 < o_bestl2[e] and compare(sc, lab):
@@ -342,6 +339,12 @@ class CarliniWagnerL2:
 
     # return the best solution found
     o_bestl2 = np.array(o_bestl2)
+    _logger.info("  Successfully generated adversarial examples " +
+                  "on {} of {} instances.".format(
+                      sum(upper_bound < 1e9), batch_size))
+    o_bestl2 = np.array(o_bestl2)
+    mean = np.mean(np.sqrt(o_bestl2[o_bestl2 < 1e9]))
+    _logger.info("   Mean successful distortion: {:.4g}".format(mean))
     return o_bestattack
 
 
