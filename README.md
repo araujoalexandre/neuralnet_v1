@@ -6,12 +6,14 @@ Setup library
 git clone https://github.com/araujoalexandre/neuralnet.git
 export PROJECTDIR=`pwd`/neuralnet
 
-# define the data folder
-mkdir /path/to/data
-export DATADIR=/path/to/data
-# download and processed datasets 
-python3 code/generate_tfrecords.py --output_dir=$DATADIR
+# define the data and models folders
+mkdir data models
+export DATADIR=`pwd`/data
+export WORKDIR=`pwd`
 
-# define the models folder
-export WORKDIR=/path/to/models
+# download and processed datasets 
+cd neuralnet
+python3 code/dataset/generate_tfrecords.py --output_dir=$DATADIR
+
+python3 sub/train.py config_name | bash
 ```
