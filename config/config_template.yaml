@@ -18,7 +18,7 @@ default: &DEFAULT
   one_hot_labels:             False
   per_image_standardization:  False
   dataset_standardization:    False
-  grayscale:                  True
+  grayscale:                  False
   data_augmentation:          False
   readers_params:
     num_parallel_calls:       32
