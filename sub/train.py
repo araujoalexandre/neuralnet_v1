@@ -46,10 +46,10 @@ python3 $PROJECTDIR/code/eval.py \\
   --train_dir=$TRAIN_DIR \\
   --data_dir=$DATADIR \\
   &>> $LOGS_DIR"/log_eval_test.logs" &
-wait
 """
 
 script_attacks = """
+wait
 export CUDA_VISIBLE_DEVICES='{gpu_attacks}';
 for ATTACK in {attacks}
 do
