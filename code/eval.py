@@ -425,7 +425,7 @@ class Evaluate:
         else:
           self.stopped_at_n = FLAGS.stopped_at_n
         logging.info("Making evaluation for {} ckpts.".format(
-          self.stopped_at_n))
+          int(self.stopped_at_n)))
 
         self.best_global_step = None
         self.best_accuracy = None
