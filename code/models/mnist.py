@@ -62,7 +62,9 @@ class MnistModelDense(BaseModel):
 
     self.is_training = is_training
     config = FLAGS.dense
-    assert config['n_layers'] == len(config['hidden'])
+    if type(config['hidden']) == int:
+      config['hidden'] = [config['hidden']] * config['n_layers']
+    assert config["n_layers"] == len(config["hidden"])
 
     activation = tf.layers.flatten(model_input)
 
