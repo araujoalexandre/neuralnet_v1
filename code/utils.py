@@ -164,7 +164,10 @@ class MessageBuilder:
     self.msg = []
 
   def add(self, name, values, align=">", width=0, format=None):
-    metric_str = "{}: ".format(name)
+    if name:
+      metric_str = "{}: ".format(name)
+    else:
+      metric_str = ""
     values_str = []
     if type(values) != list:
       values = [values]
