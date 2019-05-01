@@ -15,6 +15,7 @@ from utils import make_summary
 from dump_files import DumpFiles
 from utils import MessageBuilder
 
+import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 from tensorflow import app
@@ -35,7 +36,7 @@ def find_class_by_name(name, modules):
 def tf_get(name):
   collection = tf.get_collection(name)
   if len(collection) == 0:
-    raise ValueError("Could not find {} in collection".format(name))
+    return []
   elif len(collection) > 1:
     raise ValueError("Mulitple values in collection {}".format(name))
   return collection[0]
@@ -133,6 +134,14 @@ class Evaluate:
       accuracy_adv, acc_adv_update_op = tf.metrics.accuracy(
         tf.cast(labels_batch, tf.float32), preds_adv_batch)
 
+      perturbation = images_adv_batch - images_batch
+      perturbation = tf.layers.flatten(perturbation)
+      for name, p in [('l1', 1), ('l2', 2), ('linf', np.inf)]:
+        value, update = tf.metrics.mean(
+          tf.norm(perturbation, ord=p, axis=1))
+        tf.add_to_collection('mean_norm_{}'.format(name), value)
+        tf.add_to_collection('mean_norm_{}_update_op'.format(name), update)
+
       tf.add_to_collection('images_adv_batch', images_adv_batch)
       tf.add_to_collection('predictions_adv', preds_adv_batch)
       tf.add_to_collection('loss_adv', loss_adv)
@@ -207,6 +216,9 @@ class Evaluate:
          acc_update_op=tf_get('acc_update_op'),
          loss_adv_update_op=tf_get('loss_adv_update_op'),
          acc_adv_update_op=tf_get('acc_adv_update_op'),
+         mean_norm_l1_update_op=tf_get('mean_norm_l1_update_op'),
+         mean_norm_l2_update_op=tf_get('mean_norm_l2_update_op'),
+         mean_norm_linf_update_op=tf_get('mean_norm_linf_update_op'),
          images=tf_get('images_batch'),
          images_adv=tf_get('images_adv_batch'),
          loss=tf_get('loss'),
@@ -215,7 +227,10 @@ class Evaluate:
          predictions_adv=tf_get('predictions_adv'),
          loss_adv=tf_get('loss_adv'),
          accuracy_adv=tf_get('accuracy_adv'),
-         labels_batch=tf_get('labels_batch'))
+         labels_batch=tf_get('labels_batch'),
+         mean_l1=tf_get('mean_norm_l1'),
+         mean_l2=tf_get('mean_norm_l2'),
+         mean_linf=tf_get('mean_norm_linf'))
 
       count = 0
       dump = DumpFiles(self.train_dir)
@@ -234,11 +249,14 @@ class Evaluate:
             dump.files(values)
 
           message = MessageBuilder()
-          message.add('count', [count, self.reader.n_test_files])
-          message.add('acc images/adv',
+          message.add('', [count, self.reader.n_test_files])
+          message.add('acc img/adv',
                       [values['accuracy'], values['accuracy_adv']], format='.5f')
           message.add('avg loss', [values['loss'], values['loss_adv']], format='.5f')
-          message.add('imgs/sec', examples_per_second, format='.0f')
+          message.add('imgs/sec', examples_per_second, format='.3f')
+          if FLAGS.eval_under_attack:
+            norms_mean = [values['mean_l1'], values['mean_l2'], values['mean_linf']]
+            message.add('l1/l2/linf mean', norms_mean, format='.2f')
           logging.info(message.get_message())
 
         except tf.errors.OutOfRangeError:
