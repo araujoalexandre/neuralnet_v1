@@ -1,12 +1,14 @@
-#!/pwrlocal/pub/anaconda/py3/bin/python3
+#!/usr/bin/env python3
 
 import os
 import json
+import socket
 import argparse
+from os.path import join, exists
 
-attacks = "fgm pgd carlini"
+attacks = "fgm pgd carlini elasticnet"
 
-setup_ouessant="""
+setup_ouessant = """
 #BSUB -J {folder_id}_attack
 #BSUB -gpu "num=4:mode=exclusive_process:mps=no:j_exclusive=yes"
 #BSUB -n 1
@@ -20,7 +22,7 @@ source activate tensorflow1.12-py3
 export LD_LIBRARY_PATH={ld_library}
 """
 
-script="""
+script = """
 TRAIN_DIR="{path}/{folder}"
 LOGS_DIR=$TRAIN_DIR"_logs"
 CONFIG_FILE="$LOGS_DIR/model_flags.yaml"
@@ -41,6 +43,9 @@ done
 def main(args):
   global script
 
+  train_dir = join(args['path'], args['folder'])
+  assert exists(train_dir), "{} does not exist".format(train_dir)
+
   # check and processed attacks
   args['attacks'] = list(set(args['attacks'].split(' ')))
   assert set(args['attacks']).issubset(attacks.split(' ')), \
@@ -53,7 +58,7 @@ def main(args):
   if args['params']:
     try:
       _ = json.loads(args['params'])
-      args['params'] = "--override {}".format(args['params'])
+      args['params'] = "--params '{}'".format(args['params'])
     except:
       raise ValueError("Could not parse overide parameters")
 
@@ -84,5 +89,9 @@ if __name__ == '__main__':
                         help="Set CUDA_VISIBLE_DEVICES.")
   parser.add_argument("--params", type=str, default='',
                         help="Parameters to override.")
-  args = parser.parse_args()
-  main(vars(args))
+  args = vars(parser.parse_args())
+
+  # get hostname to setup job parameters
+  args['hostname'] = socket.gethostname()
+
+  main(args)

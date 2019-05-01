@@ -1,11 +1,12 @@
-#!/pwrlocal/pub/anaconda/py3/bin/python3
+#!/usr/bin/env python3
 
 import os
 import json
+import socket
 import argparse
 from os.path import join
 
-setup_ouessant="""
+setup_ouessant = """
 #BSUB -J {folder_id}_eval
 #BSUB -gpu "num=4:mode=exclusive_process:mps=no:j_exclusive=yes"
 #BSUB -n 1
@@ -36,11 +37,14 @@ python3 $PROJECTDIR/code/eval.py \\
 def main(args):
   global script
 
+  train_dir = join(args['path'], args['folder'])
+  assert exists(train_dir), "{} does not exist".format(train_dir)
+
   # if params is set, overide the parameters in the config file
   if args['params']:
     try:
       _ = json.loads(args['params'])
-      args.params = "--override {}".format(args['params'])
+      args.params = "--params '{}'".format(args['params'])
     except:
       raise ValueError("Could not parse overide parameters")
 
@@ -73,9 +77,11 @@ if __name__ == '__main__':
             help="Parameters to override in the config file.")
   parser.add_argument("--name", type=str, default='',
             help="Name of the batch experiments. Required if params is set.")
-  parser.add_argument("--id", type=str, default='',
-            help="Id of the experiment. Required if params is set.")
-  args = parser.parse_args()
-  main(vars(args))
+  args = vars(parser.parse_args())
+
+  # get hostname to setup job parameters
+  args['hostname'] = socket.gethostname()
+
+  main(args)
 
 
