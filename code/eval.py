@@ -421,10 +421,13 @@ class Evaluate:
       if FLAGS.eval_under_attack:
         self.saver = tf.train.Saver(tf.global_variables(scope="tower"))
         acc_val, acc_adv_val = self.eval_attack()
-        filename = "score_{}.txt".format(self.attack.get_name())
-        path = join(self.logs_dir, filename)
-        with open(path, 'w') as f:
-          f.write("{:.5f}\t{:.5f}\n".format(acc_val, acc_adv_val))
+        # filename = "score_{}.txt".format(self.attack.get_name())
+        path = join(self.logs_dir, "attacks_score.txt")
+        with open(path, 'a') as f:
+          f.write("{}\n".format(FLAGS.attack_method))
+          f.write("sample {}, {}\n".format(FLAGS.attack_sample,
+                                         json.dumps(attack_config)))
+          f.write("{:.5f}\t{:.5f}\n\n".format(acc_val, acc_adv_val))
 
       else:
 
