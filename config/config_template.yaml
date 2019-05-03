@@ -1,7 +1,7 @@
 
 default: &DEFAULT
   train_batch_size:           200
-  num_epochs:                 30
+  num_epochs:                 200
   start_new_model:            True
   train_num_gpu:              2
   clear_devices:              False
@@ -14,12 +14,12 @@ default: &DEFAULT
   save_summaries_steps:       125
   frequency_log_steps:        100
 
-  reader:                     MNISTReader
+  reader:                     CIFAR10Reader
   one_hot_labels:             False
   per_image_standardization:  False
   dataset_standardization:    False
   grayscale:                  False
-  data_augmentation:          False
+  data_augmentation:          True
   readers_params:
     num_parallel_calls:       32
     num_parallel_readers:     16
@@ -33,8 +33,8 @@ default: &DEFAULT
     attack_method:            FastGradientMethod
     ProjectedGradientDescent:
       rand_minmax:            0.03
-      eps:                    3
-      eps_iter:               1
+      eps:                    0.3
+      eps_iter:               0.02
       nb_iter:                5
       ord:                    1
       clip_min:               -1.0
@@ -47,7 +47,7 @@ default: &DEFAULT
       clip_max:               +1.0
 
     
-  model:                      MnistModelLeNet
+  model:                      WideResnetModel
   dense:
     n_layers:                 1
     hidden:                   0
@@ -102,9 +102,9 @@ default: &DEFAULT
     depth:                    28
     leaky_slope:              0.1
     dropout:                  0.3
-    train_with_noise:         False
-    distributions:            l2
-    scale_noise:              0.3
+    train_with_noise:         {train_with_noise}
+    distributions:            {distributions}
+    scale_noise:              {scale_noise}
     learn_noise_defense:      False
   random_model:
     dp_epsilon:               1.0 
@@ -131,7 +131,7 @@ default: &DEFAULT
     boundaries:               [7500, 15000, 20000]
     values:                   [0.1, 0.02, 0.004, 0.00008]
   exponential_decay:
-    base_lr:                  0.1
+    base_lr:                  0.01
     lr_decay:                 0.97
     lr_decay_examples:        400000
   cyclic_lr:
@@ -178,17 +178,16 @@ eval: &EVAL
   cherrypick:                 None
   start_new_model:            False
   stopped_at_n:               auto
-  noise_in_eval:              False
-  processed_logits:           False
-  threshold:                  0
+  noise_in_eval:              {noise_in_eval}
 
 eval_test: &EVAL_TEST
   <<: *EVAL
   data_pattern:               test*
 
 
-
-## ATTACKS ##
+#####################################################################
+#####                          ATTACKS                          #####
+#####################################################################
 
 attack: &ATTACK
   dump_files:                 False
@@ -235,3 +234,15 @@ attack_carlini:
     clip_min:                 -1.0
     clip_max:                 +1.0
 
+attack_elasticnet:
+  <<: *DEFAULT
+  <<: *EVAL_TEST
+  <<: *ATTACK
+  attack_method:              ElasticNet
+  ElasticNet:
+    binary_search_steps:      9
+    max_iterations:           40
+    learning_rate:            1.0e-2
+    initial_const:            1.0e-3
+    clip_min:                 -1.0
+    clip_max:                 +1.0
