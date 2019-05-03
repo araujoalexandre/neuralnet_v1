@@ -1,20 +1,11 @@
 """The CarliniWagnerL2 attack
 """
-import logging
-
 import numpy as np
 import tensorflow as tf
-
-from cleverhans.compat import reduce_sum, reduce_max
-from cleverhans.model import CallableModelWrapper, Model, wrapper_warning_logits
-from cleverhans import utils
+from tensorflow import logging
 
 np_dtype = np.dtype('float32')
 tf_dtype = tf.as_dtype('float32')
-
-_logger = utils.create_logger("cleverhans.attacks.carlini_wagner_l2")
-_logger.setLevel(logging.INFO)
-
 
 class CarliniWagnerL2:
   """
@@ -26,9 +17,6 @@ class CarliniWagnerL2:
   a specially-chosen loss function to find adversarial examples with
   lower distortion than other attacks. This comes at the cost of speed,
   as this attack is often much slower than others.
-  :param model: cleverhans.model.Model
-  :param sess: tf.Session
-  :param kwargs: passed through to super constructor
   """
 
   def __init__(self,
@@ -36,7 +24,7 @@ class CarliniWagnerL2:
                batch_size=1,
                confidence=0,
                learning_rate=5e-3,
-               binary_search_steps=5,
+               binary_search_steps=9,
                max_iterations=1000,
                abort_early=True,
                initial_const=1e-2,
@@ -101,7 +89,7 @@ class CarliniWagnerL2:
     :param kwargs: See `parse_params`
     """
     preds = fn_logits(x)
-    preds_max = reduce_max(preds, 1, keepdims=True)
+    preds_max = tf.reduce_max(preds, 1, keepdims=True)
     original_predictions = tf.to_float(tf.equal(preds, preds_max))
     labels = tf.stop_gradient(original_predictions)
     nb_classes = labels.get_shape().as_list()[1]
@@ -137,34 +125,48 @@ class CarliniWagnerL2:
     self.newimg = self.newimg * (self.clip_max - self.clip_min) + self.clip_min
 
     # prediction BEFORE-SOFTMAX of the model
+    def batch_prediction(img):
+      shape_img = img.shape.as_list()[1:]
+      img_sample = tf.layers.flatten(img)
+      dim = img_sample.shape.as_list()[1:]
+      img_sample = tf.tile(img_sample, (1, self.sample))
+      img_sample = tf.reshape(img_sample, (self.batch_size*self.sample, *shape_img))
+      logits = fn_logits(img_sample)
+      assert logits.op.type != 'Softmax'
+      _, dim = logits.shape.as_list()
+      logits = tf.reshape(logits, (self.batch_size, self.sample, dim))
+      output = tf.reduce_mean(logits, axis=1)
+      return output
+
     if self.sample <= 1:
       self.output = fn_logits(self.newimg)
     else:
       tf.logging.info(
         "Monte Carlo (MC) on attacks, sample: {}".format(self.sample))
       tf.logging.info("batch_size: {}".format(self.batch_size))
-      _, *shape_img = self.newimg.shape.as_list()
-      self.newimg_sample = tf.layers.flatten(self.newimg)
-      _, dim = self.newimg_sample.shape.as_list()
-      self.newimg_sample = tf.tile(
-        self.newimg_sample, (1, self.sample))
-      self.newimg_sample = tf.reshape(
-        self.newimg_sample, (self.batch_size*self.sample, *shape_img))
-      logits = fn_logits(self.newimg_sample)
-      assert logits.op.type != 'Softmax'
-      _, dim = logits.shape.as_list()
-      logits = tf.reshape(logits, (self.batch_size, self.sample, dim))
-      self.output = tf.reduce_mean(logits, axis=1)
+      self.output = batch_prediction(self.newimg)
+      # _, *shape_img = self.newimg.shape.as_list()
+      # self.newimg_sample = tf.layers.flatten(self.newimg)
+      # _, dim = self.newimg_sample.shape.as_list()
+      # self.newimg_sample = tf.tile(
+      #   self.newimg_sample, (1, self.sample))
+      # self.newimg_sample = tf.reshape(
+      #   self.newimg_sample, (self.batch_size*self.sample, *shape_img))
+      # logits = fn_logits(self.newimg_sample)
+      # assert logits.op.type != 'Softmax'
+      # _, dim = logits.shape.as_list()
+      # logits = tf.reshape(logits, (self.batch_size, self.sample, dim))
+      # self.output = tf.reduce_mean(logits, axis=1)
 
     # distance to the input data
     self.other = (tf.tanh(self.timg) + 1) / \
         2 * (self.clip_max - self.clip_min) + self.clip_min
-    self.l2dist = reduce_sum(
+    self.l2dist = tf.reduce_sum(
         tf.square(self.newimg - self.other), list(range(1, len(shape))))
 
     # compute the probability of the label class versus the maximum other
-    real = reduce_sum((self.tlab) * self.output, 1)
-    other = reduce_max((1 - self.tlab) * self.output - self.tlab * 10000, 1)
+    real = tf.reduce_sum((self.tlab) * self.output, 1)
+    other = tf.reduce_max((1 - self.tlab) * self.output - self.tlab * 10000, 1)
     zero = np.asarray(0., dtype=np_dtype)
     if self.y_target:
       # if targeted, optimize for making the other class most likely
@@ -174,8 +176,8 @@ class CarliniWagnerL2:
       loss1 = tf.maximum(zero, real - other + self.confidence)
 
     # sum up the losses
-    self.loss2 = reduce_sum(self.l2dist)
-    self.loss1 = reduce_sum(self.const * loss1)
+    self.loss2 = tf.reduce_sum(self.l2dist)
+    self.loss1 = tf.reduce_sum(self.const * loss1)
     self.loss = self.loss1 + self.loss2
 
     # Setup the adam optimizer and keep track of variables we're creating
@@ -210,7 +212,7 @@ class CarliniWagnerL2:
 
     r = []
     for i in range(0, len(imgs), self.batch_size):
-      _logger.debug(
+      logging.debug(
           ("Running CWL2 attack on instance %s of %s", i, len(imgs)))
       adv = self.attack_batch(
         imgs[i:i + self.batch_size], targets[i:i + self.batch_size])
@@ -265,7 +267,7 @@ class CarliniWagnerL2:
 
       bestl2 = [1e10] * batch_size
       bestscore = [-1] * batch_size
-      _logger.debug("  Binary search step %s of %s",
+      logging.debug("  Binary search step %s of %s",
                     outer_step, self.binary_search_steps)
 
       # The last iteration (if we run many steps) repeat the search once.
@@ -289,7 +291,7 @@ class CarliniWagnerL2:
         ])
 
         if iteration % ((self.max_iterations // 10) or 1) == 0:
-          _logger.debug(("    Iteration {} of {}: loss={:.3g} " +
+          logging.debug(("    Iteration {} of {}: loss={:.3g} " +
                          "l2={:.3g} f={:.3g}").format(
                              iteration, self.max_iterations, l,
                              np.mean(l2s), np.mean(scores)))
@@ -299,7 +301,7 @@ class CarliniWagnerL2:
            iteration % ((self.max_iterations // 10) or 1) == 0:
           if l > prev * .9999:
             msg = "    Failed to make progress; stop early"
-            _logger.debug(msg)
+            logging.debug(msg)
             break
           prev = l
 
@@ -330,21 +332,20 @@ class CarliniWagnerL2:
             CONST[e] = (lower_bound[e] + upper_bound[e]) / 2
           else:
             CONST[e] *= 10
-      _logger.debug("  Successfully generated adversarial examples " +
+      logging.debug("  Successfully generated adversarial examples " +
                     "on {} of {} instances.".format(
                         sum(upper_bound < 1e9), batch_size))
       o_bestl2 = np.array(o_bestl2)
       mean = np.mean(np.sqrt(o_bestl2[o_bestl2 < 1e9]))
-      _logger.debug("   Mean successful distortion: {:.4g}".format(mean))
+      logging.debug("   Mean successful distortion: {:.4g}".format(mean))
 
     # return the best solution found
-    o_bestl2 = np.array(o_bestl2)
-    _logger.info("  Successfully generated adversarial examples " +
+    logging.info("  Successfully generated adversarial examples " +
                   "on {} of {} instances.".format(
                       sum(upper_bound < 1e9), batch_size))
     o_bestl2 = np.array(o_bestl2)
     mean = np.mean(np.sqrt(o_bestl2[o_bestl2 < 1e9]))
-    _logger.info("   Mean successful distortion: {:.4g}".format(mean))
+    logging.info("   Mean successful distortion: {:.4g}".format(mean))
     return o_bestattack
 
 
