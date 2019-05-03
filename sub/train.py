@@ -25,7 +25,7 @@ export LD_LIBRARY_PATH={ld_library}
 """
 
 script = """
-CONFIG_PATH="$PROJECTDIR/config/{config}.yaml"
+CONFIG_PATH="$PROJECTDIR/{config_folder}/{config}.yaml"
 TRAIN_DIR="{path}/{date}"
 LOGS_DIR="{path}/{date}_logs"
 mkdir $LOGS_DIR
@@ -68,7 +68,7 @@ def get_name_id(outdir, name):
   while exists(join(
     outdir,  'config_{}_{}.yaml'.format(name, id_))):
     id_ += 1
-  return 'config_{}_{}.yaml'.format(name, id_)
+  return 'config_{}_{}'.format(name, id_)
 
 def make_config(args):
   if not args['name']:
@@ -88,7 +88,7 @@ def make_config(args):
   # save the config on disk 
   config_name = get_name_id(outdir,  args['name'])
   config_path = join(outdir, config_name)
-  with open(config_path, "w") as f:
+  with open(config_path+'.yaml', "w") as f:
     f.write(config)
   return config_name
 
@@ -128,7 +128,10 @@ def main(args):
 
   # if params is set, generate config file
   if args['params']:
+    args['config_folder'] = 'config_gen'
     args['config'] = make_config(args)
+  else:
+    args['config_folder'] = 'config'
 
   # setup ouessant job parameters 
   if "ouessant" in args['hostname']:
