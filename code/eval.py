@@ -3,6 +3,7 @@ import json
 import time
 import os
 import re
+import socket
 import pprint
 from collections import OrderedDict
 from os.path import join, basename, exists
@@ -354,6 +355,8 @@ class Evaluate:
     else:
       tf.logging.set_verbosity(logging.DEBUG)
     logging.info("Tensorflow version: {}.".format(tf.__version__))
+    logging.info("hostname: {}.".format(
+      socket.gethostname()))
 
     self.train_dir = FLAGS.train_dir
     self.logs_dir = "{}_logs".format(self.train_dir)
