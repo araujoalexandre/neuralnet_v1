@@ -3,6 +3,7 @@ import os, sys
 import json
 import time
 import pprint
+import socket
 from collections import OrderedDict
 from os.path import join, exists
 from datetime import datetime
@@ -491,6 +492,8 @@ def main():
     logging.set_verbosity(logging.DEBUG)
   logging.info("{}: Tensorflow version: {}.".format(
     task_as_string(task), tf.__version__))
+  logging.info("hostname: {}.".format(
+    socket.gethostname()))
 
   if os.environ.get('CUDA_VISIBLE_DEVICES', None) is None:
     if FLAGS.train_num_gpu == 0:
