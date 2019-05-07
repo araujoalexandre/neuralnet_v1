@@ -24,6 +24,77 @@ source activate tensorflow1.12-py3
 export LD_LIBRARY_PATH={ld_library}
 """
 
+# setup_fair = """#!/bin/bash
+# #SBATCH --job-name={folder_id}_train
+# #SBATCH --output={home}/neuralnet/sample-%j.out
+# #SBATCH --error={home}/neuralnet/sample-%j.err
+# #SBATCH --time=4300
+# #SBATCH --partition={partition}
+# #SBATCH --nodes=1
+# #SBATCH --gres=gpu:{total_gpus}
+# #SBATCH --get-user-env
+# 
+# CONFIG_PATH="$PROJECTDIR/{config_folder}/{config}.yaml"
+# TRAIN_DIR="{path}/{date}"
+# LOGS_DIR="{path}/{date}_logs"
+# mkdir $LOGS_DIR
+# cp $CONFIG_PATH $LOGS_DIR"/model_flags.yaml"
+# 
+# export CUDA_VISIBLE_DEVICES='{gpu_train}';
+# srun -o $LOGS_DIR"/log_train.logs" -u \\
+#   --nodes=1 \\
+#   --gres=gpu:{n_gpus_train} \\
+#   --cpus-per-task=20 \\
+#   python3 $PROJECTDIR/code/{train}.py \\
+#     --config_file=$CONFIG_PATH \\
+#     --config_name=train \\
+#     --train_dir=$TRAIN_DIR \\
+#     --data_dir=$DATADIR &
+# 
+# export CUDA_VISIBLE_DEVICES='{gpu_eval}';
+# srun -o $LOGS_DIR"/log_eval_test.logs" -u \\
+#   --nodes=1 \\
+#   --gres=gpu:{n_gpus_eval} \\
+#   --cpus-per-task=10 \\
+#   python3 $PROJECTDIR/code/eval.py \\
+#     --config_file=$CONFIG_PATH \\
+#     --config_name=eval_test \\
+#     --train_dir=$TRAIN_DIR \\
+#     --data_dir=$DATADIR &
+# 
+# wait
+# """
+
+setup_fair = """#!/bin/bash
+#SBATCH --job-name={folder_id}_train
+#SBATCH --output={home}/neuralnet/sample-%j.out
+#SBATCH --error={home}/neuralnet/sample-%j.err
+#SBATCH --time=4300
+#SBATCH --partition={partition}
+#SBATCH --nodes=1
+#SBATCH --gres=gpu:{total_gpus}
+#SBATCH --get-user-env
+
+CONFIG_PATH="$PROJECTDIR/{config_folder}/{config}.yaml"
+TRAIN_DIR="{path}/{date}"
+LOGS_DIR="{path}/{date}_logs"
+mkdir $LOGS_DIR
+cp $CONFIG_PATH $LOGS_DIR"/model_flags.yaml"
+
+export CUDA_VISIBLE_DEVICES='{gpu_train}';
+srun -o $LOGS_DIR"/log_train.logs" -u \\
+  --nodes=1 \\
+  --gres=gpu:{n_gpus_train} \\
+  --cpus-per-task=20 \\
+  python3 $PROJECTDIR/code/{train}.py \\
+    --config_file=$CONFIG_PATH \\
+    --config_name=train \\
+    --train_dir=$TRAIN_DIR \\
+    --data_dir=$DATADIR &
+
+wait
+"""
+
 script = """
 CONFIG_PATH="$PROJECTDIR/{config_folder}/{config}.yaml"
 TRAIN_DIR="{path}/{date}"
@@ -62,6 +133,23 @@ do
   wait
 done
 """
+
+script_attacks_fair = """
+export CUDA_VISIBLE_DEVICES='{gpu_attacks}';
+for ATTACK in {attacks}
+do
+   srun -o "$LOGS_DIR/log_"$ATTACK".logs" -u \\
+     --nodes=1 \\
+     --gres=gpu:{n_gpus_attacks} \\
+     --cpus-per-task=20 \\
+     python3 $PROJECTDIR/code/eval.py \\
+       --config_file=$CONFIG_PATH \\
+       --config_name=$ATTACK \\
+       --train_dir=$TRAIN_DIR \\
+       --data_dir=$DATADIR
+done
+"""
+
 
 def get_name_id(outdir, name):
   id_ = 0
@@ -114,10 +202,29 @@ def main(args):
   else:
     args['train'] = "train"
 
+  # setup ouessant job parameters 
+  if "ouessant" in args['hostname']:
+    script = setup_ouessant + script
+    args['home'] = os.environ['home']
+    args['ld_library'] = os.environ['LD_LIBRARY_PATH']
+    args['folder_id'] = args['date'][-4:]
+  elif "fair" in args['hostname']:
+    script = setup_fair
+    args['home'] = os.environ['home']
+    args['folder_id'] = args['date'][-4:]
+    args['n_gpus_train'] = len(args['gpu_train'].split(','))
+    args['n_gpus_eval'] = len(args['gpu_eval'].split(','))
+    args['total_gpus'] = args['n_gpus_train'] + args['n_gpus_eval']
+
   # if attacks is define, activate attacks after training
   if args['attacks']:
     if args['attacks'] == 'all':
+      args['n_gpus_attacks'] = len(args['gpu_attacks'].split(','))
+      assert args['n_gpus_attacks'] <= args['total_gpus']
       args['attacks'] = attacks
+    # override script attacks if fair cluster
+    if "fair" in args['hostname']:
+      script_attacks = script_attacks_fair
     script += script_attacks
     args['attacks'] = list(dict.fromkeys(args['attacks'].split(' ')))
     assert set(args['attacks']).issubset(attacks.split(' ')), \
@@ -132,13 +239,6 @@ def main(args):
     args['config'] = make_config(args)
   else:
     args['config_folder'] = 'config'
-
-  # setup ouessant job parameters 
-  if "ouessant" in args['hostname']:
-    script = setup_ouessant + script
-    args['home'] = os.environ['home']
-    args['ld_library'] = os.environ['LD_LIBRARY_PATH']
-    args['folder_id'] = args['date'][-4:]
 
   print(script.format(**args))
 
@@ -164,6 +264,8 @@ if __name__ == '__main__':
                         help="Set CUDA_VISIBLE_DEVICES for eval.")
   parser.add_argument("--gpu_attacks", type=str, default="0",
                         help="Set CUDA_VISIBLE_DEVICES for attacks.")
+  parser.add_argument("--partition", type=str, default="learnfair",
+                       help="define the patition to use. FAIR only.")
 
   # paramters for batch experiments
   parser.add_argument("--params", type=str, default='',
@@ -174,6 +276,5 @@ if __name__ == '__main__':
 
   # get hostname to setup job parameters
   args['hostname'] = socket.gethostname()
-
   main(args)
 
