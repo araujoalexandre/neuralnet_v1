@@ -40,6 +40,37 @@ do
 done
 """
 
+setup_fair = """#!/bin/bash
+#SBATCH --job-name={folder_id}_attack
+#SBATCH --output={home}/neuralnet/sample-%j.out
+#SBATCH --error={home}/neuralnet/sample-%j.err
+#SBATCH --time=4300
+#SBATCH --partition={partition}
+#SBATCH --nodes=1
+#SBATCH --gres=gpu:{n_gpus}
+#SBATCH --get-user-env
+
+TRAIN_DIR="{path}/{folder}"
+LOGS_DIR=$TRAIN_DIR"_logs"
+CONFIG_FILE="$LOGS_DIR/model_flags.yaml"
+
+export CUDA_VISIBLE_DEVICES='{gpu}';
+for ATTACK in {attacks}
+do
+  srun -o "$LOGS_DIR/log_$ATTACK.logs" -u \\
+    --nodes=1 \\
+    --gres=gpu:{n_gpus} \\
+    --cpus-per-task=20 \\
+    python3 $PROJECTDIR/code/eval.py \\
+      --config_file=$CONFIG_FILE \\
+      --config_name=$ATTACK \\
+      --train_dir=$TRAIN_DIR \\
+      --data_dir=$DATADIR {params}
+done
+"""
+
+
+
 def main(args):
   global script
 
@@ -68,6 +99,11 @@ def main(args):
     args['home'] = os.environ['home']
     args['ld_library'] = os.environ['LD_LIBRARY_PATH']
     args['folder_id'] = args['folder'][-4:]
+  elif "fair" in args['hostname']:
+    script = setup_fair
+    args['home'] = os.environ['home']
+    args['folder_id'] = args['folder'][-4:]
+    args['n_gpus'] = len(args['gpu'].split(','))
 
   print(script.format(**args))
 
@@ -89,9 +125,10 @@ if __name__ == '__main__':
                         help="Set CUDA_VISIBLE_DEVICES.")
   parser.add_argument("--params", type=str, default='',
                         help="Parameters to override.")
+  parser.add_argument("--partition", type=str, default="learnfair",
+                       help="define the patition to use. FAIR only.")
   args = vars(parser.parse_args())
 
   # get hostname to setup job parameters
   args['hostname'] = socket.gethostname()
-
   main(args)
