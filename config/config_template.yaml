@@ -1,9 +1,9 @@
 
 default: &DEFAULT
-  train_batch_size:           200
+  train_batch_size:           100
   num_epochs:                 200
   start_new_model:            True
-  train_num_gpu:              2
+  train_num_gpu:              4
   clear_devices:              False
   profiler:                   False
   compile:                    False
@@ -14,7 +14,7 @@ default: &DEFAULT
   save_summaries_steps:       125
   frequency_log_steps:        100
 
-  reader:                     CIFAR10Reader
+  reader:                     {reader}
   one_hot_labels:             False
   per_image_standardization:  False
   dataset_standardization:    False
@@ -172,8 +172,8 @@ train: &TRAIN
 eval: &EVAL
   <<: *DEFAULT
   eval_under_attack:          False
-  eval_batch_size:            400
-  eval_num_gpu:               2
+  eval_batch_size:            1600
+  eval_num_gpu:               8
   start_eval_from_ckpt:       first
   cherrypick:                 None
   start_new_model:            False
@@ -185,16 +185,15 @@ eval_test: &EVAL_TEST
   data_pattern:               test*
 
 
-#####################################################################
-#####                          ATTACKS                          #####
-#####################################################################
+
+
 
 attack: &ATTACK
-  dump_files:                 False
+  dump_files:                 True
   eval_under_attack:          True
-  eval_batch_size:            200
-  eval_num_gpu:               1
-  attack_sample:              1
+  eval_batch_size:            400
+  eval_num_gpu:               4
+  attack_sample:              100
 
 attack_fgm:
   <<: *DEFAULT
