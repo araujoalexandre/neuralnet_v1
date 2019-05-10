@@ -72,6 +72,7 @@ setup_fair = """#!/bin/bash
 #SBATCH --time=4300
 #SBATCH --partition={partition}
 #SBATCH --nodes=1
+#SBATCH --cpus-per-task=20
 #SBATCH --gres=gpu:{total_gpus}
 #SBATCH --get-user-env
 
@@ -83,9 +84,6 @@ cp $CONFIG_PATH $LOGS_DIR"/model_flags.yaml"
 
 export CUDA_VISIBLE_DEVICES='{gpu_train}';
 srun -o $LOGS_DIR"/log_train.logs" -u \\
-  --nodes=1 \\
-  --gres=gpu:{n_gpus_train} \\
-  --cpus-per-task=20 \\
   python3 $PROJECTDIR/code/{train}.py \\
     --config_file=$CONFIG_PATH \\
     --config_name=train \\
