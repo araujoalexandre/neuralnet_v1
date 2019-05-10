@@ -29,6 +29,7 @@ setup_fair = """#!/usr/bin/bash
 #SBATCH --partition={partition}
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:{n_gpus}
+#SBATCH --cpus-per-task=10
 #SBATCH --get-user-env
 
 TRAIN_DIR="{path}/{folder}"
@@ -37,9 +38,6 @@ CONFIG_FILE="$LOGS_DIR/model_flags.yaml"
 
 export CUDA_VISIBLE_DEVICES='{gpu}';
 srun -o "$LOGS_DIR/log_eval_test.logs" -u \\
-  --nodes=1 \\
-  --gres=gpu:{n_gpus} \\
-  --cpus-per-task=10 \\
   python3 $PROJECTDIR/code/eval.py \\
     --config_file=$CONFIG_FILE \\
     --config_name=eval_test \\
