@@ -1,4 +1,4 @@
-
+#!/usr/bash
 DATASET_TO_USE=$1
 PARTITION=$2
 
