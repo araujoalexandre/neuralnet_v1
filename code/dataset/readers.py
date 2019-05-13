@@ -9,6 +9,17 @@ from config import hparams as FLAGS
 
 class BaseReader:
 
+  def _get_tfrecords(self, name):
+    paths = list(map(lambda x: join(FLAGS.data_dir, name, x),
+                     FLAGS.data_pattern.split(',')))
+    files = gfile.Glob(paths)
+    if not files:
+      raise IOError("Unable to find files. data_pattern='{}'.".format(
+        FLAGS.data_pattern))
+    logging.info("Number of TFRecord files: {}.".format(
+      len(files)))
+    return files
+
   def _maybe_one_hot_encode(self, labels):
     """One hot encode the labels"""
     if FLAGS.one_hot_labels:
@@ -93,14 +104,7 @@ class MNISTReader(BaseReader):
     self.num_parallel_readers = readers_params['num_parallel_readers']
     self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
 
-    self.files = gfile.Glob(join(
-      FLAGS.data_dir, 'mnist', FLAGS.data_pattern))
-
-    if not self.files:
-      raise IOError("Unable to find files in data_dir '{}'.".format(
-        data['data_dir']))
-    logging.info("Number of TFRecord files: {}.".format(
-      len(self.files)))
+    self.files = self._get_tfrecords('mnist')
 
   def _image_preprocessing(self, image_buffer):
     """Decode and preprocess one image for evaluation or training.
@@ -139,14 +143,7 @@ class FashionMNISTReader(BaseReader):
     self.num_parallel_readers = readers_params['num_parallel_readers']
     self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
 
-    self.files = gfile.Glob(join(
-      FLAGS.data_dir, 'fashion_mnist', FLAGS.data_pattern))
-
-    if not self.files:
-      raise IOError("Unable to find files in data_dir '{}'.".format(
-        data['data_dir']))
-    logging.info("Number of TFRecord files: {}.".format(
-      len(self.files)))
+    self.files = self._get_tfrecords('fashion_mnist')
 
   def _image_preprocessing(self, image_buffer):
     """Decode and preprocess one image for evaluation or training.
@@ -191,14 +188,7 @@ class CIFAR10Reader(BaseReader):
     self.num_parallel_readers = readers_params['num_parallel_readers']
     self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
 
-    self.files = gfile.Glob(join(
-      FLAGS.data_dir, 'cifar10', FLAGS.data_pattern))
-
-    if not self.files:
-      raise IOError("Unable to find training files. data_pattern='{}'.".format(
-        data["data_pattern"]))
-    logging.info("Number of TFRecord files: {}.".format(
-      len(self.files)))
+    self.files = self._get_tfrecords('cifar10')
 
   def _data_augmentation(self, image):
     image = tf.image.resize_image_with_crop_or_pad(
@@ -256,14 +246,7 @@ class CIFAR100Reader(BaseReader):
     self.num_parallel_readers = readers_params['num_parallel_readers']
     self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
 
-    self.files = gfile.Glob(join(
-      FLAGS.data_dir, 'cifar100', FLAGS.data_pattern))
-
-    if not self.files:
-      raise IOError("Unable to find training files. data_pattern='{}'.".format(
-        data["data_pattern"]))
-    logging.info("Number of TFRecord files: {}.".format(
-      len(self.files)))
+    self.files = self._get_tfrecords('cifar100')
 
   def _data_augmentation(self, image):
     image = tf.image.resize_image_with_crop_or_pad(
@@ -319,14 +302,7 @@ class YT8MAggregatedFeatureReader(BaseReader):
     self.num_parallel_readers = readers_params['num_parallel_readers']
     self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
 
-    self.files = gfile.Glob(join(
-      FLAGS.data_dir, 'yt8m', 'video', FLAGS.data_pattern))
-
-    if not self.files:
-      raise IOError("Unable to find files. data_pattern='{}'.".format(
-        FLAGS.data_pattern))
-    logging.info("Number of TFRecord files: {}.".format(
-      len(self.files)))
+    self.files = self._get_tfrecords('yt8m/video')
 
   def _image_preprocessing(self, video):
     # no preprocessing done
@@ -385,14 +361,7 @@ class YT8MFrameFeatureReader(BaseReader):
     self.num_parallel_readers = readers_params['num_parallel_readers']
     self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
 
-    self.files = gfile.Glob(join(
-      FLAGS.data_dir, 'yt8m', 'frame', FLAGS.data_pattern))
-
-    if not self.files:
-      raise IOError("Unable to find training files. data_pattern='{}'.".format(
-        FLAGS.data_pattern))
-    logging.info("Number of TFRecord files: {}.".format(
-      len(self.files)))
+    self.files = self._get_tfrecords('yt8m/frame')
 
   def get_video_matrix(self, features, feature_size):
     """Decodes features from an input string and quantizes it.
