@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/bin/bash
 #SBATCH --job-name=eval
 #SBATCH --output=/private/home/laurentmeunier/alex/neuralnet/sample-%j.out
 #SBATCH --error=/private/home/laurentmeunier/alex/neuralnet/sample-%j.err
@@ -8,6 +8,7 @@
 #SBATCH --gres=gpu:8
 #SBATCH --cpus-per-task=20
 #SBATCH --get-user-env
+#SBTACH --comment="NIPS deadline"
 
 export CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7';
 
@@ -24,7 +25,8 @@ do
       --config_file=$CONFIG_FILE \
       --config_name=eval_test \
       --train_dir=$TRAIN_DIR \
-      --data_dir=$DATADIR
+      --data_dir=$DATADIR \
+      --params '{"eval_batch_size": 800}'
 
   echo "done evaluating ${FOLDER}" >> /private/home/laurentmeunier/alex/neuralnet/eval.logs 
 done
