@@ -24,6 +24,48 @@ source activate tensorflow1.12-py3
 export LD_LIBRARY_PATH={ld_library}
 """
 
+setup_fair = """#!/bin/bash
+#SBATCH --job-name={folder_id}_train
+#SBATCH --output={home}/neuralnet/sample-%j.out
+#SBATCH --error={home}/neuralnet/sample-%j.err
+#SBATCH --time=4300
+#SBATCH --partition={partition}
+#SBATCH --nodes=1
+#SBATCH --gres=gpu:{total_gpus}
+#SBATCH --cpus-per-task=80
+#SBATCH --get-user-env
+
+CONFIG_PATH="$PROJECTDIR/{config_folder}/{config}.yaml"
+TRAIN_DIR="{path}/{date}"
+LOGS_DIR="{path}/{date}_logs"
+mkdir $LOGS_DIR
+cp $CONFIG_PATH $LOGS_DIR"/model_flags.yaml"
+
+export CUDA_VISIBLE_DEVICES='{gpu_train}';
+srun -o $LOGS_DIR"/log_train.logs" -u \\
+  --nodes=1 \\
+  --gres=gpu:{n_gpus_train} \\
+  --cpus-per-task=40 \\
+  python3 $PROJECTDIR/code/{train}.py \\
+    --config_file=$CONFIG_PATH \\
+    --config_name=train \\
+    --train_dir=$TRAIN_DIR \\
+    --data_dir=$DATADIR &
+
+export CUDA_VISIBLE_DEVICES='{gpu_eval}';
+srun -o $LOGS_DIR"/log_eval_test.logs" -u \\
+  --nodes=1 \\
+  --gres=gpu:{n_gpus_eval} \\
+  --cpus-per-task=40 \\
+  python3 $PROJECTDIR/code/eval.py \\
+    --config_file=$CONFIG_PATH \\
+    --config_name=eval_test \\
+    --train_dir=$TRAIN_DIR \\
+    --data_dir=$DATADIR &
+
+wait
+"""
+
 # setup_fair = """#!/bin/bash
 # #SBATCH --job-name={folder_id}_train
 # #SBATCH --output={home}/neuralnet/sample-%j.out
@@ -31,6 +73,7 @@ export LD_LIBRARY_PATH={ld_library}
 # #SBATCH --time=4300
 # #SBATCH --partition={partition}
 # #SBATCH --nodes=1
+# #SBATCH --cpus-per-task=20
 # #SBATCH --gres=gpu:{total_gpus}
 # #SBATCH --get-user-env
 # 
@@ -42,56 +85,14 @@ export LD_LIBRARY_PATH={ld_library}
 # 
 # export CUDA_VISIBLE_DEVICES='{gpu_train}';
 # srun -o $LOGS_DIR"/log_train.logs" -u \\
-#   --nodes=1 \\
-#   --gres=gpu:{n_gpus_train} \\
-#   --cpus-per-task=20 \\
 #   python3 $PROJECTDIR/code/{train}.py \\
 #     --config_file=$CONFIG_PATH \\
 #     --config_name=train \\
 #     --train_dir=$TRAIN_DIR \\
 #     --data_dir=$DATADIR &
 # 
-# export CUDA_VISIBLE_DEVICES='{gpu_eval}';
-# srun -o $LOGS_DIR"/log_eval_test.logs" -u \\
-#   --nodes=1 \\
-#   --gres=gpu:{n_gpus_eval} \\
-#   --cpus-per-task=10 \\
-#   python3 $PROJECTDIR/code/eval.py \\
-#     --config_file=$CONFIG_PATH \\
-#     --config_name=eval_test \\
-#     --train_dir=$TRAIN_DIR \\
-#     --data_dir=$DATADIR &
-# 
 # wait
 # """
-
-setup_fair = """#!/bin/bash
-#SBATCH --job-name={folder_id}_train
-#SBATCH --output={home}/neuralnet/sample-%j.out
-#SBATCH --error={home}/neuralnet/sample-%j.err
-#SBATCH --time=4300
-#SBATCH --partition={partition}
-#SBATCH --nodes=1
-#SBATCH --cpus-per-task=20
-#SBATCH --gres=gpu:{total_gpus}
-#SBATCH --get-user-env
-
-CONFIG_PATH="$PROJECTDIR/{config_folder}/{config}.yaml"
-TRAIN_DIR="{path}/{date}"
-LOGS_DIR="{path}/{date}_logs"
-mkdir $LOGS_DIR
-cp $CONFIG_PATH $LOGS_DIR"/model_flags.yaml"
-
-export CUDA_VISIBLE_DEVICES='{gpu_train}';
-srun -o $LOGS_DIR"/log_train.logs" -u \\
-  python3 $PROJECTDIR/code/{train}.py \\
-    --config_file=$CONFIG_PATH \\
-    --config_name=train \\
-    --train_dir=$TRAIN_DIR \\
-    --data_dir=$DATADIR &
-
-wait
-"""
 
 script = """
 CONFIG_PATH="$PROJECTDIR/{config_folder}/{config}.yaml"
