@@ -47,16 +47,16 @@ srun -o "$LOGS_DIR/log_eval_test.logs" -u \\
 
 script = """
 TRAIN_DIR="{path}/{folder}"
-LOGS_DIR="$TRAIN_DIR_logs"
-CONFIG_FILE="$LOGS_DIR/model_flags.yaml"
+LOGS_DIR=$TRAIN_DIR"_logs"
+CONFIG_FILE=$LOGS_DIR"/model_flags.yaml"
 
 export CUDA_VISIBLE_DEVICES='{gpu}';
-python3 $PROJECTDIR/code/eval.py -u \\
+python3 $PROJECTDIR/code/eval.py \\
   --config_file=$CONFIG_FILE \\
   --config_name=eval_test \\
   --train_dir=$TRAIN_DIR \\
   --data_dir=$DATADIR {params} \\
-  &>> "$LOGS_DIR/log_eval_test.logs" &
+  &>> $LOGS_DIR"/log_eval_test.logs" &
 """
 
 def main(args):
@@ -65,13 +65,13 @@ def main(args):
   train_dir = join(args['path'], args['folder'])
   assert exists(train_dir), "{} does not exist".format(train_dir)
 
-  # if params is set, overide the parameters in the config file
+  # if params is set, override the parameters in the config file
   if args['params']:
     try:
       _ = json.loads(args['params'])
-      args.params = "--params '{}'".format(args['params'])
+      args['params'] = "--params '{}'".format(args['params'])
     except:
-      raise ValueError("Could not parse overide parameters")
+      raise ValueError("Could not parse override parameters")
 
   # setup ouessant job parameters 
   if "ouessant" in args['hostname']:
