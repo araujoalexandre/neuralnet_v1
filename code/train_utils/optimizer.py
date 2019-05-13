@@ -28,6 +28,16 @@ class Optimizer:
                                      use_locking=config['use_locking'])
     return opt
 
+  def RMSPropOptimizer(self):
+    config = FLAGS.RMSPropOptimizer
+    RMSProp_decay = config['RMSProp_decay']
+    RMSProp_momentum = config['RMSProp_momentum']
+    RMSProp_epsilon = config['RMSProp_epsilon']
+    opt = tf.train.RMSPropOptimizer(self.learning_rate, RMSProp_decay,
+                                    momentum=RMSProp_momentum,
+                                    epsilon=RMSProp_epsilon)
+    return opt
+
   def AdamOptimizer(self):
     config = FLAGS.AdamOptimizer
     opt = tf.train.AdamOptimizer(
