@@ -18,14 +18,55 @@ As described in http://arxiv.org/abs/1602.07261.
     on Learning
   Christian Szegedy, Sergey Ioffe, Vincent Vanhoucke, Alex Alemi
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 
-
+import numpy as np
 import tensorflow as tf
+from tensorflow import flags
+from tensorflow import logging
+
+from .base import BaseModel
+from config import hparams as FLAGS
 
 slim = tf.contrib.slim
+
+
+def inception_resnet_v2_arg_scope(
+    weight_decay=0.00004,
+    batch_norm_decay=0.9997,
+    batch_norm_epsilon=0.001,
+    activation_fn=tf.nn.relu,
+    batch_norm_updates_collections=tf.GraphKeys.UPDATE_OPS,
+    batch_norm_scale=False):
+  """Returns the scope with the default parameters for inception_resnet_v2.
+  Args:
+    weight_decay: the weight decay for weights variables.
+    batch_norm_decay: decay for the moving average of batch_norm momentums.
+    batch_norm_epsilon: small float added to variance to avoid dividing by zero.
+    activation_fn: Activation function for conv2d.
+    batch_norm_updates_collections: Collection for the update ops for
+      batch norm.
+    batch_norm_scale: If True, uses an explicit `gamma` multiplier to scale the
+      activations in the batch normalization layer.
+  Returns:
+    a arg_scope with the parameters needed for inception_resnet_v2.
+  """
+  # Set weight_decay for weights in conv2d and fully_connected layers.
+  with slim.arg_scope([slim.conv2d, slim.fully_connected],
+                      weights_regularizer=slim.l2_regularizer(weight_decay),
+                      biases_regularizer=slim.l2_regularizer(weight_decay)):
+
+    batch_norm_params = {
+        'decay': batch_norm_decay,
+        'epsilon': batch_norm_epsilon,
+        'updates_collections': batch_norm_updates_collections,
+        'fused': None,  # Use fused batch norm if possible.
+        'scale': batch_norm_scale,
+    }
+    # Set activation_fn and parameters for batch_norm.
+    with slim.arg_scope([slim.conv2d], activation_fn=activation_fn,
+                        normalizer_fn=slim.batch_norm,
+                        normalizer_params=batch_norm_params) as scope:
+      return scope
 
 
 def block35(net, scale=1.0, activation_fn=tf.nn.relu, scope=None, reuse=None):
@@ -111,7 +152,8 @@ def inception_resnet_v2_base(inputs,
                              output_stride=16,
                              align_feature_maps=False,
                              scope=None,
-                             activation_fn=tf.nn.relu):
+                             activation_fn=tf.nn.relu,
+                             is_training=None):
   """Inception model from  http://arxiv.org/abs/1602.07261.
   Constructs an Inception Resnet v2 network from inputs to the given final
   endpoint. This method can construct the network up to the final inception
@@ -143,6 +185,43 @@ def inception_resnet_v2_base(inputs,
   padding = 'SAME' if align_feature_maps else 'VALID'
 
   end_points = {}
+
+  config = FLAGS.inception_resnet_v2
+
+  def _get_noise(x):
+    """noise layer."""
+    loc = tf.zeros(tf.shape(x), dtype=tf.float32)
+    scale = tf.ones(tf.shape(x), dtype=tf.float32)
+    if config['distributions'] == 'l1':
+      noise = tf.distributions.Laplace(loc, scale).sample()
+      noise = (config['scale_noise'] / tf.sqrt(2.)) * noise
+    elif config['distributions'] == 'l2':
+      noise = tf.distributions.Normal(loc, scale).sample()
+      noise = config['scale_noise'] * noise
+    elif config['distributions'] == 'exp':
+      noise = tf.distributions.Exponential(rate=scale).sample()
+      noise = config['scale_noise'] * noise
+    elif config['distributions'] == 'weibull':
+      k = 3
+      eps = 10e-8
+      alpha = ((k - 1) / k)**(1 / k)
+      U = tf.random_uniform(tf.shape(x), minval=eps, maxval=1)
+      X = (-tf.log(U) + alpha**k)**(1 / k) - alpha
+      tensor = tf.zeros_like(x) + 0.5
+      bernoulli = tf.distributions.Bernoulli(probs=tensor).sample()
+      B = tf.cast(2 * bernoulli - 1, tf.float32)
+      noise = B * X / 0.3425929
+      noise = config['scale_noise'] * noise
+    else:
+      raise ValueError("Distributions is not recognised.")
+    return noise
+
+  train_with_noise = is_training and config['train_with_noise']
+  if train_with_noise or (config['train_with_noise'] and FLAGS.noise_in_eval):
+    logging.info(
+      "train/eval with noise - noise sd {:.2f}".format(config['scale_noise']))
+    noise = _get_noise(inputs)
+    inputs = inputs + noise
 
   def add_and_check_final(name, net):
     end_points[name] = net
@@ -317,7 +396,8 @@ def inception_resnet_v2(inputs, num_classes=1001, is_training=True,
                         is_training=is_training):
 
       net, end_points = inception_resnet_v2_base(inputs, scope=scope,
-                                                 activation_fn=activation_fn)
+                                                 activation_fn=activation_fn,
+                                                 is_training=is_training)
 
       if create_aux_logits and num_classes:
         with tf.variable_scope('AuxLogits'):
@@ -354,43 +434,42 @@ def inception_resnet_v2(inputs, num_classes=1001, is_training=True,
         end_points['Predictions'] = tf.nn.softmax(logits, name='Predictions')
 
     return logits, end_points
-inception_resnet_v2.default_image_size = 299
 
 
-def inception_resnet_v2_arg_scope(
-    weight_decay=0.00004,
-    batch_norm_decay=0.9997,
-    batch_norm_epsilon=0.001,
-    activation_fn=tf.nn.relu,
-    batch_norm_updates_collections=tf.GraphKeys.UPDATE_OPS,
-    batch_norm_scale=False):
-  """Returns the scope with the default parameters for inception_resnet_v2.
-  Args:
-    weight_decay: the weight decay for weights variables.
-    batch_norm_decay: decay for the moving average of batch_norm momentums.
-    batch_norm_epsilon: small float added to variance to avoid dividing by zero.
-    activation_fn: Activation function for conv2d.
-    batch_norm_updates_collections: Collection for the update ops for
-      batch norm.
-    batch_norm_scale: If True, uses an explicit `gamma` multiplier to scale the
-      activations in the batch normalization layer.
-  Returns:
-    a arg_scope with the parameters needed for inception_resnet_v2.
-  """
-  # Set weight_decay for weights in conv2d and fully_connected layers.
-  with slim.arg_scope([slim.conv2d, slim.fully_connected],
-                      weights_regularizer=slim.l2_regularizer(weight_decay),
-                      biases_regularizer=slim.l2_regularizer(weight_decay)):
+class InceptionResnetModel:
 
-    batch_norm_params = {
-        'decay': batch_norm_decay,
-        'epsilon': batch_norm_epsilon,
-        'updates_collections': batch_norm_updates_collections,
-        'fused': None,  # Use fused batch norm if possible.
-        'scale': batch_norm_scale,
-    }
-    # Set activation_fn and parameters for batch_norm.
-    with slim.arg_scope([slim.conv2d], activation_fn=activation_fn,
-                        normalizer_fn=slim.batch_norm,
-                        normalizer_params=batch_norm_params) as scope:
-      return scope
+  def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
+
+    self.config = config = FLAGS.inception_resnet_v2
+
+    scope = 'InceptionResnetV2'
+    dropout_keep_prob = config['dropout_keep_prob']
+    activation_fn = getattr(tf.nn, config['activation_fn'])
+
+    with tf.variable_scope(scope, 'InceptionResnetV2', [model_input],
+                           reuse=tf.AUTO_REUSE) as scope:
+      with slim.arg_scope([slim.batch_norm, slim.dropout],
+                          is_training=is_training):
+
+        net, _ = inception_resnet_v2_base(model_input, scope=scope,
+                                          activation_fn=activation_fn,
+                                          is_training=is_training)
+
+        with tf.variable_scope('Logits'):
+          # TODO(sguada,arnoegw): Consider adding a parameter global_pool which
+          # can be set to False to disable pooling here (as in resnet_*()).
+          kernel_size = net.get_shape()[1:3]
+          if kernel_size.is_fully_defined():
+            net = slim.avg_pool2d(net, kernel_size, padding='VALID',
+                                  scope='AvgPool_1a_8x8')
+          else:
+            net = tf.reduce_mean(net, [1, 2], keep_dims=True, name='global_pool')
+
+          net = slim.flatten(net)
+          net = slim.dropout(net, dropout_keep_prob, is_training=is_training,
+                             scope='Dropout')
+          logits = slim.fully_connected(net, n_classes, activation_fn=None,
+                                        scope='Logits')
+      return logits
+
+
