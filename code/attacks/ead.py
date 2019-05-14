@@ -193,7 +193,7 @@ class ElasticNet:
         "Monte Carlo (MC) on attacks, sample: {}".format(self.sample))
       tf.logging.info("batch_size: {}".format(self.batch_size))
       self.output = batch_prediction(self.newimg)
-      self.output_y = batch_predictions(self.slack)
+      self.output_y = batch_prediction(self.slack)
 
     # distance to the input data
     self.l2dist = tf.reduce_sum(tf.square(self.newimg-self.timg),
