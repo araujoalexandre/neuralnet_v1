@@ -279,7 +279,7 @@ class Evaluate:
       sess.run(tf.local_variables_initializer())
 
       cumul = np.zeros((self.batch_size, self.reader.n_classes))
-      entropy_sample = 1000
+      entropy_sample = 10000
       images = tf_get('images')
       predictions = tf_get('predictions')
       labels = tf_get('labels')
@@ -299,7 +299,7 @@ class Evaluate:
           proba = cumul / (i+1)
           cross_entropy = proba * np.log(proba + 1e-8)
           entropy = np.mean(-np.sum(cross_entropy, axis=1))
-          exp_entropy = np.mean(np.exp(-np.sum(cross_entropy, axis=1)))
+          exp_entropy = np.mean(np.exp(np.sum(cross_entropy, axis=1)))
 
           msg = "iter: {: 7}, entropy: {:.4f}, exp entropy: {:.4f}".format(
             i, entropy, exp_entropy)
