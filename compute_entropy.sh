@@ -8,7 +8,7 @@
 #SBATCH --gres=gpu:2
 #SBATCH --cpus-per-task=20
 #SBATCH --get-user-env
-#SBTACH --comment="NIPS deadline"
+#SBATCH --comment="NIPS deadline"
 
 TRAIN_DIR="${WORKDIR}/models/FOLDER"
 LOGS_DIR=${TRAIN_DIR}"_logs"
