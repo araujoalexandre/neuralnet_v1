@@ -50,6 +50,7 @@ setup_fair = """#!/bin/bash
 #SBATCH --cpus-per-task=20
 #SBATCH --gres=gpu:{n_gpus}
 #SBATCH --get-user-env
+#SBATCH --comment="NIPS deadline"
 
 TRAIN_DIR="{path}/{folder}"
 LOGS_DIR=$TRAIN_DIR"_logs"
