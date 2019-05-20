@@ -11,7 +11,7 @@ do
   
   # generate the sbatch and run on cluster
   ${PROJECTDIR}/sub/attacks.py ${FOLDER} \
-    --attack ${ATTACK} \
+    --attack 'carlini' \
     --gpu '0' \
     --partition ${PARTITION} \
     --params "${PARAMS}" | sbatch
