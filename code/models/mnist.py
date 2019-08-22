@@ -6,12 +6,11 @@ from tensorflow import flags
 from tensorflow import logging
 
 from . import layers
-from .base import BaseModel
 
 from config import hparams as FLAGS
 
 
-class MnistModelLeNet(BaseModel):
+class MnistModelLeNet:
 
   def create_model(self, x, n_classes, is_training, *args, **kwargs):
 
@@ -56,7 +55,7 @@ class MnistModelLeNet(BaseModel):
 
 
 
-class MnistModelDense(BaseModel):
+class MnistModelDense:
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
@@ -87,7 +86,7 @@ class MnistModelDense(BaseModel):
     return activation
 
 
-class MnistModelCirculant(BaseModel):
+class MnistModelCirculant:
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
@@ -132,7 +131,7 @@ class MnistModelCirculant(BaseModel):
     return activation
 
 
-class MnistModelToeplitz(BaseModel):
+class MnistModelToeplitz:
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 

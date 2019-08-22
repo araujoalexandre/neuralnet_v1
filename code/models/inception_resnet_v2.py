@@ -24,7 +24,6 @@ import tensorflow as tf
 from tensorflow import flags
 from tensorflow import logging
 
-from .base import BaseModel
 from config import hparams as FLAGS
 
 slim = tf.contrib.slim

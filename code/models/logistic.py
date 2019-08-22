@@ -6,7 +6,6 @@ from tensorflow import logging
 
 import attacks
 from . import layers
-from .base import BaseModel
 
 from config import hparams as FLAGS
 
@@ -18,7 +17,7 @@ class LogisticModel:
     return logits
 
 
-class LogisticModelAttack(BaseModel):
+class LogisticModelAttack:
 
   def create_model(self, x, n_classes, is_training, *args, **kwargs):
     """Build the core model within the graph."""

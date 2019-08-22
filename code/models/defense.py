@@ -5,13 +5,12 @@ from tensorflow import flags
 from tensorflow import logging
 
 import attacks
-from .base import BaseModel
 from .wide_resnet import WideResnetModel
 
 from config import hparams as FLAGS
 
 
-class DefenseVsAttack(BaseModel):
+class DefenseVsAttack:
 
   def create_model(self, x, n_classes, is_training, *args, **kwargs):
     """Build the core model within the graph."""
