@@ -4,10 +4,9 @@ import tensorflow as tf
 from tensorflow import flags
 from tensorflow import logging
 
-from .base import BaseModel
 from config import hparams as FLAGS
 
-class WideResnetModel(BaseModel):
+class WideResnetModel:
   """Wide ResNet model.
      https://arxiv.org/abs/1605.07146
   """
@@ -239,7 +238,7 @@ class WideResnetModel(BaseModel):
     return logits
 
 
-class WideResnetModelNoiseImage(BaseModel):
+class WideResnetModelNoiseImage:
   """Wide ResNet model.
      https://arxiv.org/abs/1605.07146
   """

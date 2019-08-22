@@ -5,12 +5,11 @@ from tensorflow import flags
 from tensorflow import logging
 
 from . import layers
-from .base import BaseModel
 
 from config import hparams as FLAGS
 
 
-class Cifar10BaseModel(BaseModel):
+class Cifar10BaseModel:
 
   def convolutional_layers(self, images):
     """Build the CIFAR-10 model convolutional layers.

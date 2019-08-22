@@ -5,12 +5,11 @@ from tensorflow import flags
 from tensorflow import logging
 
 from . import layers
-from .base import BaseModel
 
 from config import hparams as FLAGS
 
 
-class YoutubeModelLogistic(BaseModel):
+class YoutubeModelLogistic:
   """Logistic model with L2 regularization."""
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
@@ -70,7 +69,7 @@ class YoutubeModelLogistic(BaseModel):
     return activation
 
 
-class YoutubeModelCirculant(BaseModel):
+class YoutubeModelCirculant:
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
@@ -122,7 +121,7 @@ class YoutubeModelCirculant(BaseModel):
     return activation
 
 
-class YoutubeModelCirculantWithDense(BaseModel):
+class YoutubeModelCirculantWithDense:
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
@@ -174,7 +173,7 @@ class YoutubeModelCirculantWithDense(BaseModel):
     return activation
 
 
-class YoutubeModelTensorTrainWithDense(BaseModel):
+class YoutubeModelTensorTrainWithDense:
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
@@ -228,7 +227,7 @@ class YoutubeModelTensorTrainWithDense(BaseModel):
     return activation
 
 
-class YoutubeModelTensorTrain(BaseModel):
+class YoutubeModelTensorTrain:
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
@@ -279,7 +278,7 @@ class YoutubeModelTensorTrain(BaseModel):
     return activation
 
 
-class YoutubeModelLowRank(BaseModel):
+class YoutubeModelLowRank:
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 

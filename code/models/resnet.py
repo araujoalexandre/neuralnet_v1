@@ -3,7 +3,6 @@ import tensorflow as tf
 from tensorflow import flags
 from tensorflow import logging
 
-from .base import BaseModel
 from config import hparams as FLAGS
 
 
@@ -446,7 +445,7 @@ class Resnet:
     return inputs
 
 
-class ResnetModel(BaseModel):
+class ResnetModel:
 
   def create_model(self, model_input, n_classes, is_training, *args, **kwargs):
 
