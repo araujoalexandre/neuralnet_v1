@@ -1,13 +1,13 @@
 
 default: &DEFAULT
   train_batch_size:           100
-  num_epochs:                 10
+  num_epochs:                 200
   start_new_model:            True
   train_num_gpu:              2
   clear_devices:              False
   profiler:                   False
   compile:                    False
-  debug:                      True
+  debug:                      False
 
   log_device_placement:       False
   save_checkpoint_steps:      500 # ckpt per epoch: dataset_size / (batch_size * gpu)
@@ -30,15 +30,18 @@ default: &DEFAULT
   model:                      Cifar10Model
   cifar_model:
     with_conv:                False
-    hidden_layers:            toeplitz
-    classification:           dense
-    n_layers:                 2
+    hidden_layers:            circulant
+    classification:           circulant
+    n_layers:                 {n_layers}
     hidden_size:              0
     use_diag:                 True
     use_bias:                 True
     alpha:                    1.414
     non_linear:               1
-    leaky_slope:              0.1
+    leaky_slope:              0.5
+    normal_init:              False
+    rand_init:                True
+    sign_init:                True
   givens:
     n_layers:                 3
     hidden:                   [0, 0, 0]
@@ -113,7 +116,7 @@ default: &DEFAULT
     compute_hessian:          False
 
   update_ops:
-    parseval_update:          True
+    parseval_update:          False
     parseval_step:            0.0003
     parseval_loops:           10
 
@@ -129,7 +132,7 @@ eval: &EVAL
   start_eval_from_ckpt:       first
   cherrypick:                 None
   start_new_model:            False
-  stopped_at_n:               5 # number of ckpt
+  stopped_at_n:               auto
   noise_in_eval:              False
 
 eval_test: &EVAL_TEST
