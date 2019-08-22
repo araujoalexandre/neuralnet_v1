@@ -66,3 +66,10 @@ class SigmoidCrossEntropyWithLogits(BaseLoss):
     with tf.name_scope('loss'):
       return tf.losses.sigmoid_cross_entropy(
                   labels, logits, weights=1.0, label_smoothing=0)
+
+class MeanSquareError(BaseLoss):
+
+  def calculate_loss(self, labels=None, logits=None, **unused_params):
+    with tf.name_scope('loss'):
+      return tf.losses.mean_squared_error(
+                  labels, logits, weights=1.0, label_smoothing=0)
