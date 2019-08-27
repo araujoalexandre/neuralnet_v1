@@ -4,11 +4,15 @@ import json
 import time
 import pprint
 import socket
+# import logging as pylogging
+import multiprocessing
 from collections import OrderedDict
+from collections import namedtuple
 from os.path import join, exists
-from datetime import datetime
 
 import models
+from models import model
+from models import model_config
 from dataset import readers
 from train_utils import losses
 from train_utils.learning_rate import LearningRate
@@ -17,17 +21,37 @@ from train_utils.gradients import ComputeAndProcessGradients
 from train_utils.gradients import compute_hessian_and_summary
 from train_utils.gradients import combine_gradients
 from train_utils.update_ops import UpdateOps
+from train_utils import variable_mgr, variable_mgr_util
 from eval_utils import eval_util
 from utils import MessageBuilder
 
+import numpy as np
 import tensorflow as tf
 from tensorflow import app
 from tensorflow import gfile
 from tensorflow import logging
-from tensorflow.python.client import device_lib
+from tensorflow.core.protobuf import rewriter_config_pb2
+from tensorflow.python.util import nest
 
 from config import hparams as FLAGS
 
+# InputProcessingInfo contains various sources of inputs which will be later fed
+# into the model. If synthetic data is used, all three fields are None.
+InputProcessingInfo = namedtuple(
+    'InputProcessingInfo',
+    [
+        # The first two fields are non-None iff datasets prefetching is not
+        # used.
+
+        # Ops that produce the input batches.
+        'input_producer_op',
+        # A list of StagingArea for each device.
+        'input_producer_stages',
+
+        # Input produced using multi device iterator. Non-None iff datasets
+        # prefetching is used
+        'multi_device_iterator_input'
+    ])
 
 def task_as_string(task):
   return "/job:{}/task:{}".format(task.type, task.index)
@@ -39,491 +63,1128 @@ def find_class_by_name(name, modules):
   return next(a for a in modules if a)
 
 
-def build_graph(reader, model, label_loss_fn, batch_size, regularization_penalty):
-  """Creates the Tensorflow graph.
+def maybe_compile(computation, params):
+  if params and params.xla_compile:
+    return tf.xla.experimental.compile(computation)
+  else:
+    return computation()
 
-  This will only be called once in the life of
-  a training model, because after the graph is created the model will be
-  restored from a meta graph file rather than being recreated.
+
+def set_default_param_values_and_env_vars(params):
+  """Sets up the default param values and environment variables ."""
+  if True: # params.batchnorm_persistent:
+    os.environ['TF_USE_CUDNN_BATCHNORM_SPATIAL_PERSISTENT'] = '1'
+  else:
+    os.environ.pop('TF_USE_CUDNN_BATCHNORM_SPATIAL_PERSISTENT', None)
+  if True: # params.winograd_nonfused:
+    os.environ['TF_ENABLE_WINOGRAD_NONFUSED'] = '1'
+  else:
+    os.environ.pop('TF_ENABLE_WINOGRAD_NONFUSED', None)
+  if None: # params.autotune_threshold:
+    os.environ['TF_AUTOTUNE_THRESHOLD'] = str(params.autotune_threshold)
+  os.environ['TF_SYNC_ON_FINISH'] = '0' # str(int(params.sync_on_finish))
+  # argparse.ArgumentParser(
+  #     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+  # Sets GPU thread settings
+  if FLAGS.device == 'gpu':
+    # params = FLAGS._replace(gpu_thread_mode=FLAGS.gpu_thread_mode)
+    if params.gpu_thread_mode not in ['global', 'gpu_shared', 'gpu_private']:
+      raise ValueError('Invalid gpu_thread_mode: %s' % params.gpu_thread_mode)
+    os.environ['TF_GPU_THREAD_MODE'] = params.gpu_thread_mode
+
+    if params.per_gpu_thread_count and params.gpu_thread_mode == 'global':
+      raise ValueError(
+          'Invalid per_gpu_thread_count with gpu_thread_mode=global: %s' %
+          params.per_gpu_thread_count)
+    # Default to two threads. One for the device compute and the other for
+    # memory copies.
+    per_gpu_thread_count = params.per_gpu_thread_count or 2
+    total_gpu_thread_count = per_gpu_thread_count * params.train_num_gpus
+
+    if params.gpu_thread_mode == 'gpu_private':
+      os.environ['TF_GPU_THREAD_COUNT'] = str(per_gpu_thread_count)
+    elif params.gpu_thread_mode == 'gpu_shared':
+      os.environ['TF_GPU_THREAD_COUNT'] = str(total_gpu_thread_count)
+
+    cpu_count = multiprocessing.cpu_count()
+    if not params.num_inter_threads and params.gpu_thread_mode in [
+        'gpu_private', 'gpu_shared'
+    ]:
+      main_thread_count = max(cpu_count - total_gpu_thread_count, 1)
+      # params = params._replace(num_inter_threads=main_thread_count)
+      params.num_inter_threads = main_thread_count
+
+    # From the total cpu thread count, subtract the total_gpu_thread_count,
+    # and then 2 threads per GPU device for event monitoring and sending /
+    # receiving tensors
+    num_monitoring_threads = 2 * params.train_num_gpus
+    num_private_threads = max(
+        cpu_count - total_gpu_thread_count - num_monitoring_threads, 1)
+    # params = params._replace(datasets_num_private_threads=num_private_threads)
+    params.datasets_num_private_threads = num_private_threads
+  return params
+
+
+def setup():
+  """Sets up the environment that BenchmarkCNN should run in.
+
+  Returns:
+    A potentially modified params.
+  Raises:
+    ValueError: invalid parames combinations.
+  """
+  # Set up environment variables before doing any other global initialization to
+  # make sure it uses the appropriate environment variables.
+  set_default_param_values_and_env_vars(FLAGS)
+  # platforms_util.initialize(params, create_config_proto(params))
+  if FLAGS.job_name:
+    # Create a dummy session to initialize TF global variables using the input
+    # params. Otherwise, ListDevices function may create global devices using
+    # the default config instead of using the user provided config.
+    #
+    # TODO(hinsu): Find a way to achieve the same for distributed benchmark. It
+    # is not legal to create distributed session after local session. It is also
+    # not possible to create distributed session here as that results in
+    # multiple creation of ClusterManager and Server.
+    with tf.Session(config=create_config_proto(FLAGS)) as sess:
+      del sess
+
+
+def create_config_proto():
+  """Returns session config proto.
 
   Args:
-    reader: the input class.
-    model: The core model.
-    label_loss_fn: What kind of loss to apply to the model. It should inherit
-                from BaseLoss.
-    batch_size: How many examples to process at a time.
-    regularization_penalty: How much weight to give the regularization loss
-                            compared to the label loss.
+    params: Params tuple, typically created by make_params or
+            make_params_from_flags.
   """
-  global_step = tf.train.get_or_create_global_step()
-
-  local_device_protos = device_lib.list_local_devices()
-  gpus = [x.name for x in local_device_protos if x.device_type == 'GPU']
-  gpus = gpus[:FLAGS.train_num_gpu]
-  num_gpus = len(gpus)
-
-  if num_gpus > 0:
-    logging.info("Using the following GPUs to train: " + str(gpus))
-    num_towers = num_gpus
-    device_string = '/gpu:{}'
-    logging.info("Using total batch size of {} for training "
-      "over {} GPUs: batch size of {} per GPUs.".format(
-        batch_size, num_towers, batch_size // num_towers))
+  config = tf.ConfigProto()
+  config.allow_soft_placement = True
+  if FLAGS.num_intra_threads is None:
+    if FLAGS.train_num_gpus:
+      config.intra_op_parallelism_threads = 1
   else:
-    logging.info("No GPUs found. Training on CPU.")
-    num_towers = 1
-    device_string = '/cpu:{}'
-    logging.info("Using total batch size of {} for training. ".format(
-      batch_size))
+    config.intra_op_parallelism_threads = FLAGS.num_intra_threads
+  if FLAGS.xla:
+    config.graph_options.optimizer_options.global_jit_level = (
+        tf.OptimizerOptions.ON_1)
+  config.inter_op_parallelism_threads = FLAGS.num_inter_threads
+  config.experimental.collective_group_leader = '/job:worker/replica:0/task:0'
+  # config.gpu_options.experimental.collective_ring_order = FLAGS.gpu_indices
 
-  learning_rate = LearningRate(global_step, batch_size).get_learning_rate()
-  opt = Optimizer(learning_rate).get_optimizer()
-
-  with tf.name_scope("input"):
-    images_batch, labels_batch = reader.input_fn()
-  tf.summary.histogram("model/input_raw", images_batch)
-
-  gradients_cls = ComputeAndProcessGradients()
-
-  tower_inputs = tf.split(images_batch, num_towers)
-  tower_labels = tf.split(labels_batch, num_towers)
-  tower_gradients = []
-  tower_logits = []
-  tower_final_losses = []
-  for i in range(num_towers):
-    reuse = tf.AUTO_REUSE
-    reuse = False if i == 0 else True
-    with tf.device(device_string.format(i)):
-      with tf.variable_scope("tower", reuse=reuse):
-
-          logits = model.create_model(tower_inputs[i],
-            n_classes=reader.n_classes, is_training=True)
-          tower_logits.append(logits)
-
-          label_loss = label_loss_fn.calculate_loss(
-            logits=logits, labels=tower_labels[i])
-          reg_losses = tf.losses.get_regularization_losses()
-          if reg_losses:
-            reg_loss = tf.add_n(reg_losses)
-          else:
-            reg_loss = tf.constant(0.)
-
-          # Adds update_ops (e.g., moving average updates in batch norm) as
-          # a dependency to the train_op.
-          update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-          if update_ops:
-            with tf.control_dependencies(update_ops):
-              barrier = tf.no_op(name="gradient_barrier")
-              with tf.control_dependencies([barrier]):
-                label_loss = tf.identity(label_loss)
-
-          # Incorporate the L2 weight penalties etc.
-          final_loss = regularization_penalty * reg_loss + label_loss
-          gradients = gradients_cls.get_gradients(opt, final_loss)
-          tower_gradients.append(gradients)
-          tower_final_losses.append(final_loss)
-
-  total_loss = tf.stack(tower_final_losses)
-  full_gradients = combine_gradients(tower_gradients)
-
-  # make summary
-  tf.summary.scalar("loss", tf.reduce_mean(total_loss))
-  for variable in tf.trainable_variables():
-    tf.summary.histogram(variable.op.name, variable)
-
-  # apply gradients
-  # gradients = gradients_cls.get_gradients(opt, total_loss)
-  train_op_cls = UpdateOps(opt)
-
-  summary_op = tf.summary.merge_all()
-  with tf.control_dependencies([summary_op]):
-    train_op = train_op_cls.make_update(full_gradients, global_step)
-
-  logits = tf.concat(tower_logits, 0)
-
-  tf.add_to_collection("loss", label_loss)
-  tf.add_to_collection("logits", logits)
-  tf.add_to_collection("labels", labels_batch)
-  tf.add_to_collection("learning_rate", learning_rate)
-  tf.add_to_collection("summary_op", summary_op)
-  tf.add_to_collection("train_op", train_op)
+  # TODO(b/117324590): Re-enable PinToHostOptimizer when b/117324590 is fixed.
+  # Currently we have to disable PinToHostOptimizer w/ XLA since it causes
+  # OOM/perf cliffs.
+  config.graph_options.rewrite_options.pin_to_host_optimization = (
+      rewriter_config_pb2.RewriterConfig.OFF)
+  return config
 
 
-class Trainer(object):
+def _get_checkpoint_to_load(ckpt_dir):
+  """Returns which checkpoint to load.
+
+  Args:
+    ckpt_dir: Path to a folder of checkpoints or full path to a checkpoint.
+
+  Returns:
+    Full path to checkpoint to load.
+
+  Raises:
+    CheckpointNotFoundException: If checkpoint is not found.
+  """
+  p = re.compile(r'ckpt-\d+$')
+  if p.search(ckpt_dir):
+    model_checkpoint_path = ckpt_dir
+  else:
+    # Finds latest checkpoint in directory provided
+    ckpt = tf.train.get_checkpoint_state(ckpt_dir)
+    if ckpt and ckpt.model_checkpoint_path:
+      model_checkpoint_path = ckpt.model_checkpoint_path
+    else:
+      raise CheckpointNotFoundException('No checkpoint file found in dir:{}'.
+                                        format(ckpt_dir))
+  return model_checkpoint_path
+
+
+
+class Trainer:
   """A Trainer to train a Tensorflow graph."""
 
-  def __init__(self, cluster, task, train_dir, model, reader, batch_size):
-    """"Creates a Trainer.
-
-    Args:
-      cluster: A tf.train.ClusterSpec if the execution is distributed.
-        None otherwise.
-      task: A TaskSpec describing the job type and the task index.
+  def __init__(self):
+    """Creates a Trainer.
     """
-    self.cluster = cluster
-    self.task = task
-    self.is_master = (task.type == "master" and task.index == 0)
-    self.train_dir = train_dir
-    self.model = model
-    self.reader = reader
-    self.batch_size = batch_size
+    self.job_name = FLAGS.job_name
+    self.task_index = FLAGS.task_index
+    self.is_master = (self.job_name in ('', 'worker') and self.task_index == 0)
+    self.start_new_model = FLAGS.start_new_model
+    self.train_dir = FLAGS.train_dir
+    self.num_gpus = FLAGS.train_num_gpus
+    self.variable_update = FLAGS.variable_update
 
-    self.config = tf.ConfigProto(allow_soft_placement=True,
-      log_device_placement=FLAGS.log_device_placement)
-    jit_level = 0
-    if FLAGS.compile:
-      # Turns on XLA JIT compilation.
-      jit_level = tf.OptimizerOptions.ON_2
-    self.config.graph_options.optimizer_options.global_jit_level = jit_level
+    self.batch_size = FLAGS.train_batch_size * self.num_gpus
+    if self.job_name:
+      self.global_batch_size = self.batch_size * \
+          (self.cluster.num_tasks('worker') + 1)
+    else:
+      self.global_batch_size = self.batch_size
 
-    # define the number of epochs
-    num_steps_by_epochs = reader.n_train_files / batch_size
+    # logging.info("Using total batch size of {} for training "
+    #   "over {} GPUs: batch size of {} per GPUs.".format(
+    #     batch_size, num_towers, batch_size // num_towers))
+
+
+    # PS server is used for distributed jobs not using all-reduce.
+    use_ps_server = self.job_name and \
+      (self.variable_update != 'distributed_all_reduce' and \
+       self.variable_update != 'collective_all_reduce')
+
+    # controller is used for distributed_all_reduce with > 1 worker.
+    use_controller = (
+        self.variable_update == 'distributed_all_reduce' and
+        self.job_name)
+    if use_controller and not FLAGS.controller_host:
+      raise ValueError('When variable_update==distributed_all_reduce '
+                       'controller_host must also be specified.')
+    # collective_all_reduce doesn't need a controller or ps
+    self.distributed_collective = (
+        self.variable_update == 'collective_all_reduce' and
+        self.job_name)
+
+    self.local_parameter_device_flag = FLAGS.local_parameter_device
+    if self.job_name:
+      self.cluster_manager = platforms_util.get_cluster_manager(
+          params, create_config_proto(params))
+      assert isinstance(self.cluster_manager, cnn_util.BaseClusterManager)
+
+      worker_prefix = '/job:worker/replica:0/task:{}'.format(self.task_index)
+      if use_ps_server:
+        self.param_server_device = tf.train.replica_device_setter(
+            worker_device=worker_prefix + '/cpu:0',
+            cluster=self.cluster_manager.get_cluster_spec())
+        # This device on which the queues for managing synchronization between
+        # servers should be stored.
+        self.sync_queue_devices = [
+            '/job:ps/replica:0/task:{}/cpu:0'.format(i)
+            for i in range(self.cluster_manager.num_ps())
+        ]
+      else:
+        self.sync_queue_devices = ['/job:worker/replica:0/task:0/cpu:0']
+    else:
+      self.task_index = 0
+      self.cluster_manager = None
+      worker_prefix = ''
+      self.param_server_device = '/{}:0'.format(FLAGS.local_parameter_device)
+      self.sync_queue_devices = [self.param_server_device]
+
+    if self.cluster_manager:
+      self.num_workers = self.cluster_manager.num_workers()
+    elif FLAGS.variable_update == 'horovod':
+      import horovod.tensorflow as hvd  # pylint: disable=g-import-not-at-top
+      self.num_workers = hvd.size()
+    else:
+      self.num_workers = 1
+    self.num_ps = self.cluster_manager.num_ps() if self.cluster_manager else 0
+
+    if self.num_workers > 1 and FLAGS.all_reduce_spec == 'nccl':
+      raise ValueError('--all_reduce_spec=nccl is invalid in a '
+                       'multi-worker job')
+
+    # Device to use for ops that need to always run on the local worker's CPU.
+    self.cpu_device = '{}/cpu:0'.format(worker_prefix)
+
+    # Device to use for ops that need to always run on the local worker's
+    # compute device, and never on a parameter server device.
+    self.raw_devices = [
+        '{}/gpu:{}'.format(worker_prefix, i)
+        for i in range(self.num_gpus)
+    ]
+
+    if FLAGS.variable_update == 'parameter_server':
+      if self.job_name:
+        if not FLAGS.staged_vars:
+          self.variable_mgr = variable_mgr.VariableMgrDistributedFetchFromPS(
+              self)
+        else:
+          self.variable_mgr = (
+              variable_mgr.VariableMgrDistributedFetchFromStagedPS(self))
+      else:
+        if not FLAGS.staged_vars:
+          self.variable_mgr = variable_mgr.VariableMgrLocalFetchFromPS(self)
+        else:
+          self.variable_mgr = variable_mgr.VariableMgrLocalFetchFromStagedPS(
+              self)
+    elif self.variable_update == 'replicated':
+      if self.job_name:
+        raise ValueError('Invalid variable_update in distributed mode: %s' %
+                         self.variable_update)
+      self.variable_mgr = variable_mgr.VariableMgrLocalReplicated(
+          self, FLAGS.all_reduce_spec,
+          FLAGS.agg_small_grads_max_bytes,
+          FLAGS.agg_small_grads_max_group,
+          FLAGS.allreduce_merge_scope)
+    elif self.variable_update == 'distributed_all_reduce':
+      assert FLAGS.cross_replica_sync
+      self.variable_mgr = variable_mgr.VariableMgrDistributedAllReduce(
+          self, FLAGS.all_reduce_spec,
+          ('worker' if self.num_workers > 1 else 'localhost'),
+          self.num_workers, FLAGS.agg_small_grads_max_bytes,
+          FLAGS.agg_small_grads_max_group,
+          FLAGS.allreduce_merge_scope)
+    elif FLAGS.variable_update == 'collective_all_reduce':
+      assert FLAGS.cross_replica_sync
+      self.variable_mgr = variable_mgr.VariableMgrCollectiveAllReduce(
+          self, FLAGS.all_reduce_spec,
+          self.num_workers, self.num_gpus, self.task_index,
+          FLAGS.allreduce_merge_scope)
+    elif self.variable_update == 'distributed_replicated':
+      assert FLAGS.cross_replica_sync
+      if not self.job_name:
+        raise ValueError('Invalid variable_update in local mode: {}'.format(
+                         self.variable_update))
+      self.variable_mgr = variable_mgr.VariableMgrDistributedReplicated(self)
+    elif FLAGS.variable_update in ('independent', 'horovod'):
+      if self.job_name:
+        raise ValueError(
+          'Invalid variable_update in distributed mode: {}'.format(
+                         self.variable_update))
+      self.variable_mgr = variable_mgr.VariableMgrIndependent(self)
+    else:
+      raise ValueError(
+          'Invalid variable_update: {}'.format(self.variable_update))
+
+    # Device to use for running on the local worker's compute device, but
+    # with variables assigned to parameter server devices.
+    self.devices = self.variable_mgr.get_devices()
+    if self.job_name:
+      if use_ps_server:
+        self.global_step_device = self.param_server_device
+      elif FLAGS.variable_update == 'collective_all_reduce':
+        self.global_step_device = self.cpu_device
+      else:
+        self.global_step_device = '/job:worker/replica:0/task:0/cpu:0'
+    else:
+      self.global_step_device = self.cpu_device
+
+
+    # TODO: remove auto loss scale and check inf in grad
+    self.enable_auto_loss_scale = False
+
+    # create Session Proto configuration
+    self.sess_config = create_config_proto()
+
+    self.model = model_config.get_model_config(
+        FLAGS.model, FLAGS.dataset, FLAGS)
+    # self.model = find_class_by_name(FLAGS.model, [models])()
+    self.reader = find_class_by_name(FLAGS.reader, [readers])(
+      self.batch_size, self.raw_devices, self.cpu_device, is_training=True)
+
+    # define the number of steps
+    num_steps_by_epochs = self.reader.n_train_files / self.global_batch_size
     self.max_steps = FLAGS.num_epochs * num_steps_by_epochs
 
-  def run(self, start_new_model=False):
-    """Performs training on the currently defined Tensorflow graph.
+
+  def add_forward_pass_and_gradients(self,
+                                     rel_device_num,
+                                     abs_device_num,
+                                     input_processing_info,
+                                     gpu_compute_stage_ops,
+                                     gpu_grad_stage_ops):
+    """Add ops for forward-pass and gradient computations."""
+    n_classes = self.reader.n_classes
+    assert input_processing_info.multi_device_iterator_input, (
+        'multi_device_iterator_input cannot be None if '
+        'datasets_use_prefetch=True')
+    input_list = (
+        input_processing_info.multi_device_iterator_input[rel_device_num])
+
+    def forward_pass_and_gradients():
+      """Builds forward pass and gradient computation network.
+
+      Returns:
+        outputs: A list of tensors depending on different modes.
+      """
+      build_network_result = self.model.build_network(
+        input_list, True, n_classes)
+      logits = build_network_result.logits
+
+      base_loss = self.model.loss_function(input_list, build_network_result)
+      params = self.variable_mgr.trainable_variables_on_device(
+          rel_device_num, abs_device_num)
+      l2_loss = None
+      total_loss = base_loss
+      with tf.name_scope('l2_loss'):
+        filtered_params = self.model.filter_l2_loss_vars(params)
+        if rel_device_num == len(self.devices) - 1:
+          # We compute the L2 loss for only one device instead of all of them,
+          # because the L2 loss for each device is the same. To adjust for this,
+          # we multiply the L2 loss by the number of devices. We choose the
+          # last device because for some reason, on a Volta DGX1, the first four
+          # GPUs take slightly longer to complete a step than the last four.
+          # TODO(reedwm): Shard the L2 loss computations across GPUs.
+          if FLAGS.single_l2_loss_op:
+            # TODO(reedwm): If faster, create a fused op that does the L2 loss
+            # on multiple tensors, and use that instead of concatenating
+            # tensors.
+            reshaped_params = [tf.reshape(p, (-1,)) for p in filtered_params]
+            l2_loss = tf.nn.l2_loss(tf.concat(reshaped_params, axis=0))
+          else:
+            l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in filtered_params])
+      weight_decay = FLAGS.weight_decay
+      if (weight_decay is not None and weight_decay != 0. and
+          l2_loss is not None):
+        total_loss += len(self.devices) * weight_decay * l2_loss
+
+      results = {}
+      results['logits'] = logits
+      results['loss'] = total_loss
+      results['grads'] = tf.gradients(total_loss, params)
+      param_refs = self.variable_mgr.trainable_variables_on_device(
+          rel_device_num, abs_device_num, writable=True)
+      results['gradvars'] = list(zip(results['grads'], param_refs))
+      return results
+
+    with tf.device(self.devices[rel_device_num]):
+      return maybe_compile(forward_pass_and_gradients, FLAGS)
+
+
+  def _build_model(self):
+    """Build the TensorFlow graph."""
+    # Adjust seed so different workers start read different input files.
+    if self.variable_update == 'horovod':
+      import horovod.tensorflow as hvd  # pylint: disable=g-import-not-at-top
+      seed_adjustment = hvd.rank()
+    else:
+      seed_adjustment = 0
+    tf.set_random_seed(FLAGS.tf_random_seed + seed_adjustment)
+    np.random.seed(4321 + seed_adjustment)
+    is_training = True
+
+    losses, logits, grads = [], [], []
+    gpu_compute_stage_ops = []
+    gpu_grad_stage_ops = []
+
+    with tf.device(self.global_step_device):
+      global_step = tf.train.get_or_create_global_step()
+
+    # Build the processing and model for the worker.
+    input_producer_op = None
+    with tf.name_scope("input"):
+      input_processing_info = InputProcessingInfo(
+          input_producer_op=None,
+          input_producer_stages=None,
+          multi_device_iterator_input=None)
+      # TODO: add shift_ratio = 0
+      input_processing_info = input_processing_info._replace(
+        multi_device_iterator_input=self.reader.input_fn().get_next())
+
+    update_ops = None
+    staging_delta_ops = []
+
+    for device_num in range(len(self.devices)):
+      with tf.name_scope('tower_{}'.format(device_num)) as name_scope, (
+          self.variable_mgr.create_outer_variable_scope(device_num)):
+        results = self.add_forward_pass_and_gradients(
+            device_num, device_num, input_processing_info,
+            gpu_compute_stage_ops, gpu_grad_stage_ops)
+
+        losses.append(results['loss'])
+        logits.append(results['logits'])
+        grads.append(results['gradvars'])
+
+        if device_num == 0:
+          update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, name_scope)
+          # TODO: remove attributes
+          assert not self.variable_mgr.staging_delta_ops
+
+    enqueue_ops = []
+    fetches = self._build_fetches(global_step, logits, losses, grads,
+                                  enqueue_ops, update_ops)
+    return (input_producer_op, enqueue_ops, fetches)
+
+
+
+  def _build_model_single_session(self):
+    """Build the TensorFlow graph for multiple replicas in a single_session.
 
     Returns:
-      A tuple of the training Hit@1 and the training PERR.
+      input_producer_op:
+      enqueue_ops:
+      fetches:
+
+    Raises:
+       ValueError: optimizer not recognized.
+
+    Single session runs multiple model replicas as part of one large
+    distributed graph, whose global execution is always step-synchronized.
     """
-    if self.is_master and start_new_model and exists(self.train_dir):
+    # verify assumptions
+    assert self.task_index == 0
+
+    tf.set_random_seed(FLAGS.tf_random_seed)
+    np.random.seed(4321)
+    is_training = True
+
+    losses, logits, grads = [], [], []
+    gpu_compute_stage_ops = []
+    gpu_grad_stage_ops = []
+
+    with tf.device(self.global_step_device):
+      global_step = tf.train.get_or_create_global_step()
+
+    update_ops = []
+    global_input_producer_op = []
+
+    is_local = not self.job_name
+    if is_local:
+      assert self.num_workers == 1
+    for task_num in range(self.num_workers):
+      # Reset the devices that self.variable_mgr knows about to those
+      # belonging to the next worker (task).
+      self.reset_devices_for_task(task_num, is_local)
+
+      # TODO: remove InputProcessingInfo
+      with tf.name_scope("input"):
+        input_processing_info = InputProcessingInfo(
+            input_producer_op=None,
+            input_producer_stages=None,
+            multi_device_iterator_input=None)
+        # TODO: add shift_ratio=(task_num / self.num_workers)
+        # to reader option
+        input_processing_info = input_processing_info._replace(
+          multi_device_iterator_input=self.reader.input_fn().get_next())
+
+      # Build the per-worker model replica.
+      for rel_device_num in range(len(self.devices)):
+        abs_device_num = task_num * len(self.devices) + rel_device_num
+        with self.variable_mgr.create_outer_variable_scope(
+            abs_device_num), tf.name_scope(
+                'task_{}_tower_{}'.format(task_num, rel_device_num)) as name_scope:
+          results = self.add_forward_pass_and_gradients(
+              rel_device_num, abs_device_num,
+              input_processing_info, gpu_compute_stage_ops, gpu_grad_stage_ops)
+
+          losses.append(results['loss'])
+          logits.append(results['logits'])
+          grads.append(results['gradvars'])
+
+          if rel_device_num == 0:
+            update_ops.extend(
+                tf.get_collection(tf.GraphKeys.UPDATE_OPS, name_scope))
+            assert not self.variable_mgr.staging_delta_ops
+
+    enqueue_ops = []
+    if gpu_compute_stage_ops:
+      enqueue_ops.append(tf.group(*gpu_compute_stage_ops,
+                                  name='gpu_compute_stage_ops'))
+    assert not self.variable_mgr.supports_staged_vars()
+    assert not gpu_grad_stage_ops
+
+    fetches = self._build_fetches(global_step, logits, losses, grads,
+                                  enqueue_ops, update_ops)
+    return (None, enqueue_ops, fetches)
+
+  # def build_graph(self, reader, model, batch_size, regularization_penalty):
+  #   """Creates the Tensorflow graph.
+
+  #   This will only be called once in the life of
+  #   a training model, because after the graph is created the model will be
+  #   restored from a meta graph file rather than being recreated.
+
+  #   Args:
+  #     reader: the input class.
+  #     model: The core model.
+  #     batch_size: How many examples to process at a time.
+  #     regularization_penalty: How much weight to give the regularization loss
+  #                             compared to the label loss.
+  #   """
+  #   with tf.device(self.global_step_device):
+  #     global_step = tf.train.get_or_create_global_step()
+
+  #   with tf.name_scope("input"):
+  #     input_processing_info = InputProcessingInfo(
+  #         input_producer_op=None,
+  #         input_producer_stages=None,
+  #         multi_device_iterator_input=None)
+  #     input_processing_info = input_processing_info._replace(
+  #       multi_device_iterator_input=reader.input_fn().get_next())
+
+  #   logits, losses, gradients = [], [], []
+  #   gpu_compute_stage_ops = []
+  #   gpu_grad_stage_ops = []
+
+  #   for device_num in range(len(self.devices)):
+  #     with tf.name_scope('tower_{}'.format(device_num)) as name_scope, (
+  #       self.variable_mgr.create_outer_variable_scope(device_num)):
+
+  #         results = self.add_forward_pass_and_gradients(
+  #             device_num, device_num, input_processing_info,
+  #             gpu_compute_stage_ops, gpu_grad_stage_ops)
+
+  #         losses.append(results['loss'])
+  #         logits.append(results['logits'])
+  #         gradients.append(results['gradvars'])
+
+  #         if device_num == 0:
+  #           update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, name_scope)
+
+  #   fetches = self._build_fetches(global_step, logits, losses, gradients,
+  #                                 update_ops)
+  #   return fetches
+
+
+  # def _build_fetches(self, global_step, all_logits, losses, device_grads,
+  #                    update_ops):
+  #   """Complete construction of model graph, populating the fetches map."""
+  #   fetches = {}
+
+  #   apply_gradient_devices, gradient_state = (
+  #       self.variable_mgr.preprocess_device_grads(device_grads))
+
+  #   # global_step is shared by all workers, and so every iteration
+  #   # global_step is incremented by num_workers.
+  #   if FLAGS.compute_lr_on_cpu:
+  #     with tf.device(self.cpu_device):
+  #       learning_rate = LearningRate(
+  #         global_step, self.batch_size).get_learning_rate()
+
+  #   training_ops = []
+  #   for d, device in enumerate(apply_gradient_devices):
+  #     with tf.device(device):
+  #       with tf.name_scope('average_loss'):
+  #         average_loss = tf.reduce_mean(losses)
+  #       with tf.name_scope('get_gradients_to_apply'):
+  #         avg_grads = self.variable_mgr.get_gradients_to_apply(
+  #           d, gradient_state)
+
+  #       if not FLAGS.compute_lr_on_cpu:
+  #         # We compute the learning rate once for each device in
+  #         # `apply_gradient_devices`.
+  #         learning_rate = LearningRate(
+  #           global_step, self.batch_size).get_learning_rate()
+  #       if FLAGS.gradient_clip:
+  #         with tf.name_scope('clip_gradients'):
+  #           clipped_grads = [(tf.clip_by_value(grad, -FLAGS.gradient_clip,
+  #                                              +FLAGS.gradient_clip), var)
+  #                            for grad, var in avg_grads]
+  #       else:
+  #         clipped_grads = avg_grads
+
+  #       learning_rate = tf.identity(learning_rate, name='learning_rate_tensor')
+  #       opt = Optimizer(learning_rate).get_optimizer()
+
+  #       # TODO: remove auto loss scale
+  #       loss_scale_params = variable_mgr_util.AutoLossScaleParams(
+  #           enable_auto_loss_scale=False,
+  #           loss_scale=False,
+  #           loss_scale_normal_steps=False,
+  #           inc_loss_scale_every_n=0,
+  #           is_chief=not self.job_name or self.task_index == 0)
+
+  #       with tf.name_scope('append_apply_gradient_ops'):
+  #         self.variable_mgr.append_apply_gradients_ops(
+  #             gradient_state, opt, clipped_grads, training_ops,
+  #             loss_scale_params)
+
+  #   train_op = tf.group(*(training_ops + update_ops), name='train_ops_group')
+
+  #   with tf.device(self.cpu_device):
+  #     if self.task_index == 0 and FLAGS.summary_verbosity >= 1:
+  #       tf.summary.scalar('learning_rate', learning_rate)
+  #       tf.summary.scalar('loss', average_loss)
+  #       if FLAGS.summary_verbosity >= 2:
+  #         self.gradient_histogram_summary(avg_grads)
+
+  #       if FLAGS.summary_verbosity >= 3:
+  #         for grad, var in avg_grads:
+  #           if grad is not None:
+  #             tf.summary.histogram(var.op.name + '/gradients', grad)
+  #         for var in tf.trainable_variables():
+  #           tf.summary.histogram(var.op.name, var)
+
+  #   fetches['global_step'] = tf.train.get_global_step()
+  #   fetches['train_op'] = train_op
+  #   fetches['loss'] = average_loss
+  #   fetches['learning_rate'] = learning_rate
+  #   return fetches
+
+
+
+  def _build_fetches(self, global_step, all_logits, losses, device_grads,
+                     enqueue_ops, update_ops):
+    """Complete construction of model graph, populating the fetches map."""
+    fetches = {}
+    if enqueue_ops:
+      fetches['enqueue_ops'] = enqueue_ops
+
+    apply_gradient_devices, gradient_state = (
+        self.variable_mgr.preprocess_device_grads(device_grads))
+
+    # TODO(reedwm): Greatly simplify the learning rate code.
+    if (self.variable_update == 'horovod' or
+        self.variable_update == 'collective_all_reduce'):
+      # Each worker independently increments global_step.
+      examples_per_step = self.batch_size * self.num_workers
+    else:
+      # global_step is shared by all workers, and so every iteration
+      # global_step is incremented by num_workers.
+      examples_per_step = self.batch_size
+    if FLAGS.compute_lr_on_cpu:
+      with tf.device(self.cpu_device):
+        learning_rate = LearningRate(
+          global_step, self.batch_size).get_learning_rate()
+
+    training_ops = []
+    for d, device in enumerate(apply_gradient_devices):
+      with tf.device(device):
+        with tf.name_scope('average_loss'):
+          average_loss = tf.reduce_mean(losses)
+        with tf.name_scope('get_gradients_to_apply'):
+          avg_grads = self.variable_mgr.get_gradients_to_apply(d,
+                                                               gradient_state)
+
+        if not FLAGS.compute_lr_on_cpu:
+          # We compute the learning rate once for each device in
+          # `apply_gradient_devices`.
+          learning_rate = LearningRate(
+            global_step, self.batch_size).get_learning_rate()
+
+        gradient_clip = FLAGS.gradient_clip
+        if gradient_clip is not None:
+          with tf.name_scope('clip_gradients'):
+            clipped_grads = [(tf.clip_by_value(grad, -gradient_clip,
+                                               +gradient_clip), var)
+                             for grad, var in avg_grads]
+        else:
+          clipped_grads = avg_grads
+
+        learning_rate = tf.identity(learning_rate, name='learning_rate_tensor')
+        opt = Optimizer(learning_rate).get_optimizer()
+        # TODO: remove loss_scame params
+        loss_scale_params = variable_mgr_util.AutoLossScaleParams(
+            enable_auto_loss_scale=self.enable_auto_loss_scale,
+            loss_scale=False,
+            loss_scale_normal_steps=0,
+            inc_loss_scale_every_n=0,
+            is_chief=not self.job_name or self.task_index == 0)
+
+        with tf.name_scope('append_apply_gradient_ops'):
+          self.variable_mgr.append_apply_gradients_ops(
+              gradient_state, opt, clipped_grads, training_ops,
+              loss_scale_params)
+    train_op = tf.group(*(training_ops + update_ops), name='train_ops_group')
+
+    with tf.device(self.cpu_device):
+      if self.task_index == 0 and FLAGS.summary_verbosity >= 1:
+        tf.summary.scalar('learning_rate', learning_rate)
+        tf.summary.scalar('loss', average_loss)
+
+        if FLAGS.summary_verbosity >= 2:
+          self.gradient_histogram_summary(avg_grads)
+
+        if FLAGS.summary_verbosity >= 3:
+          for grad, var in avg_grads:
+            if grad is not None:
+              tf.summary.histogram(var.op.name + '/gradients', grad)
+          for var in tf.trainable_variables():
+            tf.summary.histogram(var.op.name, var)
+
+    fetches['train_op'] = train_op
+    fetches['loss'] = average_loss
+    fetches['learning_rate'] = learning_rate
+    return fetches
+
+
+  def gradient_histogram_summary(self, avg_grads):
+    """Create histogram of log values of all non-zero gradients."""
+    with tf.name_scope('log_gradients_summary'):
+      all_grads = []
+      for grad, _ in avg_grads:
+        all_grads.append(tf.reshape(grad, [-1]))
+      grads = tf.abs(tf.concat(all_grads, 0))
+      # exclude grads with zero values.
+      indices_for_non_zero_grads = tf.where(tf.not_equal(grads, 0))
+      log_grads = tf.reshape(
+          tf.log(tf.gather(grads, indices_for_non_zero_grads)), [-1])
+      tf.summary.histogram('log_gradients', log_grads)
+
+
+  def add_sync_queues_and_barrier(self, name_prefix, enqueue_after_list):
+    """Adds ops to enqueue on all worker queues.
+
+    Args:
+      name_prefix: prefixed for the shared_name of ops.
+      enqueue_after_list: control dependency from ops.
+
+    Returns:
+      An op that should be used as control dependency before starting next step.
+    """
+    self.sync_queue_counter += 1
+    with tf.device(self.sync_queue_devices[(
+        self.sync_queue_counter % len(self.sync_queue_devices))]):
+      sync_queues = [
+          tf.FIFOQueue(self.num_workers, [tf.bool], shapes=[[]],
+                       shared_name='%s%s' % (name_prefix, i))
+          for i in range(self.num_workers)]
+      queue_ops = []
+      # For each other worker, add an entry in a queue, signaling that it can
+      # finish this step.
+      token = tf.constant(False)
+      with tf.control_dependencies(enqueue_after_list):
+        for i, q in enumerate(sync_queues):
+          if i == self.task_index:
+            queue_ops.append(tf.no_op())
+          else:
+            queue_ops.append(q.enqueue(token))
+
+      # Drain tokens off queue for this worker, one for each other worker.
+      queue_ops.append(
+          sync_queues[self.task_index].dequeue_many(len(sync_queues) - 1))
+
+      return tf.group(*queue_ops)
+
+
+  def run(self):
+    """Performs training on the currently defined Tensorflow graph.
+    """
+    # reset the training directory if start_new_model is True
+    if self.is_master and self.start_new_model and exists(self.train_dir):
       self.remove_training_directory(self.train_dir)
 
-    pp = pprint.PrettyPrinter(indent=2, compact=True)
-    logging.info(pp.pformat(FLAGS.values()))
-
+    # save the parameters in json formet in the training directory
     model_flags_dict = FLAGS.to_json()
     log_folder = '{}_logs'.format(self.train_dir)
     flags_json_path = join(log_folder, "model_flags.json")
     if not exists(flags_json_path):
-      # Write the file.
       with open(flags_json_path, "w") as fout:
         fout.write(model_flags_dict)
 
-    target, device_fn = self.start_server_if_distributed()
-    meta_filename = self.get_meta_filename(start_new_model, self.train_dir)
+    if self.job_name == 'ps':
+      log_fn('Running parameter server %s' % self.task_index)
+      self.cluster_manager.join_server()
+      return
 
-    with tf.Graph().as_default() as graph:
-      if meta_filename:
-        saver = self.recover_model(meta_filename)
+    # For distributed_all_reduce with multiple workers, drive
+    # from a separate controller process.
+    if FLAGS.variable_update == 'distributed_all_reduce':
+      if self.job_name == 'worker':
+        logging.info('Starting worker {}'.format(self.task_index))
+        self.cluster_manager.join_server()
+        return
+      elif FLAGS.job_name and FLAGS.job_name != 'controller':
+        raise ValueError('unrecognized job name: {}'.format(FLAGS.job_name))
 
-      with tf.device(device_fn):
-        if not meta_filename:
-          saver = self.build_model(self.model, self.reader)
-
-        global_step = tf.train.get_global_step()
-        loss = tf.get_collection("loss")[0]
-        logits = tf.get_collection("logits")[0]
-        labels = tf.get_collection("labels")[0]
-        learning_rate = tf.get_collection("learning_rate")[0]
-        train_op = tf.get_collection("train_op")[0]
-        summary_op = tf.get_collection("summary_op")[0]
-        init_op = tf.global_variables_initializer()
-
-        gradients_norm = tf.get_collection("gradients_norm")[0]
+    with tf.Graph().as_default():
+      self._run_training()
 
 
-      scaffold = tf.train.Scaffold(
-        saver=saver,
-        init_op=init_op,
-        summary_op=summary_op,
-      )
+  def _run_training(self):
 
-      hooks = [
-        tf.train.NanTensorHook(loss),
-        tf.train.StopAtStepHook(num_steps=self.max_steps),
-      ]
+    # meta_filename = self.get_meta_filename()
+    # if meta_filename:
+    #   # TODO: fix it
+    #   saver = self.recover_model(meta_filename)
 
-      session_args = dict(
-        is_chief=self.is_master,
-        scaffold=scaffold,
-        checkpoint_dir=FLAGS.train_dir,
-        hooks=hooks,
-        save_checkpoint_steps=FLAGS.save_checkpoint_steps,
-        save_summaries_steps=10,
-        save_summaries_secs=None,
-        log_step_count_steps=0,
-        config=self.config,
-      )
+    # if not meta_filename:
+    #   fetches = self.build_graph(
+    #               reader=self.reader,
+    #               model=self.model,
+    #               batch_size=self.batch_size,
+    #               regularization_penalty=FLAGS.regularization_penalty)
 
-      logging.info("Start training")
-      with tf.train.MonitoredTrainingSession(**session_args) as sess:
+    #   saver = tf.train.Saver(max_to_keep=0)
 
-        summary_writer = tf.summary.FileWriterCache.get(FLAGS.train_dir)
+    if self.variable_update == 'distributed_all_reduce':
+      self.single_session = True
+      (_, enqueue_ops, fetches) = (
+          self._build_model_single_session())
+    else:
+      self.single_session = False
+      (_, enqueue_ops, fetches) = self._build_model()
 
-        if FLAGS.profiler:
-          profiler = tf.profiler.Profiler(sess.graph)
+    fetches_list = nest.flatten(list(fetches.values()))
+    main_fetch_group = tf.group(*fetches_list, name='main_fetch_group')
+    execution_barrier = None
+    if (not self.single_session and self.job_name and
+        not FLAGS.cross_replica_sync):
+      execution_barrier = self.add_sync_queues_and_barrier(
+          'execution_barrier_', [])
 
-        global_step_val = 0
-        while not sess.should_stop():
+    global_step = tf.train.get_global_step()
+    with tf.device(self.global_step_device), tf.name_scope('inc_global_step'):
+      with tf.control_dependencies([main_fetch_group]):
+        fetches['global_step'] = global_step.assign_add(1)
 
-          make_profile = False
-          profile_args = {}
+    if ((not self.single_session) and (not self.distributed_collective) and
+        self.job_name and FLAGS.cross_replica_sync):
+      # Block all replicas until all replicas are ready for next step.
+      fetches['sync_queues'] = self.add_sync_queues_and_barrier(
+          'sync_queues_step_end_', [main_fetch_group])
 
-          if global_step_val % 1000 == 0 and FLAGS.profiler:
-            make_profile = True
-            run_meta = tf.RunMetadata()
-            profile_args = {
-              'options': tf.RunOptions(
-                trace_level=tf.RunOptions.FULL_TRACE),
-              'run_metadata': run_meta
-            }
+    with tf.name_scope('local_variable_initialization'):
+      local_var_init_op = tf.local_variables_initializer()
+    table_init_ops = tf.tables_initializer()
 
-          fetches = OrderedDict(
-             train_op=train_op,
-             global_step=global_step,
-             loss=loss,
-             learning_rate=learning_rate,
-             logits=logits,
-             labels=labels
-          )
+    variable_manager_init_ops = [local_var_init_op]
+    if table_init_ops:
+      variable_manager_init_ops.extend([table_init_ops])
+    with tf.control_dependencies([local_var_init_op]):
+      variable_manager_init_ops.extend(self.variable_mgr.get_post_init_ops())
+    if ((not self.single_session) and (not self.distributed_collective) and
+        self.job_name and FLAGS.cross_replica_sync):
+      # Ensure all workers execute variable_manager_init_ops before they start
+      # executing the model.
+      variable_manager_init_ops.append(
+          self.add_sync_queues_and_barrier('init_ops_end_',
+                                           variable_manager_init_ops))
+    local_var_init_op_group = tf.group(*variable_manager_init_ops,
+                                       name='local_var_init_op_group')
+    summary_op = tf.summary.merge_all()
 
-          if gradients_norm != 0:
-            fetches['gradients_norm'] = gradients_norm
-          else:
-            grad_norm_val = 0
+    logging.info('Initializing graph')
+    summary_writer = None
+    if (self.is_master and FLAGS.summary_verbosity and FLAGS.train_dir and
+        FLAGS.save_summaries_steps > 0):
+      summary_writer = tf.summary.FileWriter(FLAGS.train_dir,
+                                             tf.get_default_graph())
 
-          batch_start_time = time.time()
-          values = sess.run(list(fetches.values()), **profile_args)
-          fetches_values = OrderedDict(zip(fetches.keys(), values))
-          seconds_per_batch = time.time() - batch_start_time
-          examples_per_second = self.batch_size / seconds_per_batch
+    # We run the summaries in the same thread as the training operations by
+    # passing in None for summary_op to avoid a summary_thread being started.
+    # Running summaries and training operations in parallel could run out of
+    # GPU memory.
+    if self.is_master:
+      saver = tf.train.Saver(
+          self.variable_mgr.savable_variables(),
+          save_relative_paths=True,
+          max_to_keep=0)
+    else:
+      saver = None
+    ready_for_local_init_op = None
+    if self.job_name and not (self.single_session or
+                              self.distributed_collective):
+      # In distributed mode, we don't want to run local_var_init_op_group until
+      # the global variables are initialized, because local_var_init_op_group
+      # may use global variables (such as in distributed replicated mode). We
+      # don't set this in non-distributed mode, because in non-distributed mode,
+      # local_var_init_op_group may itself initialize global variables (such as
+      # in replicated mode).
+      ready_for_local_init_op = tf.report_uninitialized_variables(
+          tf.global_variables())
 
-          global_step_val = fetches_values['global_step']
-          loss_val = fetches_values['loss']
-          learning_rate_val = fetches_values['learning_rate']
-          predictions_val = fetches_values['logits']
-          labels_val = fetches_values['labels']
+    if FLAGS.variable_update == 'horovod':
+      import horovod.tensorflow as hvd  # pylint: disable=g-import-not-at-top
+      bcast_global_variables_op = hvd.broadcast_global_variables(0)
+    else:
+      bcast_global_variables_op = None
 
-          if gradients_norm != 0:
-            grad_norm_val = fetches_values['gradients_norm']
+    if self.variable_update == 'collective_all_reduce':
+      # It doesn't matter what this collective_graph_key value is,
+      # so long as it's > 0 and the same at every worker.
+      init_run_options = tf.RunOptions()
+      init_run_options.experimental.collective_graph_key = 6
+    else:
+      init_run_options = tf.RunOptions()
 
-          if FLAGS.gradients['compute_hessian'] and global_step_val != 0 and \
-             global_step_val % FLAGS.gradients['hessian_every_n_step'] == 0:
-            compute_hessian_and_summary(sess, summary_writer, global_step_val)
+    scaffold = tf.train.Scaffold(
+      saver=saver,
+      ready_for_local_init_op=ready_for_local_init_op,
+      local_init_op=local_var_init_op_group,
+      summary_op=None)
 
-          if make_profile and FLAGS.profiler:
-            profiler.add_step(global_step_val, run_meta)
+    hooks = [
+      tf.train.NanTensorHook(fetches['loss']),
+      tf.train.StopAtStepHook(num_steps=self.max_steps)]
 
-            # Profile the parameters of your model.
-            profiler.profile_name_scope(options=(tf.profiler.ProfileOptionBuilder
-                .trainable_variables_parameter()))
+    # For the purpose of Supervisor, all Horovod workers are 'chiefs',
+    # since we want session to be initialized symmetrically on all the
+    # workers.
+    is_chief = self.is_master or (self.variable_update == 'horovod'
+                            or self.distributed_collective)
+    logging.info('is_master {}'.format(self.is_master))
+    logging.info('is_chief {}'.format(is_chief))
 
-            # Or profile the timing of your model operations.
-            opts = tf.profiler.ProfileOptionBuilder.time_and_memory()
-            profiler.profile_operations(options=opts)
+    session_args = dict(
+      is_chief=is_chief,
+      scaffold=scaffold,
+      checkpoint_dir=FLAGS.train_dir,
+      hooks=hooks,
+      save_checkpoint_steps=FLAGS.save_checkpoint_steps,
+      save_summaries_steps=10,
+      save_summaries_secs=None,
+      log_step_count_steps=0,
+      config=create_config_proto())
 
-            # Or you can generate a timeline:
-            opts = (tf.profiler.ProfileOptionBuilder(
-                    tf.profiler.ProfileOptionBuilder.time_and_memory())
-                    .with_step(global_step_val)
-                    .with_timeline_output('~/profile.logs').build())
-            profiler.profile_graph(options=opts)
+    logging.info("Start training")
+    with tf.train.MonitoredTrainingSession(**session_args) as sess:
 
+      # if FLAGS.profiler:
+      #   profiler = tf.profiler.Profiler(sess.graph)
 
-          to_print = global_step_val % FLAGS.frequency_log_steps == 0
-          if (self.is_master and to_print) or global_step_val == 1:
-            epoch = ((global_step_val * self.batch_size)
-              / self.reader.n_train_files)
+      if bcast_global_variables_op:
+        sess.run(bcast_global_variables_op)
+      if enqueue_ops:
+        for i in range(len(enqueue_ops)):
+          sess.run(graph_info.enqueue_ops[:(i + 1)])
+      # self.init_global_step = sess.run(global_step)
+      # if self.job_name and not self.params.cross_replica_sync:
+      #   # TODO(zhengxq): Do we need to use a global step watcher at all?
+      #   global_step_watcher = GlobalStepWatcher(
+      #       sess, graph_info.global_step,
+      #       self.num_workers * self.num_warmup_batches +
+      #       self.init_global_step,
+      #       self.num_workers * (self.num_warmup_batches + self.num_batches) - 1)
+      #   global_step_watcher.start()
+      # else:
+      #   global_step_watcher = None
 
-            message = MessageBuilder()
-            message.add("epoch", epoch, format="4.2f")
-            message.add("step", global_step_val, width=5, format=".0f")
-            message.add("lr", learning_rate_val, format=".6f")
-            message.add("loss", loss_val, format=".4f")
-            if "YT8M" in self.reader.__class__.__name__:
-              gap = eval_util.calculate_gap(predictions_val, labels_val)
-              message.add("gap", gap, format=".3f")
-            message.add("imgs/sec", examples_per_second, width=5, format=".0f")
-            if FLAGS.gradients['perturbed_gradients']:
-              message.add("grad norm", grad_norm_val, format=".4f")
-            logging.info(message.get_message())
+      # if self.params.debugger is not None:
+      #   if self.params.debugger == 'cli':
+      #     log_fn('The CLI TensorFlow debugger will be used.')
+      #     sess = tf_debug.LocalCLIDebugWrapperSession(sess)
+      #   else:
+      #     log_fn('The TensorBoard debugger plugin will be used.')
+      #     sess = tf_debug.TensorBoardDebugWrapperSession(sess,
+      #                                                    self.params.debugger)
 
-        # End training
-        logging.info("{}: Done training -- epoch limit reached.".format(
-          task_as_string(self.task)))
-        if FLAGS.profiler:
-          profiler.advise()
+      results = {'global_step': 0}
+      while not sess.should_stop():
+
+        make_profile = False
+        profile_args = {}
+
+        # if FLAGS.profiler and results['global_step'] % 1000 == 0:
+        #   make_profile = True
+        #   run_meta = tf.RunMetadata()
+        #   profile_args = {
+        #     'options': tf.RunOptions(
+        #       trace_level=tf.RunOptions.FULL_TRACE),
+        #     'run_metadata': run_meta
+        #   }
+
+        # if gradients_norm != 0:
+        #   fetches['gradients_norm'] = gradients_norm
+
+        batch_start_time = time.time()
+        results = sess.run(fetches, **profile_args)
+        seconds_per_batch = time.time() - batch_start_time
+        examples_per_second = self.batch_size / seconds_per_batch
+
+        # if FLAGS.gradients['compute_hessian'] and results['global_step'] != 0 and \
+        #    results['global_step'] % FLAGS.gradients['hessian_every_n_step'] == 0:
+        #   compute_hessian_and_summary(sess, summary_writer,
+        #                               results['global_step'])
+
+        # if make_profile and FLAGS.profiler:
+        #   profiler.add_step(results['global_step'], run_meta)
+
+        #   # Profile the parameters of your model.
+        #   profiler.profile_name_scope(options=(tf.profiler.ProfileOptionBuilder
+        #       .trainable_variables_parameter()))
+
+        #   # Or profile the timing of your model operations.
+        #   opts = tf.profiler.ProfileOptionBuilder.time_and_memory()
+        #   profiler.profile_operations(options=opts)
+
+        #   # Or you can generate a timeline:
+        #   opts = (tf.profiler.ProfileOptionBuilder(
+        #           tf.profiler.ProfileOptionBuilder.time_and_memory())
+        #           .with_step(results['global_step'])
+        #           .with_timeline_output('~/profile.logs').build())
+        #   profiler.profile_graph(options=opts)
+
+        to_print = results['global_step'] % FLAGS.frequency_log_steps == 0
+        if (self.is_master and to_print) or results['global_step'] == 1:
+          epoch = ((results['global_step'] * self.batch_size)
+            / self.reader.n_train_files)
+
+          message = MessageBuilder()
+          message.add("epoch", epoch, format="4.2f")
+          message.add("step", results['global_step'], width=5, format=".0f")
+          message.add("lr", results['learning_rate'], format=".6f")
+          message.add("loss", results['loss'], format=".4f")
+          if "YT8M" in self.reader.__class__.__name__:
+            gap = eval_util.calculate_gap(
+              results['logits'], results['labels'])
+            message.add("gap", gap, format=".3f")
+          message.add("imgs/sec", examples_per_second, width=5, format=".0f")
+          if FLAGS.gradients['perturbed_gradients']:
+            message.add("grad norm", results['gradients_norm'], format=".4f")
+          logging.info(message.get_message())
+
+      # End training
+      logging.info("{}: Done training -- epoch limit reached.".format(
+        task_as_string(self.task)))
+      # if FLAGS.profiler:
+      #   profiler.advise()
     logging.info("{}: Exited training loop.".format(task_as_string(self.task)))
 
-
-  def start_server_if_distributed(self):
-    """Starts a server if the execution is distributed."""
-
-    if self.cluster:
-      logging.info("{}: Starting trainer within cluster {}.".format(
-                   task_as_string(self.task), self.cluster.as_dict()))
-      server = start_server(self.cluster, self.task)
-      target = server.target
-      device_fn = tf.train.replica_device_setter(
-          ps_device="/job:ps",
-          worker_device=task_as_string(self.task),
-          cluster=self.cluster)
-    else:
-      target = ""
-      device_fn = ""
-    return (target, device_fn)
 
   def remove_training_directory(self, train_dir):
     """Removes the training directory."""
     try:
-      logging.info(("{}: Train dir already exist and start_new_model "
+      logging.info(("Train dir already exist and start_new_model "
                     "set to True. To restart model from scratch, "
-                    "delete the directory.").format(task_as_string(self.task)))
-      # gfile.DeleteRecursively(train_dir)
-      sys.exit()
+                    "delete the directory."))
+      gfile.DeleteRecursively(train_dir)
+      # sys.exit()
     except:
-      logging.error("{}: Failed to delete directory {} when starting a new "
-        "model. Please delete it manually and try again.".format(
-          task_as_string(self.task), train_dir))
+      logging.error("Failed to delete directory {} when starting a new "
+        "model. Please delete it manually and try again.".format(train_dir))
       sys.exit()
 
 
-  def get_meta_filename(self, start_new_model, train_dir):
-    if start_new_model:
-      logging.info("{}: Flag 'start_new_model' is set. Building a new "
-        "model.".format(task_as_string(self.task)))
+  def get_meta_filename(self):
+    if self.start_new_model:
+      logging.info("Flag 'start_new_model' is set. Building a new "
+        "model.")
       return None
 
-    latest_checkpoint = tf.train.latest_checkpoint(train_dir)
+    latest_checkpoint = tf.train.latest_checkpoint(self.train_dir)
     if not latest_checkpoint:
-      logging.info("{}: No checkpoint file found. Building a new model.".format(
-                   task_as_string(self.task)))
+      logging.info("No checkpoint file found. Building a new model.")
       return None
 
     meta_filename = latest_checkpoint + ".meta"
     if not gfile.Exists(meta_filename):
-      logging.info("{}: No meta graph file found. Building a new model.".format(
-                     task_as_string(self.task)))
+      logging.info("No meta graph file found. Building a new model.")
       return None
     else:
       return meta_filename
 
+
   def recover_model(self, meta_filename):
-    logging.info("{}: Restoring from meta graph file {}".format(
-      task_as_string(self.task), meta_filename))
+    logging.info("Restoring from meta graph file {}".format(meta_filename))
     return tf.train.import_meta_graph(meta_filename,
       clear_devices=FLAGS.clear_devices)
 
-  def build_model(self, model, reader):
-    """Find the model and build the graph."""
-
-    label_loss_fn = find_class_by_name(FLAGS.loss, [losses, tf.nn])()
-
-    build_graph(reader=reader,
-                model=model,
-                label_loss_fn=label_loss_fn,
-                batch_size=self.batch_size,
-                regularization_penalty=FLAGS.regularization_penalty)
-
-    #TODO: make max_to_keep a FLAGS argument
-    return tf.train.Saver(max_to_keep=0, keep_checkpoint_every_n_hours=0.25)
 
 
-class ParameterServer(object):
-  """A parameter server to serve variables in a distributed execution."""
-
-  def __init__(self, cluster, task):
-    """Creates a ParameterServer.
-
-    Args:
-      cluster: A tf.train.ClusterSpec if the execution is distributed.
-        None otherwise.
-      task: A TaskSpec describing the job type and the task index.
-    """
-
-    self.cluster = cluster
-    self.task = task
-
-  def run(self):
-    """Starts the parameter server."""
-
-    logging.info("{}: Starting parameter server within cluster {}.".format(
-      task_as_string(self.task), self.cluster.as_dict()))
-    server = start_server(self.cluster, self.task)
-    server.join()
-
-
-def start_server(cluster, task):
-  """Creates a Server.
-
-  Args:
-    cluster: A tf.train.ClusterSpec if the execution is distributed.
-      None otherwise.
-    task: A TaskSpec describing the job type and the task index.
-  """
-  if not task.type:
-    raise ValueError("{}: The task type must be specified.".format(
-      task_as_string(task)))
-  if task.index is None:
-    raise ValueError("{}: The task index must be specified.".format(
-      task_as_string(task)))
-
-  # Create and start a server.
-  return tf.train.Server(
-      tf.train.ClusterSpec(cluster),
-      protocol="grpc",
-      job_name=task.type,
-      task_index=task.index)
-
+def set_logging_verbosity(verbosity):
+  v = {
+    'DEBUG': 10,
+    'ERROR': 40,
+    'FATAL': 50,
+    'INFO': 20,
+    'WARN': 30
+  }[verbosity]
+  logging.set_verbosity(v)
 
 def main():
 
-  # Load the environment.
-  env = json.loads(os.environ.get("TF_CONFIG", "{}"))
-
-  # Load the cluster data from the environment.
-  cluster_data = env.get("cluster", None)
-  cluster = tf.train.ClusterSpec(cluster_data) if cluster_data else None
-
-  # Load the task data from the environment.
-  task_data = env.get("task", None) or {"type": "master", "index": 0}
-  task = type("TaskSpec", (object,), task_data)
+  # Sets up the environment that BenchmarkCNN should run in.
+  setup()
 
   # Setup logging & log the version.
-  if not FLAGS.debug:
-    logging.set_verbosity(logging.INFO)
-    # export TF_CPP_MIN_LOG_LEVEL=3
-    # 0 = all messages are logged (default behavior)
-    # 1 = INFO messages are not printed
-    # 2 = INFO and WARNING messages are not printed
-    # 3 = INFO, WARNING, and ERROR messages are not printed
-  else:
-    logging.set_verbosity(logging.DEBUG)
-  logging.info("{}: Tensorflow version: {}.".format(
-    task_as_string(task), tf.__version__))
-  logging.info("hostname: {}.".format(
-    socket.gethostname()))
+  set_logging_verbosity(FLAGS.logging_verbosity)
+  logging.info("Tensorflow version: {}.".format(tf.__version__))
+  logging.info("Hostname: {}.".format(socket.gethostname()))
 
-  if os.environ.get('CUDA_VISIBLE_DEVICES', None) is None:
-    if FLAGS.train_num_gpu == 0:
-      os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-    else:
-      os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(
-        map(str, range(FLAGS.train_num_gpu)))
+  # print FLAGS parameters
+  pp = pprint.PrettyPrinter(indent=2, compact=True)
+  logging.info(pp.pformat(FLAGS.values()))
 
-  # Define batch size
-  if FLAGS.train_num_gpu:
-    batch_size = FLAGS.train_batch_size * FLAGS.train_num_gpu
-  else:
-    batch_size = FLAGS.train_batch_size
-
-  # Dispatch to a master, a worker, or a parameter server.
-  if not cluster or task.type == "master" or task.type == "worker":
-    reader = find_class_by_name(FLAGS.reader, [readers])(
-      batch_size, is_training=True)
-
-    model = find_class_by_name(FLAGS.model, [models])()
-    logging.info("Using {} as model".format(FLAGS.model))
-
-    trainer = Trainer(cluster, task, FLAGS.train_dir, model, reader, batch_size)
-    trainer.run(start_new_model=FLAGS.start_new_model)
-
-  elif task.type == "ps":
-    ParameterServer(cluster, task).run()
-  else:
-    raise ValueError("{}: Invalid task_type: {}.".format(
-      task_as_string(task), task.type))
+  # run Trainer
+  trainer = Trainer()
+  trainer.run()
 
 
 if __name__ == "__main__":
