@@ -1,9 +1,12 @@
 import random
 from os.path import join
+
 import tensorflow as tf
 from tensorflow import gfile
 from tensorflow import logging
 from tensorflow import flags
+from tensorflow.python.data.ops import multi_device_iterator_ops
+from tensorflow.contrib.data.python.ops import threadpool
 
 from config import hparams as FLAGS
 
@@ -28,11 +31,12 @@ class BaseReader:
       return labels
     return labels
 
-  def _parse_and_processed(self, example_serialized):
+  def _parse_and_preprocess(self, example_serialized):
     """Parses an Example proto containing a training example of an image.
     """
     image, label = self._parse_fn(example_serialized)
     image = self._image_preprocessing(image)
+    label = self._maybe_one_hot_encode(label)
     return image, label
 
   def _parse_fn(self, example_serialized):
@@ -57,34 +61,48 @@ class BaseReader:
     return features['image'], label
 
   def input_fn(self):
-
     config = FLAGS.readers_params
     self.cache_dataset = config['cache_dataset']
     self.drop_remainder = config['drop_remainder']
-
     # Force all input processing onto CPU in order to reserve the GPU for
     # the forward inference and back-propagation.
     shuffle = True if self.is_training else False
     sloppy = True if self.is_training else False
-    with tf.device('/cpu:0'):
-      files = tf.constant(self.files, name="tfrecord_files")
-      with tf.name_scope('batch_processing'):
-        dataset = tf.data.TFRecordDataset(files,
-                        num_parallel_reads=self.num_parallel_readers)
-        dataset = dataset.map(self._parse_and_processed,
-                          num_parallel_calls=self.num_parallel_calls)
-        if self.is_training:
-          dataset = dataset.shuffle(buffer_size=5*self.batch_size)
-        dataset = dataset.batch(self.batch_size,
-                                drop_remainder=self.drop_remainder)
-        if self.is_training:
-          dataset = dataset.repeat()
-          if self.cache_dataset:
-            dataset = dataset.cache()
-        iterator = dataset.make_one_shot_iterator()
-        image_batch, label_batch = iterator.get_next()
-    label_batch = self._maybe_one_hot_encode(label_batch)
-    return image_batch, label_batch
+    files = tf.constant(self.files, name="tfrecord_files")
+    with tf.name_scope('batch_processing'):
+      ds = tf.data.TFRecordDataset.list_files(files, shuffle=shuffle)
+      ds = ds.apply(
+        tf.data.experimental.parallel_interleave(
+          tf.data.TFRecordDataset,
+          cycle_length=FLAGS.datasets_parallel_interleave_cycle_length or 10,
+          sloppy=FLAGS.datasets_sloppy_parallel_interleave,
+          prefetch_input_elements=FLAGS.datasets_parallel_interleave_prefetch))
+      ds = ds.prefetch(buffer_size=self.batch_size)
+      if FLAGS.datasets_use_caching:
+        ds = ds.cache()
+      if self.is_training:
+        ds = ds.apply(
+          tf.data.experimental.shuffle_and_repeat(buffer_size=10000))
+      else:
+        ds = ds.repeat()
+      ds = ds.map(self._parse_and_preprocess,
+              num_parallel_calls=self.num_parallel_calls)
+      ds = ds.batch(self.batch_size_per_split,
+            drop_remainder=self.drop_remainder)
+      ds = ds.prefetch(buffer_size=self.num_splits)
+      logging.info('num_threads {}'.format(self.num_threads))
+      if self.num_threads:
+        ds = threadpool.override_threadpool(
+          ds,
+          threadpool.PrivateThreadPool(
+            self.num_threads, display_name='input_pipeline_thread_pool'))
+      multi_device_iterator = multi_device_iterator_ops.MultiDeviceIterator(
+          ds,
+          self.gpu_devices,
+          source_device=self.cpu_device)
+      tf.add_to_collection(tf.GraphKeys.TABLE_INITIALIZERS,
+                           multi_device_iterator.initializer)
+      return multi_device_iterator
 
 
 class MNISTReader(BaseReader):
@@ -431,12 +449,17 @@ class YT8MFrameFeatureReader(BaseReader):
 
 class IMAGENETReader(BaseReader):
 
-  def __init__(self, batch_size, is_training, *args, **kwargs):
+  def __init__(self, batch_size, gpu_devices, cpu_device,
+               is_training, *args, **kwargs):
 
     # Provide square images of this size. 
     self.image_size = FLAGS.image_size
 
+    self.gpu_devices = gpu_devices
+    self.cpu_device = cpu_device
+    self.num_splits = len(gpu_devices)
     self.batch_size = batch_size
+    self.batch_size_per_split = batch_size // self.num_splits
     self.is_training = is_training
     self.height, self.width = self.image_size, self.image_size
     self.n_train_files = 1281167
@@ -451,13 +474,14 @@ class IMAGENETReader(BaseReader):
     self.display_tensorboard = FLAGS.display_tensorboard
 
     readers_params = FLAGS.readers_params
+    self.num_threads = FLAGS.datasets_num_private_threads
     self.num_parallel_calls = readers_params['num_parallel_calls']
     self.num_parallel_readers = readers_params['num_parallel_readers']
     self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
 
     self.files = self._get_tfrecords('imagenet')
 
-  def _parse_and_processed(self, example_serialized):
+  def _parse_and_preprocess(self, example_serialized):
     """Parses an Example proto containing a training example of an image.
     """
     image_buffer, label, bbox, _ = self._parse_fn(example_serialized)
