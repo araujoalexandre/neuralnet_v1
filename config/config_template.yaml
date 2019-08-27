@@ -1,25 +1,257 @@
-
 default: &DEFAULT
-  train_batch_size:           100
-  num_epochs:                 200
-  start_new_model:            True
-  train_num_gpu:              4
-  clear_devices:              False
-  profiler:                   False
-  compile:                    False
-  debug:                      False
+  # batch size per compute device (i.e. GPU)
+  train_batch_size: 64 
+  # number of epochs to run 
+  num_epochs: 200 
+  # if folder exists delete every files
+  start_new_model: True 
+  
+  # Device to use for computation: cpu or gpu
+  device: gpu
+  # Methods to assign GPU host work to threads. global: all GPUs and CPUs 
+  # share the same global threads; gpu_private: a private threadpool for each 
+  # GPU; gpu_shared: all GPUs share the same threadpool.
+  gpu_thread_mode: gpu_private
+  # The number of threads to use for GPU. Only valid when gpu_thread_mode is not global.
+  per_gpu_thread_count: 0
+  # the number of GPUs to run on
+  train_num_gpus: 4 
+  # Whether or not to clear the device field during import.
+  clear_devices: False
+  # If specified, write a tfprof ProfileProto to this file.
+  tfprof_file: False 
+  # whether to enable XLA auto-jit compilation
+  xla: False
+  # Enable xla to compile the graph 
+  xla_compile: False
+  # Sets the threshold for what messages will be logged. 
+  logging_verbosity: INFO 
+  # Whether device placements should be logged.
+  log_device_placement: False 
+  # num checkpoint per epoch: dataset_size / (batch_size * gpu)
+  save_checkpoint_steps: 250 
+  # How often to save summaries for trained models, 0 to disable.
+  save_summaries_steps: 125 
+  # frequency of logs during training 
+  frequency_log_steps: 10 
+  # Number of threads to use for intra-op parallelism. 0=auto, None=disable.
+  num_intra_threads: 0 
+  # Number of threads to use for intra-op parallelism. 0=auto.
+  num_inter_threads: 0 
+  # Enable TensorFlow tracing and write trace to this file. 
+  trace_file: False 
+  # Device to use as parameter server: cpu or gpu. 
+  local_parameter_device: cpu 
+  # Do computations related to learning rate on the CPU: improve XLA
+  compute_lr_on_cpu: False 
+  
+ 
 
-  log_device_placement:       False
-  save_checkpoint_steps:      250 # ckpt per epoch: dataset_size / (batch_size * gpu)
-  save_summaries_steps:       125
-  frequency_log_steps:        100
+  # The method for managing variables:
+  #   parameter_server: variables are stored on a parameter server that holds
+  #       the master copy of the variable. In local execution, a local device
+  #       acts as the parameter server for each variable; in distributed
+  #       execution, the parameter servers are separate processes in the
+  #       cluster.
+  #       For each step, each tower gets a copy of the variables from the
+  #       parameter server, and sends its gradients to the param server.
+  #   replicated: each GPU has its own copy of the variables. To apply
+  #       gradients, an all_reduce algorithm or or regular cross-device
+  #       aggregation is used to replicate the combined gradients to all
+  #       towers (depending on all_reduce_spec parameter setting).
+  #   independent: each GPU has its own copy of the variables, and gradients
+  #       are not shared between towers. This can be used to check performance
+  #       when no data is moved between GPUs.
+  #   distributed_replicated: Distributed training only. Each GPU has a copy
+  #       of the variables, and updates its copy after the parameter servers
+  #       are all updated with the gradients from all servers. Only works with
+  #       cross_replica_sync=true. Unlike 'replicated', currently never uses
+  #       nccl all-reduce for replicating within a server.
+  #   distributed_all_reduce: Distributed training where all replicas run
+  #       in a single session, using all-reduce to mutally reduce the
+  #       gradients.  Uses no parameter servers.  When there is only one
+  #       worker, this is the same as replicated.
+  #   collective_all_reduce: Distributed training where all replicas run
+  #       independepently except for variable initialization and for
+  #       gradient reduction which is done via collective all-reduce.
+  #       NOTE: collective_all_reduce in conjunction with use_fp16 can
+  #       lead to NaNs in some models (resnet50).  TODO(tucker): fix it.
+  #   horovod: Distributed training using Horovod library. Runs workers using
+  #       an MPI framework (e.g. Open MPI). Each worker runs training on
+  #       single GPU, and averages gradients using NCCL or MPI all-reduce.
+  #       See https://github.com/uber/horovod for more details.
+  variable_update: independent
 
-  reader:                     {reader}
+
+  # 'A specification of the all_reduce algorithm to be used for reducing 
+  # gradients.  For more details, see parse_all_reduce_spec in variable_mgr.py.
+  # An all_reduce_spec has BNF form: 
+  #   int ::= positive whole number
+  #   g_int ::= int[KkMGT]?
+  #   alg_spec ::= alg | alg#int
+  #   range_spec ::= alg_spec | alg_spec/alg_spec
+  #   spec ::= range_spec | range_spec:g_int:range_spec
+  # NOTE: not all syntactically correct constructs are supported.
+  # Examples:
+  # "xring" == use one global ring reduction for all tensors
+  # "pscpu" == use CPU at worker 0 to reduce all tensors
+  # "nccl" == use NCCL to locally reduce all tensors.
+  # Limited to 1 worker.
+  # "nccl/xring" == locally (to one worker) reduce values using NCCL then ring 
+  # reduce across workers.
+  # "pscpu:32k:xring" == use pscpu algorithm for tensors of size up to 32kB, 
+  # then xring for larger tensors.')
+  all_reduce_spec: False
+
+
+
+  # Whether the variables are staged from the main computation
+  staged_vars: False
+
+  # Use resource variables instead of normal variables. Resource variables are 
+  # slower, but this option is useful for debugging their performance.
+  use_resource_vars: False
+
+
+  # If variable_update==distributed_all_reduce then it may be advantageous
+  # to aggregate small tensors into one prior to reduction.  These parameters
+  # control that aggregation.
+  
+  # If > 0, try to aggregate tensors of less than this number of bytes prior 
+  # to all-reduce.
+  agg_small_grads_max_bytes: 0
+  # When aggregating small tensors for all-reduce do not aggregate more than 
+  # this many into one new tensor.
+  agg_small_grads_max_group: 10
+  # Establish a name scope around this many gradients prior to creating the 
+  # all-reduce operations. It may affect the ability of the backend to merge 
+  # parallel ops.
+  allreduce_merge_scope: 1
+  
+  
+                       
+  # Distributed training parameters.
+  # One of "ps", "worker", "controller", "".  Empty for local training'
+  job_name: ''
+  # Comma-separated list of target hosts
+  ps_hosts: ''   
+  # Comma-separated list of target hosts
+  worker_hosts: ''   
+  # optional controller host
+  controller_host: ''   
+  # Index of task within the job
+  task_index: 0
+  cross_replica_sync: True
+  # Device to do Horovod all-reduce on: empty (default), cpu or gpu. Default 
+  # with utilize GPU if Horovod was compiled with the HOROVOD_GPU_ALLREDUCE option, 
+  # and CPU otherwise.
+  horovod_device: '' 
+
+
+  # fp16 parameters. If use_fp16=False, no other fp16 parameters apply.
+  # Use 16-bit floats for certain tensors instead of 32-bit floats. 
+  # This is currently experimental.
+  use_fp16: False  
+  # If fp16 is enabled, the loss is multiplied by this amount right before 
+  # gradients are computed, then each gradient is divided by this amount. 
+  # Mathematically, this has no effect, but it helps avoid fp16 underflow. 
+  # Set to 1 to effectively disable. Ignored during eval.
+  fp16_loss_scale: None
+  # If fp16 is enabled, also use fp16 for variables. If False, the variables 
+  # are stored in fp32 and casted to fp16 when retrieved. 
+  # Recommended to leave as False.
+  fp16_vars: False
+  # If True and use_fp16 is True, automatically adjust the loss scale during 
+  # training.
+  fp16_enable_auto_loss_scale: False
+  # If fp16 is enabled and fp16_enable_auto_loss_scale is True, increase the 
+  # loss scale every n steps.
+  fp16_inc_loss_scale_every_n: 1000
+
+
+  # TODO: remove 
+  # Use hierarchical copies. Currently only optimized for use on a DGX-1 with 
+  # 8 GPUs and may perform poorly on other hardware. Requires --num_gpus > 1, 
+  # and only recommended when --num_gpus=8
+  hierarchical_copy: False
+  # Network topology specifies the topology used to connect multiple devices. 
+  # Network topology is used to decide the hierarchy to use for the 
+  # hierarchical_copy. (DGX1, GCP_V100)
+  network_topology: DGX1
+
+  # Use gradient repacking. It currently only works with replicated mode. At 
+  # the end of each step, it repacks the gradients for more efficient 
+  # cross-device transportation. A non-zero value specifies the number of 
+  # split packs that will be formed.
+  gradient_repacking: 0
+
+  # Compact gradient as much as possible for cross-device transfer and 
+  # aggregation.
+  compact_gradient_transfer: True 
+
+  # The data consistency for trainable variables. With strong consistency, 
+  # the variable always have the updates from previous step. With relaxed 
+  # consistency, all the updates will eventually show up in the variables. 
+  # Likely one step behind. (strong, relaxed)
+  variable_consistency: strong
+
+
+  # Verbosity level for summary ops. level 0: disable any summary.
+  # level 1: small and fast ops, e.g.: learning_rate, total_loss.
+  # level 2: medium-cost ops, e.g. histogram of all gradients.
+  # level 3: expensive ops: images and histogram of each gradient.
+  summary_verbosity:          1
+
+
+  tf_random_seed: 123456
+
+
+
+
+
+  use_tf_layers:              True
+
+  
+
+  # If True, instead of using an L2 loss op per variable, concatenate the 
+  # variables into a single tensor and do a single L2 loss on the 
+  # concatenated tensor.
+  single_l2_loss_op:          False
+
+  # Weight decay factor for training.
+  weight_decay:               0.00004
+
+
+  # Number of parallel file readers interleaving input data.
+  datasets_parallel_interleave_cycle_length: False
+  # Allow parallel interleave to depart from deterministic ordering, by 
+  # temporarily skipping over files whose elements are not readily available. 
+  # This can increase througput in particular in the presence of stragglers.
+  datasets_sloppy_parallel_interleave: False
+  # The number of input elements to fetch before they are needed for 
+  # interleaving.
+  datasets_parallel_interleave_prefetch: False
+  # Number of threads for a private threadpool created for all datasets 
+  # computation. By default, we pick an appropriate number. If set to 0, we 
+  # use the default tf-Compute threads for dataset operations.
+  datasets_num_private_threads: False
+  # Cache the compressed input data in memory. This improves the data input 
+  # performance, at the cost of additional memory.
+  datasets_use_caching: False
+
+
+  gradient_clip:              0
+
+  dataset:                    imagenet
+  reader:                     IMAGENETReader
   one_hot_labels:             False
   per_image_standardization:  False
   dataset_standardization:    False
   grayscale:                  False
   data_augmentation:          True
+  # ImageNet Params
+  image_size:                 299
+  display_tensorboard:        False 
   readers_params:
     num_parallel_calls:       32
     num_parallel_readers:     16
@@ -27,9 +259,8 @@ default: &DEFAULT
     cache_dataset:            False
     drop_remainder:           False
 
-  train_attack:
+  AdversarialTraining:
     noise_attack:             False
-    learn_noise_attack:       False
     attack_method:            FastGradientMethod
     ProjectedGradientDescent:
       rand_minmax:            0.03
@@ -46,10 +277,11 @@ default: &DEFAULT
       clip_min:               -1.0
       clip_max:               +1.0
 
-    
-  model:                      WideResnetModel
+
+  # model:                      InceptionResnetModel
+  model:                      inception4 
   dense:
-    n_layers:                 1
+    n_layers:                 5
     hidden:                   0
     use_bias:                 True
     with_conv:                True
@@ -106,6 +338,12 @@ default: &DEFAULT
     distributions:            {distributions}
     scale_noise:              {scale_noise}
     learn_noise_defense:      False
+  inception_resnet_v2:
+    dropout_keep_prob:        0.8
+    activation_fn:            relu
+    train_with_noise:         False
+    distributions:            l2
+    scale_noise:              0
   random_model:
     dp_epsilon:               1.0 
     dp_delta:                 0.05
