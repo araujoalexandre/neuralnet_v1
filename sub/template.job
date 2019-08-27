@@ -1,0 +1,98 @@
+{% if cluster == "lsf"  %}
+#BSUB -J {{job_name}}
+#BSUB -gpu "num=4:mode=exclusive_process:mps=no:j_exclusive=yes"
+#BSUB -n 1
+#BSUB -R "span[ptile=1]"
+#BSUB -W {{time}}
+#BSUB -o {{projectdir}}/sample-%J.out
+#BSUB -e {{projectdir}}/sample-%J.err
+
+ml anaconda/py3 cudnn nccl
+source activate tensorflow1.12-py3
+export LD_LIBRARY_PATH={{ld_library}}
+{% elif cluster == "slurm" -%}
+#!{{bash_path}}
+#SBATCH --account=ify@gpu
+#SBATCH --job-name={{job_name}}
+#SBATCH --output={{projectdir}}/sample-%j.out
+#SBATCH --error={{projectdir}}/sample-%j.err
+#SBATCH --time={{time}}
+#SBATCH --partition={{partition}}
+#SBATCH --nodes=1
+#SBATCH --gres=gpu:{{n_gpus}}
+#SBATCH --cpus-per-task={{cpu}}
+#SBATCH --get-user-env
+{% else -%}
+#!{{bash_path}}
+{% endif %}
+export CUDA_VISIBLE_DEVICES='{{gpu}}';
+{%- if job_type == "train" %}
+CONFIG_PATH={{projectdir}}/{{config_folder}}/{{config}}.yaml
+TRAIN_DIR={{path}}/{{date}}
+LOGS_DIR={{path}}/{{date}}_logs
+mkdir $LOGS_DIR
+cp $CONFIG_PATH $LOGS_DIR/model_flags.yaml
+{% elif job_type == "eval" or job_type == "attack"  %}
+TRAIN_DIR={{path}}/{{folder}}
+LOGS_DIR={{path}}/{{folder}}_logs
+CONFIG_PATH={{path}}/{{folder}}/models_flags.yaml
+{% endif -%}
+
+{%- if cluster == "slurm" %}
+  {%- if job_type == "train" -%}
+srun -o $LOGS_DIR/log_train.logs -u \
+  --nodes=1 \
+  --gres=gpu:{{n_gpus}} \
+  --cpus-per-task={{cpu}} \
+  python3 {{projectdir}}/code/{{file}}.py \
+    --config_file=$CONFIG_PATH \
+    --config_name=train \
+    --train_dir=$TRAIN_DIR \
+    --data_dir=$DATADIR
+  {%- elif job_type == "eval"  %}
+srun -o $LOGS_DIR/log_eval_test.logs -u \
+  --nodes=1 \
+  --gres=gpu:{{n_gpus}} \
+  --cpus-per-task={{cpu}} \
+  python3 {{projectdir}}/code/{{file}}.py \
+    --config_file=$CONFIG_PATH \
+    --config_name=eval_test \
+    --train_dir=$TRAIN_DIR \
+    --data_dir=$DATADIR
+  {%- elif job_type == "attack" %}
+srun -o $LOGS_DIR/log_{{attack}}.logs -u \
+  --nodes=1 \
+  --gres=gpu:{n_gpus} \
+  --cpus-per-task={{cpu}} \
+  python3 {{projectdir}}/code/{{file}}.py \
+    --config_file=$CONFIG_PATH \
+    --config_name={{attack}} \
+    --train_dir=$TRAIN_DIR \
+    --data_dir=$DATADIR
+  {% endif -%}
+{%- elif cluster != "slurm" %}
+  {%- if job_type == "train" %}
+python3 {{projectdir}}/code/{{file}}.py \
+  --config_file=$CONFIG_PATH \
+  --config_name=train \
+  --train_dir=$TRAIN_DIR \
+  --data_dir=$DATADIR \
+  &>> $LOGS_DIR/log_train.logs
+  {%- elif job_type == "eval"  %}
+python3 {{projectdir}}/code/{{file}}.py \
+  --config_file=$CONFIG_PATH \
+  --config_name=eval_test \
+  --train_dir=$TRAIN_DIR \
+  --data_dir=$DATADIR \
+  &>> $LOGS_DIR/log_eval_test.logs
+  {%- elif job_type == "attack" %}
+python3 {{projectdir}}/code/{{file}}.py \
+  --config_file=$CONFIG_PATH \
+  --config_name={{attack}} \
+  --train_dir=$TRAIN_DIR \
+  --data_dir=$DATADIR \
+  &>> $LOGS_DIR/log_{{attack}}.logs
+  {%- endif %}
+{% endif %}
+
+
