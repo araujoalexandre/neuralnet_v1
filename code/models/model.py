@@ -1,3 +1,4 @@
+# Copyright 2019 Alexandre Araaujo. All Rights Reserved.
 # Copyright 2017 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,19 +12,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+# 
+# This file has been modified by My Alexandre Araujo.
 # ==============================================================================
 """Base model configuration for CNN benchmarks."""
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 
 from collections import namedtuple
 
 import tensorflow as tf
 
-import convnet_builder
-import mlperf
+from . import convnet_builder
 
 # BuildNetworkResult encapsulate the result (e.g. logits) of a
 # Model.build_network() call.
@@ -90,8 +88,6 @@ class Model(object):
     Returns:
       A list of variables that the L2 loss should be computed for.
     """
-    mlperf.logger.log(key=mlperf.tags.MODEL_EXCLUDE_BN_FROM_L2,
-                      value=True)
     return [v for v in variables if 'batchnorm' not in v.name]
 
   def get_learning_rate(self, global_step, batch_size):
@@ -292,8 +288,6 @@ class CNNModel(Model):
       logits = (
           network.affine(nclass, activation='linear')
           if not self.skip_final_affine_layer() else network.top_layer)
-      mlperf.logger.log(key=mlperf.tags.MODEL_HP_FINAL_SHAPE,
-                        value=logits.shape.as_list()[1:])
       aux_logits = None
       if network.aux_top_layer is not None:
         with network.switch_to_aux_top_layer():
@@ -315,7 +309,6 @@ class CNNModel(Model):
     # and once with the aux logits.
     aux_logits = build_network_result.extra_info
     with tf.name_scope('xentropy'):
-      mlperf.logger.log(key=mlperf.tags.MODEL_HP_LOSS_FN, value=mlperf.tags.CCE)
       cross_entropy = tf.losses.sparse_softmax_cross_entropy(
           logits=logits, labels=labels)
       loss = tf.reduce_mean(cross_entropy, name='xentropy_mean')

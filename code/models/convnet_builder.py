@@ -5,7 +5,7 @@ import contextlib
 import numpy as np
 
 import tensorflow as tf
-
+from tensorflow import logging
 from tensorflow.python.layers import convolutional as conv_layers
 from tensorflow.python.layers import core as core_layers
 from tensorflow.python.layers import pooling as pooling_layers

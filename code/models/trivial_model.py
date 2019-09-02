@@ -14,10 +14,6 @@
 # ==============================================================================
 """Trivial model configuration."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import tensorflow as tf
 from models import model
 
@@ -31,8 +27,19 @@ class TrivialModel(model.CNNModel):
 
   def add_inference(self, cnn):
     cnn.reshape([-1, 227 * 227 * 3])
-    cnn.affine(1)
-    cnn.affine(4096)
+    cnn.affine(1000)
+
+
+class TrivialMnistModel(model.CNNModel):
+  """Trivial mnist model configuration."""
+
+  def __init__(self, params=None):
+    super(TrivialMnistModel, self).__init__(
+      'trivial', 32, 32, 0.01, params=params)
+
+  def add_inference(self, cnn):
+    cnn.reshape([-1, 32 * 32])
+    cnn.affine(1000)
 
 
 class TrivialCifar10Model(model.CNNModel):
@@ -44,8 +51,7 @@ class TrivialCifar10Model(model.CNNModel):
 
   def add_inference(self, cnn):
     cnn.reshape([-1, 32 * 32 * 3])
-    cnn.affine(1)
-    cnn.affine(4096)
+    cnn.affine(1000)
 
 
 class TrivialSSD300Model(model.CNNModel):

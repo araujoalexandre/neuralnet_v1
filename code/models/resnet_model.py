@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-
 """Resnet model configuration.
 
 References:
@@ -30,15 +29,9 @@ References:
   Atrous Convolution, and Fully Connected CRFs
   arXiv:1606.00915 (2016)
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
-from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
-import datasets
-import mlperf
+import tensorflow.compat.v1 as tf_v1
 from models import model as model_lib
 
 
@@ -160,7 +153,6 @@ def bottleneck_block_v2(cnn, depth, depth_bottleneck, stride):
   cnn.counts[name_key] += 1
 
   preact = cnn.batch_norm()
-  mlperf.logger.log(key=mlperf.tags.MODEL_HP_RELU)
   preact = tf.nn.relu(preact)
   with tf.variable_scope(name):
     if depth == in_size:
@@ -170,8 +162,6 @@ def bottleneck_block_v2(cnn, depth, depth_bottleneck, stride):
         shortcut = cnn.apool(
             1, 1, stride, stride, input_layer=input_layer,
             num_channels_in=in_size)
-        mlperf.logger.log_projection(input_tensor=input_layer,
-                                     output_tensor=shortcut)
     else:
       shortcut = cnn.conv(
           depth, 1, 1, stride, stride, activation=None, use_batch_norm=False,
@@ -183,7 +173,6 @@ def bottleneck_block_v2(cnn, depth, depth_bottleneck, stride):
              use_batch_norm=True, bias=None)
     res = cnn.conv(depth, 1, 1, 1, 1, activation=None,
                    use_batch_norm=False, bias=None)
-    mlperf.logger.log(key=mlperf.tags.MODEL_HP_SHORTCUT_ADD)
     output = shortcut + res
     cnn.top_layer = output
     cnn.top_size = depth
@@ -199,17 +188,12 @@ def bottleneck_block(cnn, depth, depth_bottleneck, stride, version):
     stride: Stride used in the first layer of the bottleneck block.
     version: version of ResNet to build.
   """
-  mlperf.logger.log(key=mlperf.tags.MODEL_HP_BLOCK_TYPE,
-                    value=mlperf.tags.BOTTLENECK_BLOCK)
-  mlperf.logger.log_begin_block(
-      input_tensor=cnn.top_layer, block_type=mlperf.tags.BOTTLENECK_BLOCK)
   if version == 'v2':
     bottleneck_block_v2(cnn, depth, depth_bottleneck, stride)
   elif version == 'v1.5':
     bottleneck_block_v1_5(cnn, depth, depth_bottleneck, stride)
   else:
     bottleneck_block_v1(cnn, depth, depth_bottleneck, stride)
-  mlperf.logger.log_end_block(output_tensor=cnn.top_layer)
 
 
 def residual_block(cnn, depth, stride, version, projection_shortcut=False):
@@ -307,15 +291,15 @@ class ResnetModel(model_lib.CNNModel):
     cnn.batch_norm_config = {'decay': 0.9, 'epsilon': 1e-5, 'scale': True}
     cnn.conv(64, 7, 7, 2, 2, mode='SAME_RESNET', use_batch_norm=True)
     cnn.mpool(3, 3, 2, 2, mode='SAME')
-    for _ in xrange(self.layer_counts[0]):
+    for _ in range(self.layer_counts[0]):
       bottleneck_block(cnn, 256, 64, 1, self.version)
-    for i in xrange(self.layer_counts[1]):
+    for i in range(self.layer_counts[1]):
       stride = 2 if i == 0 else 1
       bottleneck_block(cnn, 512, 128, stride, self.version)
-    for i in xrange(self.layer_counts[2]):
+    for i in range(self.layer_counts[2]):
       stride = 2 if i == 0 else 1
       bottleneck_block(cnn, 1024, 256, stride, self.version)
-    for i in xrange(self.layer_counts[3]):
+    for i in range(self.layer_counts[3]):
       stride = 2 if i == 0 else 1
       bottleneck_block(cnn, 2048, 512, stride, self.version)
     if self.version == 'v2':
@@ -332,7 +316,6 @@ class ResnetModel(model_lib.CNNModel):
     values = [rescaled_lr * v for v in values]
     lr = tf.train.piecewise_constant(global_step, boundaries, values)
     warmup_steps = int(num_batches_per_epoch * 5)
-    mlperf.logger.log(key=mlperf.tags.OPT_LR_WARMUP_STEPS, value=warmup_steps)
     warmup_lr = (
         rescaled_lr * tf.cast(global_step, tf.float32) / tf.cast(
             warmup_steps, tf.float32))
@@ -414,15 +397,15 @@ class ResnetCifar10Model(model_lib.CNNModel):
       cnn.conv(16, 3, 3, 1, 1, use_batch_norm=True)
     else:
       cnn.conv(16, 3, 3, 1, 1, activation=None, use_batch_norm=True)
-    for i in xrange(self.layer_counts[0]):
+    for i in range(self.layer_counts[0]):
       # reshape to batch_size x 16 x 32 x 32
       residual_block(cnn, 16, 1, self.version)
-    for i in xrange(self.layer_counts[1]):
+    for i in range(self.layer_counts[1]):
       # Subsampling is performed at the first convolution with a stride of 2
       stride = 2 if i == 0 else 1
       # reshape to batch_size x 32 x 16 x 16
       residual_block(cnn, 32, stride, self.version)
-    for i in xrange(self.layer_counts[2]):
+    for i in range(self.layer_counts[2]):
       stride = 2 if i == 0 else 1
       # reshape to batch_size x 64 x 8 x 8
       residual_block(cnn, 64, stride, self.version)
@@ -437,7 +420,7 @@ class ResnetCifar10Model(model_lib.CNNModel):
                                                   dtype=np.int64)
     boundaries = [x for x in boundaries]
     values = [0.1, 0.01, 0.001, 0.0002]
-    return tf.train.piecewise_constant(global_step, boundaries, values)
+    return tf_v1.train.piecewise_constant(global_step, boundaries, values)
 
 
 def create_resnet20_cifar_model(params):

@@ -14,15 +14,13 @@
 # ==============================================================================
 """Mobilenet Base Class, branched from slim for fp16 performance study."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 import collections
 import contextlib
 import copy
 import os
 
 import tensorflow as tf
+import tensorflow.compat.v1 as tf_v1
 
 slim = tf.contrib.slim
 
@@ -385,7 +383,7 @@ def mobilenet(inputs,
   return logits, end_points
 
 
-def global_pool(input_tensor, pool_op=tf.nn.avg_pool):
+def global_pool(input_tensor, pool_op=tf_v1.nn.avg_pool):
   """Applies avg pool to produce 1x1 output.
 
   NOTE: This function is funcitonally equivalenet to reduce_mean, but it has

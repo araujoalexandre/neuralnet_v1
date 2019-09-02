@@ -16,10 +16,6 @@
 """Model configurations for CNN benchmarks.
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from functools import partial
 
 from models import alexnet_model
@@ -107,17 +103,21 @@ _model_name_to_cifar_model = {
     'nasnet': nasnet_model.NasnetCifarModel,
 }
 
-
 _model_name_to_object_detection_model = {
     'ssd300': ssd_model.SSD300Model,
     'trivial': trivial_model.TrivialSSD300Model,
 }
 
+_model_name_to_mnist_model = {
+  'trivial': trivial_model.TrivialMnistModel,
+}
 
 def _get_model_map(dataset_name):
   """Get name to model map for specified dataset."""
   if dataset_name == 'cifar10':
     return _model_name_to_cifar_model
+  elif dataset_name == 'mnist':
+    return _model_name_to_mnist_model
   elif dataset_name in ('imagenet', 'synthetic'):
     return _model_name_to_imagenet_model
   elif dataset_name == 'librispeech':
@@ -130,10 +130,10 @@ def _get_model_map(dataset_name):
 
 def get_model_config(model_name, dataset, params):
   """Map model name to model network configuration."""
-  model_map = _get_model_map(dataset.name)
+  model_map = _get_model_map(dataset)
   if model_name not in model_map:
     raise ValueError('Invalid model name \'%s\' for dataset \'%s\'' %
-                     (model_name, dataset.name))
+                     (model_name, dataset_name))
   else:
     return model_map[model_name](params=params)
 

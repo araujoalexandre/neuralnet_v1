@@ -14,12 +14,7 @@
 # ==============================================================================
 """Import official resnet models."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import tensorflow as tf
-import datasets
 from models import model as model_lib
 
 
@@ -48,6 +43,7 @@ class ImagenetResnetModel(model_lib.CNNModel):
     self.version = version
 
   def get_learning_rate(self, global_step, batch_size):
+    # TODO fix dataset
     num_batches_per_epoch = (
         float(datasets.IMAGENET_NUM_TRAIN_IMAGES) / batch_size)
     boundaries = [int(num_batches_per_epoch * x) for x in [30, 60, 80, 90]]

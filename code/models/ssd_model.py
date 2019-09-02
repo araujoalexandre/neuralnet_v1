@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-
-
 """SSD300 Model Configuration.
 
 References:
@@ -26,21 +24,14 @@ Ported from MLPerf reference implementation:
   https://github.com/mlperf/reference/tree/ssd/single_stage_detector/ssd
 
 """
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import multiprocessing
 import os
 import re
 import threading
 import tensorflow as tf
+from tensorflow import logging
 
-import constants
-import mlperf
-import ssd_constants
-from cnn_util import log_fn
+from . import ssd_constants
 from models import model as model_lib
 from models import resnet_model
 
@@ -60,19 +51,14 @@ class SSD300Model(model_lib.CNNModel):
     # Currently only support ResNet-34 as backbone model
     if backbone != 'resnet34':
       raise ValueError('Invalid backbone model %s for SSD.' % backbone)
-    mlperf.logger.log(key=mlperf.tags.BACKBONE, value=backbone)
 
     # Number of channels and default boxes associated with the following layers:
     #   ResNet34 layer, Conv7, Conv8_2, Conv9_2, Conv10_2, Conv11_2
     self.out_chan = [256, 512, 512, 256, 256, 256]
-    mlperf.logger.log(key=mlperf.tags.LOC_CONF_OUT_CHANNELS,
-                      value=self.out_chan)
 
     # Number of default boxes from layers of different scales
     #   38x38x4, 19x19x6, 10x10x6, 5x5x6, 3x3x4, 1x1x4
     self.num_dboxes = [4, 6, 6, 6, 4, 4]
-    mlperf.logger.log(key=mlperf.tags.NUM_DEFAULTS_PER_CELL,
-                      value=self.num_dboxes)
 
     # TODO(haoyuzhang): in order to correctly restore in replicated mode, need
     # to create a saver for each tower before graph is finalized. Use variable
@@ -565,7 +551,7 @@ class SSD300Model(model_lib.CNNModel):
     # COCO metric calculates mAP only after a full epoch of evaluation. Return
     # dummy results for top_N_accuracy to be compatible with benchmar_cnn.py.
     if len(self.predictions) >= ssd_constants.COCO_NUM_VAL_IMAGES:
-      log_fn('Got results for all {:d} eval examples. Calculate mAP...'.format(
+      logging.info('Got results for all {:d} eval examples. Calculate mAP...'.format(
           ssd_constants.COCO_NUM_VAL_IMAGES))
 
       annotation_file = os.path.join(self.params.data_dir,
@@ -632,7 +618,7 @@ class SSD300Model(model_lib.CNNModel):
                                       self.batch_size * self.params.num_gpus,
                                       ssd_constants.COCO_NUM_TRAIN_IMAGES)
       return ret
-    log_fn('Got {:d} out of {:d} eval examples.'
+    logging.info('Got {:d} out of {:d} eval examples.'
            ' Waiting for the remaining to calculate mAP...'.format(
                len(self.predictions), ssd_constants.COCO_NUM_VAL_IMAGES))
     return {'top_1_accuracy': self.eval_coco_ap, 'top_5_accuracy': 0.}
