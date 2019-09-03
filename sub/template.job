@@ -21,26 +21,30 @@ export LD_LIBRARY_PATH={{ld_library}}
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:{{n_gpus}}
 #SBATCH --cpus-per-task={{cpu}}
+{% if dependency %}
+#SBATCH --dependency=afterany:{{dependency}}
+{% endif -%}
 #SBATCH --get-user-env
 {% else -%}
 #!{{bash_path}}
 {% endif %}
 export CUDA_VISIBLE_DEVICES='{{gpu}}';
-{%- if job_type == "train" %}
+{%- if mode == "train" and not dependency %}
 CONFIG_PATH={{projectdir}}/{{config_folder}}/{{config}}.yaml
-TRAIN_DIR={{path}}/{{date}}
-LOGS_DIR={{path}}/{{date}}_logs
-mkdir $LOGS_DIR
-cp $CONFIG_PATH $LOGS_DIR/model_flags.yaml
-{% elif job_type == "eval" or job_type == "attack"  %}
 TRAIN_DIR={{path}}/{{folder}}
 LOGS_DIR={{path}}/{{folder}}_logs
-CONFIG_PATH={{path}}/{{folder}}/models_flags.yaml
+mkdir $LOGS_DIR
+cp $CONFIG_PATH $LOGS_DIR/model_flags.yaml
+{% elif (mode == 'train' and dependency) or mode == "eval" or mode == "attack"  %}
+TRAIN_DIR={{path}}/{{folder}}
+LOGS_DIR={{path}}/{{folder}}_logs
+CONFIG_PATH={{path}}/{{folder}}_logs/model_flags.yaml
 {% endif -%}
 
 {%- if cluster == "slurm" %}
-  {%- if job_type == "train" -%}
-srun -o $LOGS_DIR/log_train.logs -u \
+  {%- if mode == "train" -%}
+srun --output $LOGS_DIR/log_train.logs -u \
+  --open-mode=append \
   --nodes=1 \
   --gres=gpu:{{n_gpus}} \
   --cpus-per-task={{cpu}} \
@@ -48,19 +52,22 @@ srun -o $LOGS_DIR/log_train.logs -u \
     --config_file=$CONFIG_PATH \
     --config_name=train \
     --train_dir=$TRAIN_DIR \
-    --data_dir=$DATADIR
-  {%- elif job_type == "eval"  %}
-srun -o $LOGS_DIR/log_eval_test.logs -u \
+    --data_dir=$DATADIR \
+    --start_new_model={{start_new_model}}
+  {%- elif mode == "eval"  %}
+srun --output $LOGS_DIR/log_eval.logs -u \
+  --open-mode=append \
   --nodes=1 \
   --gres=gpu:{{n_gpus}} \
   --cpus-per-task={{cpu}} \
   python3 {{projectdir}}/code/{{file}}.py \
     --config_file=$CONFIG_PATH \
-    --config_name=eval_test \
+    --config_name=eval \
     --train_dir=$TRAIN_DIR \
     --data_dir=$DATADIR
-  {%- elif job_type == "attack" %}
-srun -o $LOGS_DIR/log_{{attack}}.logs -u \
+  {%- elif mode == "attack" %}
+srun --output  $LOGS_DIR/log_{{attack}}.logs -u \
+  --open-mode=append \
   --nodes=1 \
   --gres=gpu:{n_gpus} \
   --cpus-per-task={{cpu}} \
@@ -71,21 +78,22 @@ srun -o $LOGS_DIR/log_{{attack}}.logs -u \
     --data_dir=$DATADIR
   {% endif -%}
 {%- elif cluster != "slurm" %}
-  {%- if job_type == "train" %}
+  {%- if mode == "train" %}
 python3 {{projectdir}}/code/{{file}}.py \
   --config_file=$CONFIG_PATH \
   --config_name=train \
   --train_dir=$TRAIN_DIR \
   --data_dir=$DATADIR \
+  --start_new_model={{start_new_model}} \
   &>> $LOGS_DIR/log_train.logs
-  {%- elif job_type == "eval"  %}
+  {%- elif mode == "eval"  %}
 python3 {{projectdir}}/code/{{file}}.py \
   --config_file=$CONFIG_PATH \
   --config_name=eval_test \
   --train_dir=$TRAIN_DIR \
   --data_dir=$DATADIR \
-  &>> $LOGS_DIR/log_eval_test.logs
-  {%- elif job_type == "attack" %}
+  &>> $LOGS_DIR/log_eval.logs
+  {%- elif mode == "attack" %}
 python3 {{projectdir}}/code/{{file}}.py \
   --config_file=$CONFIG_PATH \
   --config_name={{attack}} \
