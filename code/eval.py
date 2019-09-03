@@ -5,464 +5,501 @@ import os
 import re
 import socket
 import pprint
-from collections import OrderedDict
-from os.path import join, basename, exists
+from functools import partial
+from os.path import join, exists
 
-import models
+# import models
 import attacks
+import utils
+from models import model, model_config
 from train_utils import losses
+from train_utils import variable_mgr, variable_mgr_util
 from dataset import readers
 from utils import make_summary
 from dump_files import DumpFiles
-from utils import MessageBuilder
 
 import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
-from tensorflow import app
-from tensorflow import flags
 from tensorflow import gfile
 from tensorflow import logging
-from tensorflow.python.client import device_lib
 from tensorflow.python.lib.io import file_io
 
-from config import YParams
-from config import hparams as FLAGS
-
-def find_class_by_name(name, modules):
-  """Searches the provided modules for the named class and returns it."""
-  modules = [getattr(module, name, None) for module in modules]
-  return next(a for a in modules if a)
-
-def tf_get(name):
-  collection = tf.get_collection(name)
-  if len(collection) == 0:
-    return []
-  elif len(collection) > 1:
-    raise ValueError("Mulitple values in collection {}".format(name))
-  return collection[0]
+from config import hparams as params
 
 
-def get_epoch(step, n_gpu, batch_size, n_files):
-  if n_gpu:
-    return (step * batch_size * n_gpu) / n_files
-  return (step * batch_size) / n_files
+# def load_checkpoint(saver, sess, ckpt_dir):
+#   """Loads checkpoint from provided directory or full path.
+# 
+#   Args:
+#     saver: Saver used to restore the checkpoint.
+#     sess: TensorFlow session.
+#     ckpt_dir: Path to a folder of checkpoints or full path to a checkpoint.
+# 
+#   Returns:
+#     Global step.
+#   """
+#   model_checkpoint_path = _get_checkpoint_to_load(ckpt_dir)
+#   global_step = model_checkpoint_path.split('/')[-1].split('-')[-1]
+#   if not global_step.isdigit():
+#     global_step = 0
+#   else:
+#     global_step = int(global_step)
+#   saver.restore(sess, model_checkpoint_path)
+#   log_fn('Successfully loaded model from %s.' % model_checkpoint_path)
+#   return global_step
+# 
+# 
+# def _get_checkpoint_to_load(ckpt_dir):
+#   """Returns which checkpoint to load.
+# 
+#   Args:
+#     ckpt_dir: Path to a folder of checkpoints or full path to a checkpoint.
+# 
+#   Returns:
+#     Full path to checkpoint to load.
+# 
+#   Raises:
+#     CheckpointNotFoundException: If checkpoint is not found.
+#   """
+#   p = re.compile(r'ckpt-\d+$')
+#   if p.search(ckpt_dir):
+#     model_checkpoint_path = ckpt_dir
+#   else:
+#     # Finds latest checkpoint in directory provided
+#     ckpt = tf.train.get_checkpoint_state(ckpt_dir)
+#     if ckpt and ckpt.model_checkpoint_path:
+#       model_checkpoint_path = ckpt.model_checkpoint_path
+#     else:
+#       raise CheckpointNotFoundException('No checkpoint file found in dir:{}'.
+#                                         format(ckpt_dir))
+#   return model_checkpoint_path
+
+
+
+def get_global_step_from_ckpt(filename):
+  regex = "(?<=ckpt-)[0-9]+"
+  return int(re.findall(regex, filename)[-1])
+
+
+def get_list_checkpoints(train_dir):
+  files = file_io.get_matching_files(
+    join(train_dir, 'model.ckpt-*.index'))
+  files = sorted(files, key=get_global_step_from_ckpt)
+  files = [filename[:-6] for filename in files]
+  return files
+
+
+def get_checkpoint(train_dir, last_global_step):
+  files = get_list_checkpoints(train_dir)
+  if not files:
+    return None, None
+  for filename in files:
+    global_step = get_global_step_from_ckpt(filename)
+    if last_global_step < global_step:
+      return filename, global_step
+  return None, None
+
+
+def get_best_checkpoint(logs_dir):
+  best_acc_file = join(logs_dir, "best_accuracy.txt")
+  if not exists(best_acc_file):
+    raise ValueError("Could not find best_accuracy.txt in {}".format(
+            logs_dir))
+  with open(best_acc_file) as f:
+    content = f.readline().split('\t')
+    best_ckpt = content[0]
+  best_ckpt_path = file_io.get_matching_files(
+      join(self.train_dir, 'model.ckpt-{}.index'.format(best_ckpt)))
+  return best_ckpt_path[-1][:-6], int(best_ckpt)
+
 
 
 class Evaluate:
 
-  def __init__(self):
-   self.wait = 20
+  def __init__(self, params):
 
-  def _predict(self, images, labels, num_towers, device_string, n_classes,
-               is_training=False, compute_loss=False):
+    self.params = params
 
-    tower_inputs = tf.split(images, num_towers)
-    tower_logits = []
-    if compute_loss:
-      tower_labels = tf.split(labels, num_towers)
-      tower_losses = []
+    # Set up environment variables before doing any other global initialization to
+    # make sure it uses the appropriate environment variables.
+    utils.set_default_param_values_and_env_vars(params)
 
-    for i in range(num_towers):
-      with tf.device(device_string.format(i)):
-        with tf.variable_scope("tower", reuse=tf.AUTO_REUSE):
-          logits = self.model.create_model(
-            tower_inputs[i], n_classes, is_training)
-          tower_logits.append(logits)
-          if compute_loss:
-            losses = self.loss_fn.calculate_loss(
-              logits=logits, labels=tower_labels[i])
-            tower_losses.append(losses)
+    # Setup logging & log the version.
+    utils.setup_logging(params.logging_verbosity)
+    logging.info("Tensorflow version: {}.".format(tf.__version__))
+    logging.info("Hostname: {}.".format(socket.gethostname()))
 
-    logits_batch = tf.concat(tower_logits, 0)
-    if compute_loss:
-      losses_batch = tf.reduce_mean(tower_losses)
-      return logits_batch, losses_batch
-    return logits_batch
+    # print self.params parameters
+    pp = pprint.PrettyPrinter(indent=2, compact=True)
+    logging.info(pp.pformat(params.values()))
 
-  def build_graph(self):
-    """Creates the Tensorflow graph for evaluation."""
+    self.train_dir = self.params.train_dir
+    self.logs_dir = "{}_logs".format(self.train_dir)
+    if self.train_dir is None:
+      raise ValueError('Trained model directory not specified')
+    self.num_gpus = self.params.num_gpus
+    self.variable_update = self.params.variable_update
 
-    num_towers = self.num_towers
-    device_string = self.device_string
-    n_classes = self.reader.n_classes
+    # create a mesage builder for logging
+    self.message = utils.MessageBuilder()
 
-    global_step = tf.train.get_or_create_global_step()
+    # class for dumping data
+    if self.params.eval_under_attack:
+      self.dump = DumpFiles(params)
 
-    with tf.name_scope("train_input"):
-      images_batch, labels_batch = self.reader.input_fn()
-      tf.summary.histogram("model/input_raw", images_batch)
-    tf.add_to_collection('processed_img', images_batch)
-    tf.add_to_collection('labels', labels_batch)
-
-    # get loss and logits from real examples
-    logits_batch, loss_batch = self._predict(
-      images_batch, labels_batch, num_towers, device_string,
-      n_classes, is_training=False, compute_loss=True)
-    tf.add_to_collection('logits', logits_batch)
-
-    preds_batch = tf.argmax(logits_batch, axis=1, output_type=tf.int32)
-    loss, loss_update_op = tf.metrics.mean(loss_batch)
-    accuracy, acc_update_op = tf.metrics.accuracy(
-      tf.cast(labels_batch, tf.float32), preds_batch)
-
-    tf.add_to_collection('images_batch', images_batch)
-    tf.add_to_collection('labels_batch', labels_batch)
-    tf.add_to_collection('predictions', preds_batch)
-    tf.add_to_collection('loss', loss)
-    tf.add_to_collection('loss_update_op', loss_update_op)
-    tf.add_to_collection('accuracy', accuracy)
-    tf.add_to_collection('acc_update_op', acc_update_op)
-
-    if FLAGS.eval_under_attack:
-
-      # get loss and logits from adv examples
-      def fn_logits(x):
-        return self._predict(x, None, num_towers, device_string,
-                      n_classes, is_training=False, compute_loss=False)
-
-      images_adv_batch = self.attack.generate(images_batch, fn_logits)
-      tf.add_to_collection('processed_img_adv', images_adv_batch)
-
-      logits_adv_batch, losses_adv_batch = self._predict(
-        images_adv_batch, labels_batch, num_towers, device_string,
-        n_classes, is_training=False, compute_loss=True)
-
-      preds_adv_batch = tf.argmax(
-        logits_adv_batch, axis=1, output_type=tf.int32)
-
-      loss_adv, loss_adv_update_op = tf.metrics.mean(losses_adv_batch)
-      accuracy_adv, acc_adv_update_op = tf.metrics.accuracy(
-        tf.cast(labels_batch, tf.float32), preds_adv_batch)
-
-      perturbation = images_adv_batch - images_batch
-      perturbation = tf.layers.flatten(perturbation)
-      for name, p in [('l1', 1), ('l2', 2), ('linf', np.inf)]:
-        value, update = tf.metrics.mean(
-          tf.norm(perturbation, ord=p, axis=1))
-        tf.add_to_collection('mean_norm_{}'.format(name), value)
-        tf.add_to_collection('mean_norm_{}_update_op'.format(name), update)
-
-      tf.add_to_collection('images_adv_batch', images_adv_batch)
-      tf.add_to_collection('predictions_adv', preds_adv_batch)
-      tf.add_to_collection('loss_adv', loss_adv)
-      tf.add_to_collection('loss_adv_update_op', loss_adv_update_op)
-      tf.add_to_collection('accuracy_adv', accuracy_adv)
-      tf.add_to_collection('acc_adv_update_op', acc_adv_update_op)
-
-
-  def _get_global_step_from_ckpt(self, filename):
-    regex = "(?<=ckpt-)[0-9]+"
-    return int(re.findall(regex, filename)[-1])
-
-  def get_checkpoint(self, last_global_step):
-    if not exists(self.train_dir):
-      return None, None
-
-    if FLAGS.start_eval_from_ckpt == 'first':
-      files = file_io.get_matching_files(
-        join(self.train_dir, 'model.ckpt-*.index'))
-      # No files
-      if not files:
-        return None, None
-      sort_fn = lambda x: int(re.findall("(?<=ckpt-)[0-9]+", x)[-1])
-      files = sorted(files, key=self._get_global_step_from_ckpt)
-      for filename in files:
-        filname_global_step = self._get_global_step_from_ckpt(filename)
-        if last_global_step < filname_global_step:
-          return filename[:-6], filname_global_step
-      return None, None
+    if self.params.num_gpus:
+      self.batch_size = self.params.batch_size * self.num_gpus
     else:
-      latest_checkpoint = tf.train.latest_checkpoint(self.train_dir)
-      if latest_checkpoint is None:
-        return None, None
-      global_step = self._get_global_step_from_ckpt(latest_checkpoint)
-      return latest_checkpoint, global_step
+      self.batch_size = self.params.batch_size
 
-  def get_best_checkpoint(self):
-    best_acc_file = join(self.logs_dir, "best_accuracy.txt")
-    if not exists(best_acc_file):
-      raise ValueError("Could not find best_accuracy.txt in {}".format(
-              self.logs_dir))
-    with open(best_acc_file) as f:
-      content = f.readline().split('\t')
-      best_ckpt = content[0]
-    best_ckpt_path = file_io.get_matching_files(
-        join(self.train_dir, 'model.ckpt-{}.index'.format(best_ckpt)))
-    return best_ckpt_path[-1][:-6], int(best_ckpt)
+    pp = pprint.PrettyPrinter(indent=2, compact=True)
+    logging.info(pp.pformat(params.values()))
 
-  def eval_attack(self):
-    """Run the evaluation under attack."""
+    if self.params.eval_under_attack:
+      attack_method = self.params.attack_method
+      attack_cls = getattr(attacks, attack_method, None)
+      if attack_cls is None:
+        raise ValueError("Attack is not recognized.")
+      attack_config = getattr(self.params, attack_method)
+      self.attack = attack_cls(batch_size=self.batch_size,
+                               sample=self.params.attack_sample,
+                               **attack_config)
 
-    best_checkpoint, global_step = self.get_best_checkpoint()
+    data_pattern = self.params.data_pattern
+    self.dataset = re.findall("[a-z0-9]+", data_pattern.lower())[0]
+    if data_pattern is "":
+      raise IOError("'data_pattern' was not specified. "
+        "Nothing to evaluate.")
 
-    epoch = get_epoch(
-             global_step,
-             FLAGS.train_num_gpu,
-             FLAGS.train_batch_size,
-             self.reader.n_train_files)
+    self.local_parameter_device_flag = self.params.local_parameter_device
+    self.task_index = 0
+    self.cluster_manager = None
+    self.param_server_device = '/{}:0'.format(self.params.local_parameter_device)
+    self.sync_queue_devices = [self.param_server_device]
 
-    with tf.Session(config=self.config) as sess:
-      logging.info("Evaluation under attack:")
+    self.num_workers = 1
 
-      # Restores from checkpoint
-      self.saver.restore(sess, best_checkpoint)
-      sess.run(tf.local_variables_initializer())
+    # Device to use for ops that need to always run on the local worker's CPU.
+    self.cpu_device = '/cpu:0'
 
-      # pass session to attack class for Carlini Attack
-      self.attack.sess = sess
+    # Device to use for ops that need to always run on the local worker's
+    # compute device, and never on a parameter server device.
+    self.raw_devices = ['/gpu:{}'.format(i) for i in range(self.num_gpus)]
 
-      fetches = OrderedDict(
-         loss_update_op=tf_get('loss_update_op'),
-         acc_update_op=tf_get('acc_update_op'),
-         loss_adv_update_op=tf_get('loss_adv_update_op'),
-         acc_adv_update_op=tf_get('acc_adv_update_op'),
-         mean_norm_l1_update_op=tf_get('mean_norm_l1_update_op'),
-         mean_norm_l2_update_op=tf_get('mean_norm_l2_update_op'),
-         mean_norm_linf_update_op=tf_get('mean_norm_linf_update_op'),
-         images=tf_get('images_batch'),
-         images_adv=tf_get('images_adv_batch'),
-         loss=tf_get('loss'),
-         accuracy=tf_get('accuracy'),
-         predictions=tf_get('predictions'),
-         predictions_adv=tf_get('predictions_adv'),
-         loss_adv=tf_get('loss_adv'),
-         accuracy_adv=tf_get('accuracy_adv'),
-         labels_batch=tf_get('labels_batch'),
-         mean_l1=tf_get('mean_norm_l1'),
-         mean_l2=tf_get('mean_norm_l2'),
-         mean_linf=tf_get('mean_norm_linf'))
+    if self.params.variable_update == 'parameter_server':
+      self.variable_mgr = variable_mgr.VariableMgrLocalFetchFromPS(self)
+    elif self.variable_update == 'replicated':
+      self.variable_mgr = variable_mgr.VariableMgrLocalReplicated(
+          self, self.params.all_reduce_spec,
+          self.params.agg_small_grads_max_bytes,
+          self.params.agg_small_grads_max_group,
+          self.params.allreduce_merge_scope)
+    elif self.params.variable_update in 'independent':
+      self.variable_mgr = variable_mgr.VariableMgrIndependent(self)
+    else:
+      raise ValueError(
+          'Invalid variable_update in eval mode: {}'.format(
+            self.variable_update))
 
-      count = 0
-      dump = DumpFiles(self.train_dir)
-      while True:
-        try:
+    self.devices = self.variable_mgr.get_devices()
 
-          batch_start_time = time.time()
-          values = sess.run(list(fetches.values()))
-          values = dict(zip(fetches.keys(), values))
-          seconds_per_batch = time.time() - batch_start_time
-          examples_per_second = self.batch_size / seconds_per_batch
-          count += self.batch_size
+    # TODO: remove auto loss scale and check inf in grad
+    self.enable_auto_loss_scale = False
 
-          # dump images and images_adv
-          if FLAGS.dump_files:
-            dump.files(values)
+    self.model = model_config.get_model_config(
+        self.params.model, self.params.dataset, self.params)
+    # self.model = utils.find_class_by_name(self.params.model, [models])()
+    self.reader = utils.find_class_by_name(self.params.reader, [readers])(
+      self.params, self.batch_size, self.raw_devices, self.cpu_device,
+      is_training=False)
 
-          message = MessageBuilder()
-          message.add('', [count, self.reader.n_test_files])
-          message.add('acc img/adv',
-                      [values['accuracy'], values['accuracy_adv']], format='.5f')
-          message.add('avg loss', [values['loss'], values['loss_adv']], format='.5f')
-          message.add('imgs/sec', examples_per_second, format='.3f')
-          if FLAGS.eval_under_attack:
-            norms_mean = [values['mean_l1'], values['mean_l2'], values['mean_linf']]
-            message.add('l1/l2/linf mean', norms_mean, format='.2f')
-          logging.info(message.get_message())
-
-        except tf.errors.OutOfRangeError:
-
-          message = MessageBuilder()
-          message.add('Final: images/adv',
-                      [values['accuracy'], values['accuracy_adv']], format='.5f')
-          message.add('avg loss', [values['loss'], values['loss_adv']], format='.5f')
-          logging.info(message.get_message())
-          logging.info("Done evaluation of adversarial examples.")
-          break
-
-    return values['accuracy'], values['accuracy_adv']
-
-
-  def eval_loop(self, last_global_step):
-    """Run the evaluation loop once."""
-
-    latest_checkpoint, global_step = self.get_checkpoint(
-      last_global_step)
-    logging.info("latest_checkpoint: {}".format(latest_checkpoint))
-
-    if latest_checkpoint is None or global_step == last_global_step:
-      time.sleep(self.wait)
-      return last_global_step
-
-    with tf.Session(config=self.config) as sess:
-      logging.info("Loading checkpoint for eval: {}".format(latest_checkpoint))
-
-      # Restores from checkpoint
-      self.saver.restore(sess, latest_checkpoint)
-      sess.run(tf.local_variables_initializer())
-
-      epoch = get_epoch(
-                global_step,
-                FLAGS.train_num_gpu,
-                FLAGS.train_batch_size,
-                self.reader.n_train_files)
-
-      fetches = OrderedDict(
-         loss_update_op=tf_get('loss_update_op'),
-         acc_update_op=tf_get('acc_update_op'),
-         loss=tf_get('loss'),
-         accuracy=tf_get('accuracy'))
-
-      while True:
-        try:
-
-          batch_start_time = time.time()
-          values = sess.run(list(fetches.values()))
-          values = dict(zip(fetches.keys(), values))
-          seconds_per_batch = time.time() - batch_start_time
-          examples_per_second = self.batch_size / seconds_per_batch
-
-          message = MessageBuilder()
-          message.add('epoch', epoch, format='.2f')
-          message.add('step', global_step)
-          message.add('accuracy', values['accuracy'], format='.5f')
-          message.add('avg loss', values['loss'], format='.5f')
-          message.add('imgs/sec', examples_per_second, format='.0f')
-          logging.info(message.get_message())
-
-        except tf.errors.OutOfRangeError:
-
-          if self.best_accuracy is None or self.best_accuracy < values['accuracy']:
-            self.best_global_step = global_step
-            self.best_accuracy = values['accuracy']
-
-          make_summary("accuracy", values['accuracy'], self.summary_writer, global_step)
-          make_summary("loss", values['loss'], self.summary_writer, global_step)
-          make_summary("epoch", epoch, self.summary_writer, global_step)
-          self.summary_writer.flush()
-
-          message = MessageBuilder()
-          message.add('final: epoch', epoch, format='.2f')
-          message.add('step', global_step)
-          message.add('accuracy', values['accuracy'], format='.5f')
-          message.add('avg loss', values['loss'], format='.5f')
-          logging.info(message.get_message())
-          logging.info("Done with batched inference.")
-
-          if self.stopped_at_n:
-           self.counter += 1
-
-          break
-
-      return global_step
+    # # define the number of steps
+    # num_steps_by_epochs = self.reader.n_train_files / self.global_batch_size
+    # self.max_steps = self.params.num_epochs * num_steps_by_epochs
 
 
   def run(self):
-
-    # Setup logging & log the version.
-    if not FLAGS.debug:
-      tf.logging.set_verbosity(logging.INFO)
-    else:
-      tf.logging.set_verbosity(logging.DEBUG)
-    logging.info("Tensorflow version: {}.".format(tf.__version__))
-    logging.info("hostname: {}.".format(
-      socket.gethostname()))
-
-    self.train_dir = FLAGS.train_dir
-    self.logs_dir = "{}_logs".format(self.train_dir)
-
-    if FLAGS.eval_num_gpu:
-      self.batch_size = \
-          FLAGS.eval_batch_size * FLAGS.eval_num_gpu
-    else:
-      self.batch_size = FLAGS.eval_batch_size
-
-    local_device_protos = device_lib.list_local_devices()
-    gpus = [x.name for x in local_device_protos if x.device_type == 'GPU']
-    gpus = gpus[:FLAGS.eval_num_gpu]
-    num_gpus = len(gpus)
-
-    if num_gpus > 0:
-      logging.info("Using the {} GPUs".format(num_gpus))
-      self.num_towers = num_gpus
-      self.device_string = '/gpu:{}'
-      logging.info("Using total batch size of {} for evaluation "
-        "over {} GPUs: batch size of {} per GPUs.".format(
-          self.batch_size, self.num_towers,
-            self.batch_size // self.num_towers))
-    else:
-      logging.info("No GPUs found. Eval on CPU.")
-      self.num_towers = 1
-      self.device_string = '/cpu:{}'
-      logging.info("Using total batch size of {} for evalauton "
-        "on CPU.".format(self.batch_size))
-
-    pp = pprint.PrettyPrinter(indent=2, compact=True)
-    logging.info(pp.pformat(FLAGS.values()))
-
-    self.config = tf.ConfigProto(
-      log_device_placement=FLAGS.log_device_placement,
-      allow_soft_placement=True)
-
+    """Run the benchmark task assigned to this process.
+    """
     with tf.Graph().as_default():
-
-      self.reader = find_class_by_name(FLAGS.reader, [readers])(
-        self.batch_size, is_training=False)
-
-      if FLAGS.eval_under_attack:
-        attack_method = FLAGS.attack_method
-        attack_cls = getattr(attacks, attack_method, None)
-        if attack_cls is None:
-          raise ValueError("Attack is not recognized.")
-        attack_config = getattr(FLAGS, attack_method)
-        self.attack = attack_cls(
-          batch_size=self.batch_size, sample=FLAGS.attack_sample, **attack_config)
-
-
-      data_pattern = FLAGS.data_pattern
-      self.dataset = re.findall("[a-z0-9]+", data_pattern.lower())[0]
-      if data_pattern is "":
-        raise IOError("'data_pattern' was not specified. "
-          "Nothing to evaluate.")
-
-      self.model = find_class_by_name(FLAGS.model, [models])()
-      self.loss_fn = find_class_by_name(FLAGS.loss, [losses])()
-
-      self.build_graph()
-      logging.info("Built evaluation graph")
-
-      if FLAGS.eval_under_attack:
-        self.saver = tf.train.Saver(tf.global_variables(scope="tower"))
-        acc_val, acc_adv_val = self.eval_attack()
-        # filename = "score_{}.txt".format(self.attack.get_name())
-        path = join(self.logs_dir, "attacks_score.txt")
-        with open(path, 'a') as f:
-          f.write("{}\n".format(FLAGS.attack_method))
-          f.write("sample {}, {}\n".format(FLAGS.attack_sample,
-                                         json.dumps(attack_config)))
-          f.write("{:.5f}\t{:.5f}\n\n".format(acc_val, acc_adv_val))
-
-      else:
-
-        self.saver = tf.train.Saver(tf.global_variables())
-        filename_suffix= "_{}_{}".format("eval",
-                    re.findall("[a-z0-9]+", data_pattern.lower())[0])
-        self.summary_writer = tf.summary.FileWriter(
-          self.train_dir,
-          filename_suffix=filename_suffix,
-          graph=tf.get_default_graph())
-
-        if FLAGS.stopped_at_n == "auto":
-          one_epoch = self.reader.n_train_files / \
-              (FLAGS.train_batch_size * FLAGS.train_num_gpu)
-          self.stopped_at_n = (FLAGS.num_epochs * one_epoch) // FLAGS.save_checkpoint_steps
-        else:
-          self.stopped_at_n = FLAGS.stopped_at_n
-        logging.info("Making evaluation for {} ckpts.".format(
-          int(self.stopped_at_n)))
-
-        self.best_global_step = None
-        self.best_accuracy = None
-        self.counter = 0
-        last_global_step_val = 0
-        while self.counter < self.stopped_at_n:
-          last_global_step_val = self.eval_loop(last_global_step_val)
-        path = join(self.logs_dir, "best_accuracy.txt")
-        with open(path, 'w') as f:
-          f.write("{}\t{:.4f}\n".format(self.best_global_step, self.best_accuracy))
-
+      self._run_eval()
       logging.info("Done evaluation -- number of eval reached.")
 
+
+  def _run_eval(self):
+    """Evaluate a model every self.params.eval_interval_secs.
+
+    Returns:
+      Dictionary containing eval statistics. Currently returns an empty
+      dictionary.
+
+    Raises:
+      ValueError: If self.params.train_dir is unspecified.
+    """
+    logging.info("Building evaluation graph")
+    fetches = self._build_model()
+    local_var_init_op = tf.local_variables_initializer()
+    table_init_ops = tf.tables_initializer()
+    variable_mgr_init_ops = [local_var_init_op]
+    if table_init_ops:
+      variable_mgr_init_ops.extend([table_init_ops])
+    with tf.control_dependencies([local_var_init_op]):
+      variable_mgr_init_ops.extend(self.variable_mgr.get_post_init_ops())
+    local_var_init_op_group = tf.group(*variable_mgr_init_ops)
+    self.saver = tf.train.Saver(self.variable_mgr.savable_variables())
+    filename_suffix= "_{}_{}".format("eval",
+                re.findall("[a-z0-9]+", self.params.data_pattern.lower())[0])
+    self.summary_writer = tf.summary.FileWriter(
+      self.params.train_dir,
+      filename_suffix=filename_suffix,
+      graph=tf.get_default_graph())
+
+    config = utils.create_config_proto(self.params)
+    session = tf.Session(target='', config=config)
+
+    if self.params.eval_under_attack:
+      logging.info("Evaluation under attack:")
+      with session as sess:
+        sess.run(local_var_init_op_group)
+        # pass session to attack class for Carlini Attack
+        self.attack.sess = sess
+        # Restores from bast checkpoint
+        best_checkpoint, global_step = self.get_best_checkpoint()
+        self.saver.restore(sess, best_checkpoint)
+        acc_val, acc_adv_val = self.eval_attack(sess, fetches)
+      path = join(self.logs_dir, "attacks_score.txt")
+      with open(path, 'a') as f:
+        f.write("{}\n".format(self.params.attack_method))
+        f.write("sample {}, {}\n".format(self.params.attack_sample,
+                                       json.dumps(attack_config)))
+        f.write("{:.5f}\t{:.5f}\n\n".format(acc_val, acc_adv_val))
+
+    else:
+      # those variables are updated in eval_loop
+      self.best_global_step = None
+      self.best_accuracy = None
+      with session as sess:
+        # if the evaluation is made during training, we don't know how many 
+        # checkpoint we need to process
+        if self.params.eval_during_training:
+          last_global_step = 0
+          while True:
+            latest_checkpoint, global_step = get_checkpoint(
+              self.train_dir, last_global_step)
+            if latest_checkpoint is None or global_step == last_global_step:
+              time.sleep(self.params.eval_interval_secs)
+              continue
+            else:
+              logging.info(
+                "Loading checkpoint for eval: {}".format(latest_checkpoint))
+              # Restores from checkpoint
+              self.saver.restore(sess, latest_checkpoint)
+              sess.run(local_var_init_op_group)
+              self.eval_loop(sess, fetches, global_step)
+              last_global_step = global_step
+        # if the evaluation is made after training, we look for all
+        # checkpoints 
+        else:
+          ckpts = get_list_checkpoints(self.train_dir)
+          # remove first checkpoint model.ckpt-0
+          ckpts.pop(0)
+          for ckpt in ckpts:
+            logging.info(
+              "Loading checkpoint for eval: {}".format(ckpt))
+            global_step = get_global_step_from_ckpt(ckpt)
+            # Restores from checkpoint
+            self.saver.restore(sess, ckpt)
+            sess.run(local_var_init_op_group)
+            self.eval_loop(sess, fetches, global_step)
+
+      path = join(self.logs_dir, "best_accuracy.txt")
+      with open(path, 'w') as f:
+        f.write("{}\t{:.4f}\n".format(
+          self.best_global_step, self.best_accuracy))
+
+
+
+  def add_forward_pass_and_gradients(self,
+                                     rel_device_num,
+                                     abs_device_num,
+                                     all_input_list,
+                                     gpu_compute_stage_ops,
+                                     gpu_grad_stage_ops):
+    """Add ops for forward-pass and gradient computations."""
+    input_list = all_inpout_list[rel_device_num]
+
+
+    with tf.device(self.devices[rel_device_num]):
+      logits = forward_pass_and_gradients(input_list)
+      return logits
+
+
+  def _build_model(self):
+    """Build the TensorFlow graph."""
+    tf.set_random_seed(self.params.tf_random_seed)
+    np.random.seed(4321)
+    n_classes = self.reader.n_classes
+    is_training = False
+    fetches = {}
+
+    def forward_pass(input_list, return_loss=True):
+      """Builds forward pass computation network.
+      Returns:
+        outputs: logits and loss of the model or logits.
+      """
+      build_network_result = self.model.build_network(
+          input_list, is_training, n_classes)
+      logits = build_network_result.logits
+      if return_loss:
+        loss = self.model.loss_function(input_list, build_network_result)
+        return logits, loss
+      return logits
+
+    all_images, all_labels = [], []
+    all_loss, all_loss_adv = [], []
+    all_logits, all_logits_adv = [], []
+    list_update_ops = []
+
+    # Build the processing and model for the worker.
+    with tf.name_scope("input"):
+      input_list = self.reader.input_fn().get_next()
+
+    for device_num in range(len(self.devices)):
+      with tf.name_scope('tower_{}'.format(device_num)) as name_scope, (
+          self.variable_mgr.create_outer_variable_scope(device_num)):
+        inputs = input_list[device_num]
+        with tf.device(self.devices[device_num]):
+          logits, loss = forward_pass(inputs)
+          loss = tf.reduce_mean(loss)
+          all_images.append(inputs[0])
+          all_labels.append(inputs[1])
+          all_logits.append(logits)
+          all_loss.append(loss)
+
+          if self.params.eval_under_attack:
+            with tf.device(self.devices[device_num]):
+              adv = self.attack.generate(inputs[0],
+                            partial(forward_pass, return_loss=False))
+              input_adv = [adv, inputs[0]]
+              logits_adv, loss_adv = forward_pass(input_adv)
+              logits_adv.append(results['logits'])
+              all_images_adv.append(adv)
+              all_logits_adv.append(logits_adv)
+              all_loss_adv.append(loss_adv)
+
+
+    with tf.device(self.cpu_device):
+
+      images = tf.concat(all_images, 0)
+      labels = tf.concat(all_labels, 0)
+      logits = tf.concat(all_logits, 0)
+      loss = tf.reduce_mean(all_loss)
+
+      predictions = tf.argmax(logits, axis=1, output_type=tf.int32)
+      loss_metric, loss_update_op = tf.metrics.mean(loss)
+      accuracy, acc_update_op = tf.metrics.accuracy(
+        tf.cast(labels, tf.float32), predictions)
+      fetches['loss'] = loss_metric
+      fetches['accuracy'] = accuracy
+      list_update_ops.extend([loss_update_op, acc_update_op])
+
+      if self.params.eval_under_attack:
+
+        images_adv = tf.concat(all_images_adv, 0)
+        logits_adv = tf.concat(all_logits_adv, 0)
+        loss_adv = tf.reduce_mean(all_loss_adv)
+
+        predictions_adv = tf.argmax(
+          logits_adv, axis=1, output_type=tf.int32)
+        loss_adv_metric, loss_adv_update_op = tf.metrics.mean(loss_adv)
+        accuracy_adv, acc_adv_update_op = tf.metrics.accuracy(
+          tf.cast(labels, tf.float32), predications_adv)
+        fetches['loss_adv'] = loss_adv_metric
+        fetches['accuracy_adv'] = accuracy_adv
+        list_update_ops.extend([loss_adv_update_op, acc_adv_update_op])
+
+        perturbation = images_adv - images
+        perturbation = tf.layers.flatten(perturbation)
+        for name, p in [('l1', 1), ('l2', 2), ('linf', np.inf)]:
+          value, update = tf.metrics.mean(
+            tf.norm(perturbation, ord=p, axis=1))
+          fetches['mean_{}'.format(name)] = value
+          list_update_ops.append(update)
+
+    fetches['logits'] = all_logits
+    fetches['loss'] = loss
+    update_ops = tf.group(*list_update_ops)
+    fetches['update_ops'] = update_ops
+    return fetches
+
+  def _run_fetches(self, sess, fetches):
+     batch_start_time = time.time()
+     results = sess.run(fetches)
+     seconds_per_batch = time.time() - batch_start_time
+     examples_per_second = self.batch_size / seconds_per_batch
+     return results, examples_per_second
+
+
+  def eval_attack(self, sess, fetches):
+    """Run the evaluation under attack."""
+    count = 0
+    while True:
+      try:
+        results, examples_per_second = self._run_fetches(sess, fetches)
+        count += self.batch_size
+        if self.params.dump_files:
+          dump.files(results)
+        self.message.add('', [count, self.reader.n_test_files])
+        self.message.add(
+          'acc img/adv',
+          [results['accuracy'], results['accuracy_adv']], format='.5f')
+        self.message.add(
+          'avg loss', [results['loss'], results['loss_adv']], format='.5f')
+        self.message.add('imgs/sec', examples_per_second, format='.3f')
+        norms_mean = [result['mean_l1'], result['mean_l2'], result['mean_linf']]
+        self.message.add('l1/l2/linf mean', norms_mean, format='.2f')
+        logging.info(self.message.get_message())
+      except tf.errors.OutOfRangeError:
+        self.message.add(
+          'Final: images/adv',
+          [results['accuracy'], results['accuracy_adv']], format='.5f')
+        self.message.add(
+          'avg loss', [results['loss'], results['loss_adv']], format='.5f')
+        logging.info(self.message.get_message())
+        logging.info("Done evaluation of adversarial examples.")
+        return results['accuracy'], results['accuracy_adv']
+
+
+  def eval_loop(self, sess, fetches, global_step):
+    """Run the evaluation loop once."""
+    while True:
+      try:
+        results, examples_per_second = self._run_fetches(sess, fetches)
+        # if self.params.dump_files:
+        #   self.dump.files(results)
+        self.message.add('step', global_step)
+        self.message.add('accuracy', results['accuracy'], format='.5f')
+        self.message.add('avg loss', results['loss'], format='.5f')
+        self.message.add('imgs/sec', examples_per_second, format='.0f')
+        logging.info(self.message.get_message())
+      except tf.errors.OutOfRangeError:
+        if self.best_accuracy is None or self.best_accuracy < results['accuracy']:
+          self.best_global_step = global_step
+          self.best_accuracy = results['accuracy']
+        if self.params.summary_verbosity > 0:
+          make_summary("accuracy", results['accuracy'], self.summary_writer, global_step)
+          make_summary("loss", results['loss'], self.summary_writer, global_step)
+          self.summary_writer.flush()
+        self.message.add('step', global_step)
+        self.message.add('accuracy', results['accuracy'], format='.5f')
+        self.message.add('avg loss', results['loss'], format='.5f')
+        logging.info(self.message.get_message())
+        logging.info("Done with batched inference.")
+        return
+
+
 if __name__ == '__main__':
-  evaluate = Evaluate()
+  evaluate = Evaluate(params)
   evaluate.run()
+
