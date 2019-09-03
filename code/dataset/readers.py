@@ -2,30 +2,53 @@ import random
 from os.path import join
 
 import tensorflow as tf
-from tensorflow import gfile
 from tensorflow import logging
-from tensorflow import flags
+from tensorflow.io import gfile
 from tensorflow.python.data.ops import multi_device_iterator_ops
 from tensorflow.contrib.data.python.ops import threadpool
 
-from config import hparams as FLAGS
+
+def normalize_image(image):
+  # rescale between [-1, 1]
+  image = tf.multiply(image, 1. / 127.5)
+  return tf.subtract(image, 1.0)
+
 
 class BaseReader:
 
+  def __init__(self, params, batch_size, gpu_devices, cpu_device,
+               is_training):
+    self.params = params
+    self.gpu_devices = gpu_devices
+    self.cpu_device = cpu_device
+    self.num_splits = len(gpu_devices)
+    self.batch_size = batch_size
+    self.batch_size_per_split = batch_size // self.num_splits
+    self.is_training = is_training
+    self.display_tensorboard = self.params.display_tensorboard
+
+    self.num_threads = self.params.datasets_num_private_threads
+    self.datasets_interleave_cycle_length = \
+        self.params.datasets_interleave_cycle_length
+    self.datasets_interleave_block_length = \
+        self.params.datasets_interleave_block_length
+    self.datasets_use_caching = self.params.datasets_use_caching
+    self.datasets_drop_reminder = self.params.datasets_drop_reminder
+
   def _get_tfrecords(self, name):
-    paths = list(map(lambda x: join(FLAGS.data_dir, name, x),
-                     FLAGS.data_pattern.split(',')))
-    files = gfile.Glob(paths)
+    paths = list(map(lambda x: join(self.params.data_dir, name, x),
+                     self.params.data_pattern.split(',')))
+    files = gfile.glob(paths)
     if not files:
       raise IOError("Unable to find files. data_pattern='{}'.".format(
-        FLAGS.data_pattern))
+        self.params.data_pattern))
     logging.info("Number of TFRecord files: {}.".format(
       len(files)))
     return files
 
   def _maybe_one_hot_encode(self, labels):
     """One hot encode the labels"""
-    if FLAGS.one_hot_labels:
+    if self.params.one_hot_labels:
       labels = tf.one_hot(labels, self.n_classes)
       labels = tf.squeeze(labels)
       return labels
@@ -61,36 +84,28 @@ class BaseReader:
     return features['image'], label
 
   def input_fn(self):
-    config = FLAGS.readers_params
-    self.cache_dataset = config['cache_dataset']
+    config = self.params.readers_params
     self.drop_remainder = config['drop_remainder']
-    # Force all input processing onto CPU in order to reserve the GPU for
-    # the forward inference and back-propagation.
     shuffle = True if self.is_training else False
     sloppy = True if self.is_training else False
     files = tf.constant(self.files, name="tfrecord_files")
     with tf.name_scope('batch_processing'):
       ds = tf.data.TFRecordDataset.list_files(files, shuffle=shuffle)
-      ds = ds.apply(
-        tf.data.experimental.parallel_interleave(
-          tf.data.TFRecordDataset,
-          cycle_length=FLAGS.datasets_parallel_interleave_cycle_length or 10,
-          sloppy=FLAGS.datasets_sloppy_parallel_interleave,
-          prefetch_input_elements=FLAGS.datasets_parallel_interleave_prefetch))
+      ds = ds.interleave(
+        tf.data.TFRecordDataset,
+        cycle_length=self.params.datasets_interleave_cycle_length,
+        block_length=self.params.datasets_interleave_block_length,
+        num_parallel_calls=tf.data.experimental.AUTOTUNE)
       ds = ds.prefetch(buffer_size=self.batch_size)
-      if FLAGS.datasets_use_caching:
+      if self.datasets_use_caching:
         ds = ds.cache()
       if self.is_training:
-        ds = ds.apply(
-          tf.data.experimental.shuffle_and_repeat(buffer_size=10000))
-      else:
-        ds = ds.repeat()
+        ds = ds.shuffle(10000).repeat()
       ds = ds.map(self._parse_and_preprocess,
-              num_parallel_calls=self.num_parallel_calls)
+              num_parallel_calls=tf.data.experimental.AUTOTUNE)
       ds = ds.batch(self.batch_size_per_split,
-            drop_remainder=self.drop_remainder)
+            drop_remainder=self.datasets_drop_reminder)
       ds = ds.prefetch(buffer_size=self.num_splits)
-      logging.info('num_threads {}'.format(self.num_threads))
       if self.num_threads:
         ds = threadpool.override_threadpool(
           ds,
@@ -107,7 +122,10 @@ class BaseReader:
 
 class MNISTReader(BaseReader):
 
-  def __init__(self, batch_size, is_training, *args, **kwargs):
+  def __init__(self, params, batch_size, gpu_devices, cpu_device,
+               is_training):
+    super(MNISTReader, self).__init__(
+      params, batch_size, gpu_devices, cpu_device, is_training)
 
     self.batch_size = batch_size
     self.is_training = is_training
@@ -116,12 +134,6 @@ class MNISTReader(BaseReader):
     self.n_test_files = 10000
     self.n_classes = 10
     self.batch_shape = (None, 32, 32, 1)
-
-    readers_params = FLAGS.readers_params
-    self.num_parallel_calls = readers_params['num_parallel_calls']
-    self.num_parallel_readers = readers_params['num_parallel_readers']
-    self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
-
     self.files = self._get_tfrecords('mnist')
 
   def _image_preprocessing(self, image_buffer):
@@ -137,16 +149,16 @@ class MNISTReader(BaseReader):
     image = tf.pad(image, ((0,0), (2,2), (2,2), (0,0)), mode='constant')
     _, self.height, self.width, _ = image.get_shape().as_list()
     image = tf.reshape(image, (self.height, self.width, 1))
-    if FLAGS.per_image_standardization:
-      image = tf.image.per_image_standardization(image)
-    else:
-      image = (image / 255 - 0.5) * 2
+    image = normalize_image(image)
     return image
 
 
 class FashionMNISTReader(BaseReader):
 
-  def __init__(self, batch_size, is_training, *args, **kwargs):
+  def __init__(self, params, batch_size, gpu_devices, cpu_device,
+               is_training):
+    super(FashionMNISTReader, self).__init__(
+      params, batch_size, gpu_devices, cpu_device, is_training)
 
     self.batch_size = batch_size
     self.is_training = is_training
@@ -155,12 +167,6 @@ class FashionMNISTReader(BaseReader):
     self.n_test_files = 10000
     self.n_classes = 10
     self.batch_shape = (None, 32, 32, 1)
-
-    readers_params = FLAGS.readers_params
-    self.num_parallel_calls = readers_params['num_parallel_calls']
-    self.num_parallel_readers = readers_params['num_parallel_readers']
-    self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
-
     self.files = self._get_tfrecords('fashion_mnist')
 
   def _image_preprocessing(self, image_buffer):
@@ -176,16 +182,16 @@ class FashionMNISTReader(BaseReader):
     image = tf.pad(image, ((0,0), (2,2), (2,2), (0,0)), mode='constant')
     _, self.height, self.width, _ = image.get_shape().as_list()
     image = tf.reshape(image, (self.height, self.width, 1))
-    if FLAGS.per_image_standardization:
-      image = tf.image.per_image_standardization(image)
-    else:
-      image = (image / 255 - 0.5) * 2
+    image = normalize_image(image)
     return image
 
 
-class CIFAR10Reader(BaseReader):
+class CIFARReader(BaseReader):
 
-  def __init__(self, batch_size, is_training, *args, **kwargs):
+  def __init__(self, params, batch_size, gpu_devices, cpu_device,
+               is_training):
+    super(CIFARReader, self).__init__(
+      params, batch_size, gpu_devices, cpu_device, is_training)
 
     self.batch_size = batch_size
     self.is_training = is_training
@@ -194,22 +200,13 @@ class CIFAR10Reader(BaseReader):
     self.n_test_files = 10000
     self.n_classes = 10
     self.batch_shape = (None, 32, 32, 3)
-    self.use_data_augmentation = FLAGS.data_augmentation
-    self.use_gray_scale = FLAGS.grayscale
-
-    # use grey scale
+    self.use_data_augmentation = self.params.data_augmentation
+    self.use_gray_scale = self.params.grayscale
     if self.use_gray_scale:
       self.batch_shape = (None, 32, 32, 1)
 
-    readers_params = FLAGS.readers_params
-    self.num_parallel_calls = readers_params['num_parallel_calls']
-    self.num_parallel_readers = readers_params['num_parallel_readers']
-    self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
-
-    self.files = self._get_tfrecords('cifar10')
-
   def _data_augmentation(self, image):
-    image = tf.image.resize_image_with_crop_or_pad(
+    image = tf.image.resize_with_crop_or_pad(
                         image, self.height+4, self.width+4)
     image = tf.image.random_crop(image, [self.height, self.width, 3])
     image = tf.image.random_flip_left_right(image)
@@ -231,68 +228,27 @@ class CIFAR10Reader(BaseReader):
     image = tf.cast(image, dtype=tf.float32)
     if self.use_data_augmentation and self.is_training:
       image = self._data_augmentation(image)
-    if FLAGS.per_image_standardization:
-      image = tf.image.per_image_standardization(image)
-    elif FLAGS.dataset_standardization:
-      mean = [125.3, 123.0, 113.9]
-      std  = [63.0,  62.1,  66.7]
-      image = (image - mean) / std
-    else:
-      image = (image / 255 - 0.5) * 2
+    image = normalize_image(image)
     return image
 
 
-class CIFAR100Reader(BaseReader):
+class CIFAR10Reader(CIFARReader):
 
-  def __init__(self, batch_size, is_training, *args, **kwargs):
+  def __init__(self, params, batch_size, gpu_devices, cpu_device,
+               is_training):
+    super(CIFAR10Reader, self).__init__(
+      params, batch_size, gpu_devices, cpu_device, is_training)
+    self.files = self._get_tfrecords('cifar10')
 
-    self.batch_size = batch_size
-    self.is_training = is_training
-    self.height, self.width = 32, 32
-    self.n_train_files = 50000
-    self.n_test_files = 10000
-    self.n_classes = 100
-    self.batch_shape = (None, 32, 32, 3)
-    self.use_data_augmentation = FLAGS.data_augmentation
-    self.use_gray_scale = FLAGS.grayscale
 
-    if self.use_gray_scale:
-      self.batch_shape = (None, 32, 32, 1)
+class CIFAR100Reader(CIFARReader):
 
-    readers_params = FLAGS.readers_params
-    self.num_parallel_calls = readers_params['num_parallel_calls']
-    self.num_parallel_readers = readers_params['num_parallel_readers']
-    self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
-
+  def __init__(self, params, batch_size, gpu_devices, cpu_device,
+               is_training):
+    super(CIFAR100Reader, self).__init__(
+      params, batch_size, gpu_devices, cpu_device, is_training)
     self.files = self._get_tfrecords('cifar100')
 
-  def _data_augmentation(self, image):
-    image = tf.image.resize_image_with_crop_or_pad(
-                        image, self.height+4, self.width+4)
-    image = tf.image.random_crop(image, [self.height, self.width, 3])
-    image = tf.image.random_flip_left_right(image)
-    return image
-
-  def _image_preprocessing(self, image_buffer):
-    """Decode and preprocess one image for evaluation or training.
-    Args:
-      image: image as numpy array
-    Returns:
-      3D Tensor containing an appropriately scaled image
-    """
-    # Decode the string as an RGB JPEG.
-    image = tf.decode_raw(image_buffer, tf.uint8)
-    if self.use_gray_scale:
-      image = tf.image.rgb_to_grayscale(image)
-    image = tf.cast(image, dtype=tf.float32)
-    image = tf.reshape(image, (self.height, self.width, 3))
-    if self.use_data_augmentation and self.is_training:
-      image = self._data_augmentation(image)
-    if FLAGS.per_image_standardization:
-      image = tf.image.per_image_standardization(image)
-    else:
-      image = (image / 255 - 0.5) * 2
-    return image
 
 
 class YT8MAggregatedFeatureReader(BaseReader):
@@ -302,7 +258,10 @@ class YT8MAggregatedFeatureReader(BaseReader):
   a fixed length float32 feature, obtained from the features in 'feature_name'.
   The float features are assumed to be an average of dequantized values.
   """
-  def __init__(self, batch_size, is_training, *args, **kwargs):
+  def __init__(self, params, batch_size, gpu_devices, cpu_device,
+               is_training):
+    super(YT8MAggregatedFeatureReader, self).__init__(
+      params, batch_size, gpu_devices, cpu_device, is_training)
 
     self.batch_size = batch_size
     self.is_training = is_training
@@ -311,15 +270,8 @@ class YT8MAggregatedFeatureReader(BaseReader):
     # self.n_test_files = 1133323 # private
     self.n_classes = 3862
     self.batch_shape = (None, 1152)
-
     self.feature_sizes = [1024, 128]
     self.feature_names = ["mean_rgb", "mean_audio"]
-
-    readers_params = FLAGS.readers_params
-    self.num_parallel_calls = readers_params['num_parallel_calls']
-    self.num_parallel_readers = readers_params['num_parallel_readers']
-    self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
-
     self.files = self._get_tfrecords('yt8m/video')
 
   def _image_preprocessing(self, video):
@@ -356,8 +308,10 @@ class YT8MFrameFeatureReader(BaseReader):
   from the features in 'feature_names'. The quantized features will be mapped
   back into a range between min_quantized_value and max_quantized_value.
   """
-
-  def __init__(self, batch_size, is_training, *args, **kwargs):
+  def __init__(self, params, batch_size, gpu_devices, cpu_device,
+               is_training):
+    super(YT8MFrameFeatureReader, self).__init__(
+      params, batch_size, gpu_devices, cpu_device, is_training)
 
     self.batch_size = batch_size
     self.is_training = is_training
@@ -373,11 +327,6 @@ class YT8MFrameFeatureReader(BaseReader):
 
     self.max_quantized_value = 2
     self.min_quantized_value = -2
-
-    readers_params = FLAGS.readers_params
-    self.num_parallel_calls = readers_params['num_parallel_calls']
-    self.num_parallel_readers = readers_params['num_parallel_readers']
-    self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
 
     self.files = self._get_tfrecords('yt8m/frame')
 
@@ -449,21 +398,17 @@ class YT8MFrameFeatureReader(BaseReader):
 
 class IMAGENETReader(BaseReader):
 
-  def __init__(self, batch_size, gpu_devices, cpu_device,
-               is_training, *args, **kwargs):
+  def __init__(self, params, batch_size, gpu_devices, cpu_device,
+               is_training):
+    super(IMAGENETReader, self).__init__(
+      params, batch_size, gpu_devices, cpu_device, is_training)
 
     # Provide square images of this size. 
-    self.image_size = FLAGS.image_size
+    self.image_size = self.params.image_size
 
-    self.gpu_devices = gpu_devices
-    self.cpu_device = cpu_device
-    self.num_splits = len(gpu_devices)
-    self.batch_size = batch_size
-    self.batch_size_per_split = batch_size // self.num_splits
-    self.is_training = is_training
     self.height, self.width = self.image_size, self.image_size
     self.n_train_files = 1281167
-    if FLAGS.readers_params['drop_remainder']:
+    if self.params.readers_params['drop_remainder']:
       # remove reminder from n_train_files
       n_step_by_epoch = self.n_train_files // self.batch_size
       self.n_train_files = n_step_by_epoch * self.batch_size
@@ -471,13 +416,6 @@ class IMAGENETReader(BaseReader):
     self.n_test_files = 50000
     self.n_classes = 1001
     self.batch_shape = (None, self.height, self.height, 1)
-    self.display_tensorboard = FLAGS.display_tensorboard
-
-    readers_params = FLAGS.readers_params
-    self.num_threads = FLAGS.datasets_num_private_threads
-    self.num_parallel_calls = readers_params['num_parallel_calls']
-    self.num_parallel_readers = readers_params['num_parallel_readers']
-    self.prefetch_buffer_size = readers_params['prefetch_buffer_size']
 
     self.files = self._get_tfrecords('imagenet')
 
@@ -723,14 +661,10 @@ class IMAGENETReader(BaseReader):
     """
     # Decode the string as an RGB JPEG.
     image = self._decode_jpeg(image_buffer)
-
     if self.is_training:
       image = self._data_augmentation(image, bbox)
     else:
       image = self._eval(image)
-
-    # Finally, rescale to [-1,1] instead of [0, 1)
-    image = tf.subtract(image, 0.5)
-    image = tf.multiply(image, 2.0)
+    image = normalize_image(image)
     return image
 
