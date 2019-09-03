@@ -23,6 +23,7 @@ import operator
 import tensorflow as tf
 
 # pylint: disable=g-direct-tensorflow-import
+from tensorflow import logging
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import data_flow_ops
 from tensorflow.python.ops import gradients_util

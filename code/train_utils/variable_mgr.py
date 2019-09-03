@@ -22,6 +22,7 @@ import contextlib
 import re
 
 import tensorflow as tf
+from tensorflow import logging
 
 from . import allreduce
 from . import batch_allreduce
@@ -91,8 +92,6 @@ class VariableMgr(object):
   def append_apply_gradients_ops(self, gradient_state, opt, grads, training_ops,
                                  loss_scale_params):
     """Adds training ops for grads to 'training_ops'.
-
-
 
     Args:
       gradient_state: from previous call to apply_gradients_devices.
