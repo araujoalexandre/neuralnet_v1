@@ -1,13 +1,6 @@
 
 import tensorflow as tf
-from tensorflow import flags
 from tensorflow import logging
-from tensorflow import convert_to_tensor as to_tensor
-from tensorflow.python.framework import ops
-from tensorflow.python.ops import math_ops
-from tensorflow.python.ops import control_flow_ops
-from tensorflow.python.ops import state_ops
-from tensorflow.python.training import optimizer
 
 from config import hparams as FLAGS
 
