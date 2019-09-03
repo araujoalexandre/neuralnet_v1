@@ -1,15 +1,121 @@
 
+import os
+import logging as py_logging
+import multiprocessing
+
+import absl.logging
 import numpy as np
 import tensorflow as tf
+from tensorflow import logging
+from tensorflow.core.protobuf import rewriter_config_pb2
 
 
-def make_summary(name, value, summary_writer, global_step_val):
+
+def set_default_param_values_and_env_vars(params):
+  """Sets up the default param values and environment variables ."""
+  if params.batchnorm_persistent:
+    os.environ['TF_USE_CUDNN_BATCHNORM_SPATIAL_PERSISTENT'] = '1'
+  else:
+    os.environ.pop('TF_USE_CUDNN_BATCHNORM_SPATIAL_PERSISTENT', None)
+  if params.winograd_nonfused:
+    os.environ['TF_ENABLE_WINOGRAD_NONFUSED'] = '1'
+  else:
+    os.environ.pop('TF_ENABLE_WINOGRAD_NONFUSED', None)
+  os.environ['TF_SYNC_ON_FINISH'] = str(int(params.sync_on_finish))
+
+  # Sets GPU thread settings
+  if params.device == 'gpu':
+    if params.gpu_thread_mode not in ['global', 'gpu_shared', 'gpu_private']:
+      raise ValueError('Invalid gpu_thread_mode: %s' % params.gpu_thread_mode)
+    os.environ['TF_GPU_THREAD_MODE'] = params.gpu_thread_mode
+
+    if params.per_gpu_thread_count and params.gpu_thread_mode == 'global':
+      raise ValueError(
+          'Invalid per_gpu_thread_count with gpu_thread_mode=global: %s' %
+          params.per_gpu_thread_count)
+    # Default to two threads. One for the device compute and the other for
+    # memory copies.
+    per_gpu_thread_count = params.per_gpu_thread_count or 2
+    total_gpu_thread_count = per_gpu_thread_count * params.num_gpus
+
+    if params.gpu_thread_mode == 'gpu_private':
+      os.environ['TF_GPU_THREAD_COUNT'] = str(per_gpu_thread_count)
+    elif params.gpu_thread_mode == 'gpu_shared':
+      os.environ['TF_GPU_THREAD_COUNT'] = str(total_gpu_thread_count)
+
+    cpu_count = multiprocessing.cpu_count()
+    if not params.num_inter_threads and params.gpu_thread_mode in [
+        'gpu_private', 'gpu_shared'
+    ]:
+      main_thread_count = max(cpu_count - total_gpu_thread_count, 1)
+      params.num_inter_threads = main_thread_count
+
+    # From the total cpu thread count, subtract the total_gpu_thread_count,
+    # and then 2 threads per GPU device for event monitoring and sending /
+    # receiving tensors
+    num_monitoring_threads = 2 * params.num_gpus
+    num_private_threads = max(
+        cpu_count - total_gpu_thread_count - num_monitoring_threads, 1)
+    if params.datasets_num_private_threads == 0:
+      params.datasets_num_private_threads = num_private_threads
+  return params
+
+
+def create_config_proto(params):
+  """Returns session config proto.
+
+  Args:
+    params: Params tuple, typically created by make_params or
+            make_params_from_flags.
+  """
+  config = tf.ConfigProto()
+  config.allow_soft_placement = True
+  config.log_device_placement = params.log_device_placement
+  if params.num_intra_threads is None:
+    if params.num_gpus:
+      config.intra_op_parallelism_threads = 1
+  else:
+    config.intra_op_parallelism_threads = params.num_intra_threads
+  if params.xla:
+    config.graph_options.optimizer_options.global_jit_level = (
+        tf.OptimizerOptions.ON_1)
+  config.inter_op_parallelism_threads = params.num_inter_threads
+  config.experimental.collective_group_leader = '/job:worker/replica:0/task:0'
+  # config.gpu_options.experimental.collective_ring_order = self.params.gpu_indices
+
+  # TODO(b/117324590): Re-enable PinToHostOptimizer when b/117324590 is fixed.
+  # Currently we have to disable PinToHostOptimizer w/ XLA since it causes
+  # OOM/perf cliffs.
+  config.graph_options.rewrite_options.pin_to_host_optimization = (
+      rewriter_config_pb2.RewriterConfig.OFF)
+  return config
+
+
+def setup_logging(verbosity):
+  formatter = py_logging.Formatter(
+    "[%(asctime)s %(filename)s:%(lineno)s] %(message)s",
+    datefmt='%Y-%m-%d %H:%M:%S')
+  absl.logging.get_absl_handler().setFormatter(formatter)
+  log = py_logging.getLogger('tensorflow')
+  level = {'DEBUG': 10, 'ERROR': 40, 'FATAL': 50,
+    'INFO': 20, 'WARN': 30
+  }[verbosity]
+  log.setLevel(level)
+
+
+def find_class_by_name(name, modules):
+  """Searches the provided modules for the named class and returns it."""
+  modules = [getattr(module, name, None) for module in modules]
+  return next(a for a in modules if a)
+
+
+def make_summary(name, value, summary_writer, global_step):
   """Creates a tf.Summary proto with the given name and value."""
   summary = tf.Summary()
   val = summary.value.add()
   val.tag = str(name)
   val.simple_value = float(value)
-  summary_writer.add_summary(summary, global_step_val)
+  summary_writer.add_summary(summary, global_step)
 
 
 def MakeSummary(name, value):
@@ -182,6 +288,13 @@ class MessageBuilder:
     self.msg.append(metric_str)
 
   def get_message(self):
-    return " | ".join(self.msg)
+    message = " | ".join(self.msg)
+    self.clear()
+    return message
+
+  def clear(self):
+    self.msg = []
+
+
 
 
