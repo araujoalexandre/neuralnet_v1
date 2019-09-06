@@ -33,7 +33,6 @@ class BaseReader:
     self.datasets_interleave_block_length = \
         self.params.datasets_interleave_block_length
     self.datasets_use_caching = self.params.datasets_use_caching
-    self.datasets_drop_reminder = self.params.datasets_drop_reminder
 
   def _get_tfrecords(self, name):
     paths = self.params.data_dir.split(':')
@@ -89,8 +88,6 @@ class BaseReader:
     return features['image'], label
 
   def input_fn(self):
-    config = self.params.readers_params
-    self.drop_remainder = config['drop_remainder']
     shuffle = True if self.is_training else False
     sloppy = True if self.is_training else False
     files = tf.constant(self.files, name="tfrecord_files")
@@ -100,16 +97,15 @@ class BaseReader:
         tf.data.TFRecordDataset,
         cycle_length=self.params.datasets_interleave_cycle_length,
         block_length=self.params.datasets_interleave_block_length,
-        num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        num_parallel_calls=5)
       ds = ds.prefetch(buffer_size=self.batch_size)
       if self.datasets_use_caching:
         ds = ds.cache()
       if self.is_training:
         ds = ds.shuffle(10000).repeat()
       ds = ds.map(self._parse_and_preprocess,
-              num_parallel_calls=tf.data.experimental.AUTOTUNE)
-      ds = ds.batch(self.batch_size_per_split,
-            drop_remainder=self.datasets_drop_reminder)
+              num_parallel_calls=10)
+      ds = ds.batch(self.batch_size_per_split)
       ds = ds.prefetch(buffer_size=self.num_splits)
       if self.num_threads:
         ds = threadpool.override_threadpool(
@@ -206,7 +202,7 @@ class CIFARReader(BaseReader):
     self.n_classes = 10
     self.batch_shape = (None, 32, 32, 3)
     self.use_data_augmentation = self.params.data_augmentation
-    self.use_gray_scale = self.params.grayscale
+    self.use_gray_scale = self.params.cifar_grayscale
     if self.use_gray_scale:
       self.batch_shape = (None, 32, 32, 1)
 
@@ -322,7 +318,6 @@ class YT8MFrameFeatureReader(BaseReader):
     self.is_training = is_training
     self.n_train_files = 3888919
     self.n_test_files = 1112356 # public
-    # self.n_test_files = 1133323 # private
     self.n_classes = 3862
     self.batch_shape = (None, 300, 1152)
 
@@ -409,15 +404,10 @@ class IMAGENETReader(BaseReader):
       params, batch_size, gpu_devices, cpu_device, is_training)
 
     # Provide square images of this size. 
-    self.image_size = self.params.image_size
+    self.image_size = self.params.imagenet_image_size
 
     self.height, self.width = self.image_size, self.image_size
     self.n_train_files = 1281167
-    if self.params.readers_params['drop_remainder']:
-      # remove reminder from n_train_files
-      n_step_by_epoch = self.n_train_files // self.batch_size
-      self.n_train_files = n_step_by_epoch * self.batch_size
-
     self.n_test_files = 50000
     self.n_classes = 1001
     self.batch_shape = (None, self.height, self.height, 1)
