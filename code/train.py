@@ -167,6 +167,26 @@ def _get_checkpoint_to_load(ckpt_dir):
   return model_checkpoint_path
 
 
+def get_optimizer(optimizer, params, learning_rate):
+  """Returns the optimizer that should be used based on params."""
+  if optimizer == 'momentum':
+    opt = tf_v1.train.MomentumOptimizer(
+        learning_rate, params['momentum'], use_nesterov=True)
+  elif optimizer == 'sgd':
+    opt = tf_v1.train.GradientDescentOptimizer(learning_rate)
+  elif optimizer == 'rmsprop':
+    opt = tf_v1.train.RMSPropOptimizer(
+        learning_rate,
+        params['decay'],
+        momentum=params['momentum'],
+        epsilon=params['epsilon'])
+  elif optimizer == 'adam':
+    opt = tf_v1.train.AdamOptimizer(learning_rate, params['beta1'],
+                                 params['beta2'], params['epsilon'])
+  else:
+    raise ValueError('Optimizer "{}" was not recognized'.
+                     format(params.optimizer))
+  return opt
 
 
 class Trainer:
@@ -582,7 +602,8 @@ class Trainer:
           clipped_grads = avg_grads
 
         learning_rate = tf.identity(learning_rate, name='learning_rate_tensor')
-        self.opt = Optimizer(learning_rate).get_optimizer()
+        self.opt = get_optimizer(self.params.optimizer,
+          self.params.optimizer_params, learning_rate)
         # TODO: remove loss_scame params
         loss_scale_params = variable_mgr_util.AutoLossScaleParams(
             enable_auto_loss_scale=self.enable_auto_loss_scale,
