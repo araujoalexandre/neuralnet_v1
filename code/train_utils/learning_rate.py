@@ -1,15 +1,13 @@
 
 import tensorflow as tf
-from tensorflow import flags
+import tensorflow.compat.v1 as tf_v1
 from tensorflow import logging
 from tensorflow.python.eager import context
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import math_ops
 
-from config import hparams as FLAGS
 
-
-def _cyclic_learning_rate(global_step,
+def cyclic_learning_rate(global_step,
                          learning_rate=0.01,
                          max_lr=0.1,
                          step_size=20.,
@@ -132,48 +130,63 @@ def _cyclic_learning_rate(global_step,
     return cyclic_lr
 
 
-class LearningRate:
 
-  def __init__(self, global_step, batch_size):
-    self.global_step = global_step
-    self.batch_size = batch_size
+def get_learning_rate(params, global_step, num_examples_per_epoch, model,
+                      batch_size):
+  """Returns a learning rate tensor based on global_step.
 
-  def piecewise_constant(self):
-    config = FLAGS.piecewise_constant
-    boundaries = config['boundaries']
-    values = config['values']
-    assert (len(boundaries) + 1) == len(values)
-    learning_rate = tf.train.piecewise_constant(
-      self.global_step,
-      boundaries=boundaries,
-      values=values)
-    return learning_rate
+  Args:
+    params: Params tuple, typically created by make_params or
+      make_params_from_flags.
+    global_step: Scalar tensor representing the global step.
+    num_examples_per_epoch: The number of examples per epoch.
+    model: The model.Model object to obtain the default learning rate from if no
+      learning rate is specified.
+    batch_size: Number of examples per step
 
-  def exponential_decay(self):
-    config = FLAGS.exponential_decay
-    learning_rate = tf.train.exponential_decay(
-        config['base_lr'],
-        self.global_step * self.batch_size,
-        config['lr_decay_examples'],
-        config['lr_decay'],
-        staircase=True)
-    return learning_rate
+  Returns:
+    A scalar float tensor, representing the learning rate. When evaluated, the
+    learning rate depends on the current value of global_step.
 
-  def cyclic_learning_rate(self):
-    config = FLAGS.cyclic_lr
-    learning_rate = _cyclic_learning_rate(
-        self.global_step,
-        learning_rate=config['min_lr'],
-        max_lr=config['max_lr'],
-        step_size=config['step_size_lr'],
-        gamma=config['gamma'],
-        mode=config['mode_cyclic_lr'])
-    return learning_rate
+  Raises:
+    ValueError: Invalid or unsupported params.
+  """
+  lr_strategy = params.lr_strategy
+  lr_params = params.lr_params
 
-  def get_learning_rate(self):
-    strategy = FLAGS.lr_strategy
-    logging.info("Using '{}' strategy for learning rate".format(strategy))
-    learning_rate = getattr(self, strategy)()
-    tf.add_to_collection('learning_rate', learning_rate)
-    tf.summary.scalar('learning_rate', learning_rate)
-    return learning_rate
+  with tf.name_scope('learning_rate'):
+    if lr_strategy == "default":
+      # get learning rate from model class
+      num_batches_per_epoch = num_examples_per_epoch / batch_size
+      learning_rate = model.get_learning_rate(global_step, batch_size)
+    elif lr_strategy == 'piecewise_constant':
+      boundaries = lr_params['boundaries']
+      values = lr_params['values']
+      assert (len(boundaries) + 1) == len(values)
+      learning_rate = tf_v1.train.piecewise_constant(
+        global_step,
+        boundaries=boundaries,
+        values=values)
+    elif params.lr_strategy == 'exponential_decay':
+      learning_rate = tf.train.exponential_decay(
+          lr_params['base_lr'],
+          self.global_step * self.batch_size,
+          lr_params['lr_decay_examples'],
+          lr_params['lr_decay'],
+          staircase=True)
+    elif params.lr_strategy == 'cyclic_lr':
+      learning_rate = cyclic_learning_rate(
+          global_step,
+          learning_rate=lr_params['min_lr'],
+          max_lr=lr_params['max_lr'],
+          step_size=lr_params['step_size_lr'],
+          gamma=lr_params['gamma'],
+          mode=lr_params['mode_cyclic_lr'])
+    else:
+      raise ValueError("Learning Rate stategy not recognized")
+  logging.info("Using '{}' strategy for learning rate".format(lr_strategy))
+  tf_v1.summary.scalar('learning_rate', learning_rate)
+  return learning_rate
+
+
+
