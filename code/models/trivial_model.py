@@ -13,8 +13,10 @@
 # limitations under the License.
 # ==============================================================================
 """Trivial model configuration."""
-
+import numpy as np
 import tensorflow as tf
+from tensorflow.compat.v1 import logging
+
 from models import model
 
 
@@ -23,35 +25,13 @@ class TrivialModel(model.CNNModel):
 
   def __init__(self, params=None):
     super(TrivialModel, self).__init__(
-        'trivial', 224 + 3, 32, 0.005, params=params)
+        'trivial', params=params)
 
   def add_inference(self, cnn):
-    cnn.reshape([-1, 227 * 227 * 3])
-    cnn.affine(1000)
+    cnn.flatten()
+    cnn.affine(32*32)
+    cnn.affine(32*32)
 
-
-class TrivialMnistModel(model.CNNModel):
-  """Trivial mnist model configuration."""
-
-  def __init__(self, params=None):
-    super(TrivialMnistModel, self).__init__(
-      'trivial', 32, 32, 0.01, params=params)
-
-  def add_inference(self, cnn):
-    cnn.reshape([-1, 32 * 32])
-    cnn.affine(1000)
-
-
-class TrivialCifar10Model(model.CNNModel):
-  """Trivial cifar10 model configuration."""
-
-  def __init__(self, params=None):
-    super(TrivialCifar10Model, self).__init__(
-        'trivial', 32, 32, 0.005, params=params)
-
-  def add_inference(self, cnn):
-    cnn.reshape([-1, 32 * 32 * 3])
-    cnn.affine(1000)
 
 
 class TrivialSSD300Model(model.CNNModel):
@@ -59,11 +39,10 @@ class TrivialSSD300Model(model.CNNModel):
 
   def __init__(self, params=None):
     super(TrivialSSD300Model, self).__init__(
-        'trivial', 300, params.batch_size, 0.005, params=params)
+        'trivial', params=params)
 
   def add_inference(self, cnn):
     cnn.reshape([-1, 300 * 300 * 3])
-    cnn.affine(1)
     cnn.affine(4096)
 
   def get_input_shapes(self, subset):

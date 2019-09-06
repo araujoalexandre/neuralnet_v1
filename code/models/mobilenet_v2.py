@@ -190,7 +190,7 @@ class MobilenetModel(model.CNNModel):
 
   def __init__(self, params=None):
     super(MobilenetModel, self).__init__(
-        'mobilenet', 224, 32, 0.005, params=params)
+        'mobilenet', params=params)
 
   def add_inference(self, cnn):
     with tf.contrib.slim.arg_scope(training_scope(is_training=cnn.phase_train)):

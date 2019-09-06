@@ -43,8 +43,7 @@ class SSD300Model(model_lib.CNNModel):
 
   def __init__(self, label_num=ssd_constants.NUM_CLASSES, batch_size=32,
                learning_rate=1e-3, backbone='resnet34', params=None):
-    super(SSD300Model, self).__init__('ssd300', 300, batch_size, learning_rate,
-                                      params=params)
+    super(SSD300Model, self).__init__('ssd300', params=params)
     # For COCO dataset, 80 categories + 1 background = 81 labels
     self.label_num = label_num
 

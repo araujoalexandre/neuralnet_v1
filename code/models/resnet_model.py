@@ -271,9 +271,9 @@ class ResnetModel(model_lib.CNNModel):
     base_lr = 0.128
     if params and params.resnet_base_lr:
       base_lr = params.resnet_base_lr
-
-    super(ResnetModel, self).__init__(model, 224, batch_size, base_lr,
-                                      layer_counts, params=params)
+    self.layer_counts = layer_counts
+    assert params.imagenet_image_size == 224
+    super(ResnetModel, self).__init__(model, params=params)
     if 'v2' in model:
       self.version = 'v2'
     elif 'v1.5' in model:
@@ -285,8 +285,6 @@ class ResnetModel(model_lib.CNNModel):
     if self.layer_counts is None:
       raise ValueError('Layer counts not specified for %s' % self.get_model())
     # Drop batch size from shape logging.
-    mlperf.logger.log(key=mlperf.tags.MODEL_HP_INITIAL_SHAPE,
-                      value=cnn.top_layer.shape.as_list()[1:])
     cnn.use_batch_norm = True
     cnn.batch_norm_config = {'decay': 0.9, 'epsilon': 1e-5, 'scale': True}
     cnn.conv(64, 7, 7, 2, 2, mode='SAME_RESNET', use_batch_norm=True)
@@ -384,8 +382,9 @@ class ResnetCifar10Model(model_lib.CNNModel):
       self.version = 'v2'
     else:
       self.version = 'v1'
+    self.layer_counts = layer_counts
     super(ResnetCifar10Model, self).__init__(
-        model, 32, 128, 0.1, layer_counts, params=params)
+        model, params=params)
 
   def add_inference(self, cnn):
     if self.layer_counts is None:

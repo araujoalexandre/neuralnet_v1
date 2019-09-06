@@ -5,7 +5,8 @@ import contextlib
 import numpy as np
 
 import tensorflow as tf
-from tensorflow import logging
+import tensorflow.compat.v1 as tf_v1
+from tensorflow.compat.v1 import logging
 from tensorflow.python.layers import convolutional as conv_layers
 from tensorflow.python.layers import core as core_layers
 from tensorflow.python.layers import pooling as pooling_layers
@@ -18,6 +19,7 @@ class ConvNetBuilder(object):
   def __init__(self,
                input_op,
                input_nchan,
+               nclass,
                phase_train,
                use_tf_layers,
                data_format='NCHW',
@@ -25,6 +27,7 @@ class ConvNetBuilder(object):
                variable_dtype=tf.float32):
     self.top_layer = input_op
     self.top_size = input_nchan
+    self.nclass = nclass
     self.phase_train = phase_train
     self.use_tf_layers = use_tf_layers
 
@@ -192,7 +195,7 @@ class ConvNetBuilder(object):
                                      initializer=tf.constant_initializer(bias))
           biased = tf.reshape(
               tf.nn.bias_add(conv, biases, data_format=self.data_format),
-              conv.get_shape())
+              tf.shape(conv))
         else:
           biased = conv
       else:
@@ -278,6 +281,13 @@ class ConvNetBuilder(object):
     self.top_size = shape[-1]  # HACK This may not always work
     return self.top_layer
 
+  def flatten(self, input_layer=None):
+    if input_layer is None:
+      input_layer = self.top_layer
+    self.top_layer = tf.layers.flatten(input_layer)
+    self.top_size = self.top_layer.get_shape().as_list()[-1]
+    return self.top_layer
+
   def affine(self,
              num_out_channels,
              input_layer=None,
@@ -301,7 +311,7 @@ class ConvNetBuilder(object):
       biases = self.get_variable('biases', [num_out_channels],
                                  self.variable_dtype, self.dtype,
                                  initializer=tf.constant_initializer(bias))
-      logits = tf.nn.xw_plus_b(input_layer, kernel, biases)
+      logits = tf_v1.nn.xw_plus_b(input_layer, kernel, biases)
       if activation == 'relu':
         affine1 = tf.nn.relu(logits, name=name)
       elif activation == 'linear' or activation is None:
@@ -454,3 +464,68 @@ class ConvNetBuilder(object):
     self.top_layer = tf.nn.lrn(
         self.top_layer, depth_radius, bias, alpha, beta, name=name)
     return self.top_layer
+
+  def diagonal_circulant(self,
+                         input_layer=None,
+                         num_channels_out=None,
+                         kernel_initializer=None,
+                         diag_initializer=None,
+                         bias_initializer=None,
+                         use_diag=True,
+                         use_bias=True,
+                         alpha=np.sqrt(2),
+                         activation='leaky_relu',
+                         activation_slope=0.1,
+                         **kwargs):
+
+    if input_layer is None:
+      input_layer = self.top_layer
+    num_channels_in = self.top_size
+    if num_channels_out is None:
+      num_channels_out = num_channels_in
+    name = 'diagonal_circulant' + str(self.counts['diagonal_circulant'])
+    self.counts['diagonal_circulant'] += 1
+    with tf.variable_scope(name):
+      kernel_initializer = tf.random_normal_initializer(
+        stddev=alpha/np.sqrt(num_channels_out))
+      kernel = tf.get_variable(name='kernel', shape=num_channels_in,
+        initializer=kernel_initializer)
+      x = self.top_layer
+      x = tf.check_numerics(x, 'nan in start')
+      # x = tf.cast(self.top_layer, tf.complex64)
+      # pad the input
+      if num_channels_out > num_channels_in:
+        padding_size = np.abs(num_channels_out - num_channels_in)
+        x = tf.pad(x, ((0, 0), (padding_size, 0)))
+      x_fft = tf.signal.rfft(x)
+      # x_fft = tf.check_numerics(tf.cast(x_fft, tf.float32), 'nan in x_fft')
+      k_fft = tf.signal.rfft(kernel)
+      # k_fft = tf.check_numerics(tf.cast(k_fft, tf.float32), 'nan in k_fft')
+      x = tf.multiply(x_fft, k_fft)
+      # x = tf.check_numerics(tf.cast(x, tf.float32), 'nan in multiply')
+      x = tf.signal.irfft(x)
+      x = tf.check_numerics(x, 'nan in irfft')
+      x = x[..., :num_channels_out]
+      if use_diag:
+        diag_initializer = np.float32(
+          np.random.choice([-1, 1], size=[num_channels_out]))
+        diag = tf.get_variable(name='diag', initializer=diag_initializer)
+        x = tf.multiply(x, diag)
+      if use_bias:
+        bias_initializer = tf.constant_initializer(0.1)
+        bias = tf.get_variable(name="bias", shape=[num_channels_out],
+          initializer=bias_initializer)
+        x = x + bias
+      if activation == 'leaky_relu':
+        x = tf.nn.leaky_relu(x, alpha=activation_slope, name=name)
+      elif activation == 'relu':
+        x = tf.nn.relu(x, name=name)
+      elif activation == 'linear' or activation is None:
+        pass
+      else:
+        raise KeyError('Invalid activation type \'%s\'' % activation)
+      self.top_layer = x
+      self.top_size = num_channels_out
+    return x
+
+

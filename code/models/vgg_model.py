@@ -23,30 +23,25 @@ References:
      arXiv:1409.1556 (2014)
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
-from six.moves import xrange  # pylint: disable=redefined-builtin
 from models import model
 
 
 def _construct_vgg(cnn, num_conv_layers):
   """Build vgg architecture from blocks."""
   assert len(num_conv_layers) == 5
-  for _ in xrange(num_conv_layers[0]):
+  for _ in range(num_conv_layers[0]):
     cnn.conv(64, 3, 3)
   cnn.mpool(2, 2)
-  for _ in xrange(num_conv_layers[1]):
+  for _ in range(num_conv_layers[1]):
     cnn.conv(128, 3, 3)
   cnn.mpool(2, 2)
-  for _ in xrange(num_conv_layers[2]):
+  for _ in range(num_conv_layers[2]):
     cnn.conv(256, 3, 3)
   cnn.mpool(2, 2)
-  for _ in xrange(num_conv_layers[3]):
+  for _ in range(num_conv_layers[3]):
     cnn.conv(512, 3, 3)
   cnn.mpool(2, 2)
-  for _ in xrange(num_conv_layers[4]):
+  for _ in range(num_conv_layers[4]):
     cnn.conv(512, 3, 3)
   cnn.mpool(2, 2)
   cnn.reshape([-1, 512 * 7 * 7])
@@ -59,7 +54,8 @@ def _construct_vgg(cnn, num_conv_layers):
 class Vgg11Model(model.CNNModel):
 
   def __init__(self, params=None):
-    super(Vgg11Model, self).__init__('vgg11', 224, 64, 0.005, params=params)
+    assert params.imagenet_image_size == 224
+    super(Vgg11Model, self).__init__('vgg11', params=params)
 
   def add_inference(self, cnn):
     _construct_vgg(cnn, [1, 1, 2, 2, 2])
@@ -68,7 +64,8 @@ class Vgg11Model(model.CNNModel):
 class Vgg16Model(model.CNNModel):
 
   def __init__(self, params=None):
-    super(Vgg16Model, self).__init__('vgg16', 224, 64, 0.005, params=params)
+    assert params.imagenet_image_size == 224
+    super(Vgg16Model, self).__init__('vgg16', params=params)
 
   def add_inference(self, cnn):
     _construct_vgg(cnn, [2, 2, 3, 3, 3])
@@ -77,7 +74,8 @@ class Vgg16Model(model.CNNModel):
 class Vgg19Model(model.CNNModel):
 
   def __init__(self, params=None):
-    super(Vgg19Model, self).__init__('vgg19', 224, 64, 0.005, params=params)
+    assert params.imagenet_image_size == 224
+    super(Vgg19Model, self).__init__('vgg19', params=params)
 
   def add_inference(self, cnn):
     _construct_vgg(cnn, [2, 2, 4, 4, 4])

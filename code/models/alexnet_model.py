@@ -32,8 +32,9 @@ class AlexnetModel(model.CNNModel):
   """Alexnet cnn model."""
 
   def __init__(self, params=None):
+    assert params.imagenet_image_size == 227
     super(AlexnetModel, self).__init__(
-        'alexnet', 224 + 3, 512, 0.005, params=params)
+        'alexnet', params=params)
 
   def add_inference(self, cnn):
     # Note: VALID requires padding the images by 3 in width and height
@@ -64,7 +65,7 @@ class AlexnetCifar10Model(model.CNNModel):
 
   def __init__(self, params=None):
     super(AlexnetCifar10Model, self).__init__(
-        'alexnet', 32, 128, 0.1, params=params)
+        'alexnet', params=params)
 
   def add_inference(self, cnn):
     cnn.conv(64, 5, 5, 1, 1, 'SAME', stddev=5e-2)

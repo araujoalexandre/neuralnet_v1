@@ -16,11 +16,9 @@
 
 Paper: https://arxiv.org/abs/1707.07012
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 
 import tensorflow as tf
+from tensorflow.compat.v1 import logging
 
 from models import model
 from models import nasnet_utils
@@ -536,7 +534,8 @@ class NasnetModel(model.CNNModel):
   """Nasnet model configuration."""
 
   def __init__(self, params=None):
-    super(NasnetModel, self).__init__('nasnet', 224, 32, 0.005, params=params)
+    super(NasnetModel, self).__init__(
+      'nasnet', params=params)
 
   def add_inference(self, cnn):
     tf.logging.info('input_image_shape: {}'.format(cnn.top_layer.shape))
@@ -552,10 +551,10 @@ class NasnetLargeModel(model.CNNModel):
 
   def __init__(self, params=None):
     super(NasnetLargeModel, self).__init__(
-        'nasnet', 331, 16, 0.005, params=params)
+        'nasnet', params=params)
 
   def add_inference(self, cnn):
-    tf.logging.info('input_image_shape: {}'.format(cnn.top_layer.shape))
+    logging.info('input_image_shape: {}'.format(cnn.top_layer.shape))
     cnn.top_layer, _ = build_nasnet_large(
         images=cnn.top_layer,
         is_training=cnn.phase_train,
@@ -568,10 +567,10 @@ class NasnetCifarModel(model.CNNModel):
 
   def __init__(self, params=None):
     super(NasnetCifarModel, self).__init__(
-        'nasnet', 32, 32, 0.025, params=params)
+        'nasnet', params=params)
 
   def add_inference(self, cnn):
-    tf.logging.info('input_image_shape: {}'.format(cnn.top_layer.shape))
+    logging.info('input_image_shape: {}'.format(cnn.top_layer.shape))
     cnn.top_layer, _ = build_nasnet_cifar(
         images=cnn.top_layer,
         is_training=cnn.phase_train,

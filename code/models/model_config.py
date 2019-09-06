@@ -31,6 +31,11 @@ from models import resnet_model
 from models import ssd_model
 from models import trivial_model
 from models import vgg_model
+from models import wide_resnet_model
+from models import circulant_model
+from models import distillation_model
+from models import scattering_model
+
 from models.experimental import deepspeech
 from models.experimental import official_ncf_model
 
@@ -85,6 +90,8 @@ _model_name_to_imagenet_model = {
 
 
 _model_name_to_cifar_model = {
+    'trivial': trivial_model.TrivialModel,
+    'lenet': lenet_model.Lenet5Model,
     'alexnet': alexnet_model.AlexnetCifar10Model,
     'resnet20': resnet_model.create_resnet20_cifar_model,
     'resnet20_v2': resnet_model.create_resnet20_v2_cifar_model,
@@ -96,25 +103,32 @@ _model_name_to_cifar_model = {
     'resnet56_v2': resnet_model.create_resnet56_v2_cifar_model,
     'resnet110': resnet_model.create_resnet110_cifar_model,
     'resnet110_v2': resnet_model.create_resnet110_v2_cifar_model,
-    'trivial': trivial_model.TrivialCifar10Model,
+    'wide_resnet': wide_resnet_model.WideResnetModel,
+    'diagonal_circulant': circulant_model.DiagonalCirculantModel,
     'densenet40_k12': densenet_model.create_densenet40_k12_model,
     'densenet100_k12': densenet_model.create_densenet100_k12_model,
     'densenet100_k24': densenet_model.create_densenet100_k24_model,
     'nasnet': nasnet_model.NasnetCifarModel,
+    'distillation_resnet56_v2_circulant':
+      distillation_model.create_distillation_resnet56_v2_circulant,
+    'scattering_circulant': scattering_model.ScatteringHybridCirculantModel,
+    'scattering_dense': scattering_model.ScatteringHybridDenseModel
 }
 
 _model_name_to_object_detection_model = {
-    'ssd300': ssd_model.SSD300Model,
     'trivial': trivial_model.TrivialSSD300Model,
+    'ssd300': ssd_model.SSD300Model,
 }
 
 _model_name_to_mnist_model = {
-  'trivial': trivial_model.TrivialMnistModel,
+  'trivial': trivial_model.TrivialModel,
+  'lenet': lenet_model.Lenet5Model,
+  'diagonal_circulant': circulant_model.DiagonalCirculantModel
 }
 
 def _get_model_map(dataset_name):
   """Get name to model map for specified dataset."""
-  if dataset_name == 'cifar10':
+  if dataset_name in ('cifar10', 'cifar100'):
     return _model_name_to_cifar_model
   elif dataset_name == 'mnist':
     return _model_name_to_mnist_model

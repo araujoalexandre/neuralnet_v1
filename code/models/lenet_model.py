@@ -21,10 +21,6 @@ References:
   Proceedings of the IEEE (1998)
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from models import model
 
 
@@ -32,7 +28,9 @@ class Lenet5Model(model.CNNModel):
   """Lenet5."""
 
   def __init__(self, params=None):
-    super(Lenet5Model, self).__init__('lenet5', 28, 32, 0.005, params=params)
+    if params.dataset == 'imagenet':
+      assert params.imagenet_image_size == 28
+    super(Lenet5Model, self).__init__('lenet5', params=params)
 
   def add_inference(self, cnn):
     # Note: This matches TF's MNIST tutorial model
@@ -40,5 +38,7 @@ class Lenet5Model(model.CNNModel):
     cnn.mpool(2, 2)
     cnn.conv(64, 5, 5)
     cnn.mpool(2, 2)
-    cnn.reshape([-1, 64 * 7 * 7])
+    cnn.flatten()
     cnn.affine(512)
+
+

@@ -21,10 +21,6 @@ References:
   arXiv preprint arXiv:1409.4842 (2014)
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from models import model
 
 
@@ -32,8 +28,9 @@ class GooglenetModel(model.CNNModel):
   """GoogLeNet."""
 
   def __init__(self, params=None):
+    assert params.imagenet_image_size == 224
     super(GooglenetModel, self).__init__(
-        'googlenet', 224, 32, 0.005, params=params)
+        'googlenet', params=params)
 
   def add_inference(self, cnn):
 
