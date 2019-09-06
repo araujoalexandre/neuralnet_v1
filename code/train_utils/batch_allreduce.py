@@ -238,108 +238,6 @@ class CopyToDeviceAlgorithm(BatchAllReduceAlgorithm):
     return [reduced_tensors] * len(all_device_tensors)
 
 
-# class HierarchicalCopyAlgorithm(BatchAllReduceAlgorithm):
-#   """An algorithm that uses hierarchical copies. This is only optimized for
-#   eight devices connected in NetworkTopology.DGX1 or NetworkTopology.GCP_V100
-#   topology.
-#   """
-# 
-#   def __init__(self, network_topology):
-#     """Initializer for HierarchicalCopyAlgorithm.
-# 
-#     Args:
-#       network_topology: An instance of Enum class constants.NetworkTopology.
-#     """
-#     self._network_topology = network_topology
-# 
-#   def _do_batch_all_reduce(self, all_device_tensors):
-#     avail_devices = [device_tensors[0].device
-#                      for device_tensors in all_device_tensors]
-#     reduced_tensors = []
-#     num_devices = len(avail_devices)
-#     group_size = num_devices // 2
-#     for i, tensors_across_devices in enumerate(zip(*all_device_tensors)):
-#       group_0_main_device, group_1_main_device = self.__get_main_devices(
-#           i, num_devices)
-#       if group_0_main_device < group_size:
-#         group_0_begin = 0
-#         group_1_begin = group_size
-#       else:
-#         group_0_begin = group_size
-#         group_1_begin = 0
-# 
-#       # Reduce the first group.
-#       group_0_tensors = tensors_across_devices[group_0_begin:
-#                                                group_0_begin + group_size]
-#       with tf.device(avail_devices[group_0_main_device]):
-#         group_0_reduced_tensor = _all_reduce_using_copy(group_0_tensors, False)
-# 
-#       # Reduce the second group.
-#       group_1_tensors = tensors_across_devices[group_1_begin:
-#                                                group_1_begin + group_size]
-#       with tf.device(avail_devices[group_1_main_device]):
-#         group_1_reduced_tensor = _all_reduce_using_copy(group_1_tensors, False)
-# 
-#       # Reduce between the groups.
-#       with tf.device(avail_devices[group_0_main_device]):
-#         total_reduced_tensor = _all_reduce_using_copy(
-#             [group_0_reduced_tensor, group_1_reduced_tensor], False)
-# 
-#       # Broadcast the result back into the root of each group.
-#       with tf.device(avail_devices[group_0_main_device]):
-#         group_0_reduced_tensor_bcast = tf.identity(total_reduced_tensor)
-#       with tf.device(avail_devices[group_1_main_device]):
-#         group_1_reduced_tensor_bcast = tf.identity(total_reduced_tensor)
-# 
-#       reduced_tensors_bcast = []
-#       for j in range(len(tensors_across_devices)):
-#         with tf.device(avail_devices[j]):
-#           # Broadcast the result back to each member in the group from the root.
-#           if (group_0_main_device < group_size) == (j < group_size):
-#             src_device_tensor = group_0_reduced_tensor_bcast
-#           else:
-#             src_device_tensor = group_1_reduced_tensor_bcast
-#           reduced_tensors_bcast.append(tf.identity(src_device_tensor))
-# 
-#       reduced_tensors.append(reduced_tensors_bcast)
-# 
-#     reduced_tensors = list(zip(*reduced_tensors))
-#     return reduced_tensors
-# 
-#   def __get_main_devices(self, tensor_index, num_devices):
-#     """Returns the pair of main devices to use for initial reduction.
-# 
-#     Args:
-#       tensor_index: Index of the current tensor in the list of tensors to copy.
-#       num_devices: Total number of devices.
-# 
-#     Returns:
-#       A tuple containing pair of main device indices for the initial
-#       reduction. Then, the first element of the tuple should be used for the
-#       final reduction.
-# 
-#     Raises:
-#       ValueError: Invalid input arguments.
-#     """
-#     if self._network_topology == constants.NetworkTopology.DGX1:
-#       return tensor_index % num_devices, (tensor_index +
-#                                           (num_devices // 2)) % num_devices
-#     elif self._network_topology == constants.NetworkTopology.GCP_V100:
-#       if num_devices != 8:
-#         raise ValueError('HierarchicalCopy only supports eight devices in %s.' %
-#                          self._network_topology)
-#       # TODO(hinsu): Generalize main device indices to handle any other
-#       # isomorphic connection graph that connects two cliques using connections
-#       # other than 0-5 and 2-7.
-#       main_device_pairs = [(0, 5), (2, 7), (5, 0), (7, 2)]
-#       return main_device_pairs[tensor_index % len(main_device_pairs)]
-#     else:
-#       # TODO(reedwm): make this logic more general for arbitrary topology.
-#       raise ValueError(
-#           'HierarchicalCopy is not supported for %s network topology.' %
-#           self._network_topology)
-
-
 class AllReduceSpecAlgorithm(BatchAllReduceAlgorithm):
   """An algorithm that uses an all reduce spec."""
 
@@ -385,8 +283,6 @@ def algorithm_from_params(params):
     return AllReduceSpecAlgorithm(params.all_reduce_spec, gpu_indices,
                                   params.agg_small_grads_max_bytes,
                                   params.agg_small_grads_max_group)
-  elif params.hierarchical_copy:
-    return HierarchicalCopyAlgorithm(params.network_topology)
   else:
     if params.local_parameter_device == 'gpu':
       devices_to_reduce_on = ['/gpu:%d' % i for i in range(params.num_gpus)]
