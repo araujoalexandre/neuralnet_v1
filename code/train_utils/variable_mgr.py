@@ -52,10 +52,6 @@ class VariableMgr(object):
     """Returns True if each GPU tower of the model has separate variables."""
     assert False, 'Must be implemented in subclass'
 
-  def supports_staged_vars(self):
-    """Whether staged variable management is supported."""
-    return False
-
   def create_outer_variable_scope(self, device_num):
     """Create the tf.variable_scope around all model graph operations."""
     del device_num  # unused by this implementation
@@ -248,37 +244,6 @@ class VariableMgrLocalFetchFromPS(VariableMgr):
               ps_tasks=1) for d in raw_devices
       ]
 
-
-class VariableMgrLocalFetchFromStagedPS(VariableMgrLocalFetchFromPS):
-  """Implements fetching a local variable through staging buffers.
-  """
-
-  def __init__(self, benchmark_cnn):
-    super(VariableMgrLocalFetchFromStagedPS, self).__init__(benchmark_cnn)
-    # A data structure to track where the variables are used on each device.
-    # Indexed by device_num and var_name, each entry stores the "put" and "get"
-    # ops used for that variable on that device:
-    #   staging_vars_on_devices[device_num][var_name] == (put_op, get_op)
-    self.staging_vars_on_devices = [
-        dict() for _ in self.benchmark_cnn.raw_devices
-    ]
-
-  def supports_staged_vars(self):
-    return True
-
-  def create_outer_variable_scope(self, device_num):
-    self._custom_getter = variable_mgr_util.StagedVariableGetter(
-        device_num, self.benchmark_cnn.raw_devices, None, self)
-    return tf.variable_scope(
-        'v', reuse=bool(device_num) or self._reuse_vars,
-        custom_getter=self._custom_getter, use_resource=self.use_resource_vars)
-
-  def trainable_variables_on_device(self,
-                                    rel_device_num,
-                                    abs_device_num,
-                                    writable=False):
-    return self._custom_getter.trainable_variables_on_device(
-        rel_device_num, abs_device_num, writable=writable)
 
 
 class VariableMgrLocalReplicated(VariableMgr):
@@ -675,36 +640,6 @@ class VariableMgrDistributedFetchFromPS(VariableMgr):
             cluster=self.benchmark_cnn.cluster_manager.get_cluster_spec(),
             ps_strategy=ps_strategy) for d in self.benchmark_cnn.raw_devices
     ]
-
-
-class VariableMgrDistributedFetchFromStagedPS(
-    VariableMgrDistributedFetchFromPS):
-  """Extends VariableMgrDistributedFetchFromPS for --staged_vars."""
-
-  def __init__(self, benchmark_cnn):
-    super(VariableMgrDistributedFetchFromStagedPS, self).__init__(benchmark_cnn)
-    self.staging_vars_on_devices = [
-        dict() for _ in self.benchmark_cnn.raw_devices
-    ]
-    self.staged_vars_on_cpu = {}
-
-  def create_outer_variable_scope(self, device_num):
-    self._custom_getter = variable_mgr_util.StagedVariableGetter(
-        device_num, self.benchmark_cnn.raw_devices,
-        self.benchmark_cnn.cpu_device, self)
-    return tf.variable_scope(
-        'v', reuse=bool(device_num) or self._reuse_vars,
-        custom_getter=self._custom_getter, use_resource=self.use_resource_vars)
-
-  def supports_staged_vars(self):
-    return True
-
-  def trainable_variables_on_device(self,
-                                    rel_device_num,
-                                    abs_device_num,
-                                    writable=False):
-    return self._custom_getter.trainable_variables_on_device(
-        rel_device_num, abs_device_num, writable=writable)
 
 
 class VariableMgrDistributedReplicated(VariableMgr):
