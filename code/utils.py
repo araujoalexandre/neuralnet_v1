@@ -103,12 +103,6 @@ def setup_logging(verbosity):
   log.setLevel(level)
 
 
-def find_class_by_name(name, modules):
-  """Searches the provided modules for the named class and returns it."""
-  modules = [getattr(module, name, None) for module in modules]
-  return next(a for a in modules if a)
-
-
 def make_summary(name, value, summary_writer, global_step):
   """Creates a tf.Summary proto with the given name and value."""
   summary = tf.Summary()
@@ -118,13 +112,6 @@ def make_summary(name, value, summary_writer, global_step):
   summary_writer.add_summary(summary, global_step)
 
 
-def MakeSummary(name, value):
-  """Creates a tf.Summary proto with the given name and value."""
-  summary = tf.Summary()
-  val = summary.value.add()
-  val.tag = str(name)
-  val.simple_value = float(value)
-  return summary
 
 def summary_histogram(writer, tag, values, step, bins=1000):
 
