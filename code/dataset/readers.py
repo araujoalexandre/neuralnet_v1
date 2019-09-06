@@ -36,7 +36,12 @@ class BaseReader:
     self.datasets_drop_reminder = self.params.datasets_drop_reminder
 
   def _get_tfrecords(self, name):
-    paths = list(map(lambda x: join(self.params.data_dir, name, x),
+    paths = self.params.data_dir.split(':')
+    for path in paths:
+      if gfile.exists(path):
+        data_dir = path
+        break
+    paths = list(map(lambda x: join(data_dir, name, x),
                      self.params.data_pattern.split(',')))
     files = gfile.glob(paths)
     if not files:
