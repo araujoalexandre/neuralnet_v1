@@ -28,16 +28,19 @@ class GenerateRunJobConfig:
     self.params.bash_path = shutil.which("bash")
 
     # define folder name for training
-    if not self.params.debug:
+    if not self.params.debug and not self.params.folder:
       self.params.folder = datetime.now().strftime(
         self.date_format)[:-2]
+    elif self.params.debug and not self.params.folder:
+      self.params.folder = 'folder_debug'
+
+    if not self.params.debug:
       self.params.with_eval = True
       self.params.job_name = '{}_{}'.format(
         self.params.folder[-4:], self.params.mode)
     else:
-      self.params.folder = 'folder_debug'
-      self.params.job_name = 'debug'
       self.params.with_eval = False
+      self.params.job_name = 'debug'
 
     if self.params.cluster == "slurm":
       self.executable = "sbatch"
@@ -49,18 +52,17 @@ class GenerateRunJobConfig:
     # if we run the job on a cluster, we may run multiple jobs 
     # to match the time required: if params.time > _CLUSTER_MAX_TIME_JOB, 
     # we run multiple jobs with dependency
-    if self.params.cluster in ('lsf', 'slurm'):
-      njobs = self.params.time // _CLUSTER_MAX_TIME_JOB
-      self.times = [60 * _CLUSTER_MAX_TIME_JOB] * njobs
-      if self.params.time % _CLUSTER_MAX_TIME_JOB:
-        self.times += [(self.params.time % _CLUSTER_MAX_TIME_JOB) * 60]
-      self.times = list(map(int, self.times))
+    if not self.params.debug:
+      if self.params.cluster in ('lsf', 'slurm'):
+        njobs = self.params.time // _CLUSTER_MAX_TIME_JOB
+        self.times = [60 * _CLUSTER_MAX_TIME_JOB] * njobs
+        if self.params.time % _CLUSTER_MAX_TIME_JOB:
+          self.times += [(self.params.time % _CLUSTER_MAX_TIME_JOB) * 60]
+        self.times = list(map(int, self.times))
+      else:
+        # we convert the time in minutes
+        self.times = [self.params.time * 60]
     else:
-      # we convert the time in minutes
-      self.times = [self.params.time * 60]
-
-    # override if debug mode
-    if self.params.debug:
       self.times = [60]
 
     # define file to run if it is not set 
@@ -103,7 +105,7 @@ class GenerateRunJobConfig:
       id_ += 1
     return 'config_{}_{}'.format(name, id_)
 
-  def make_yaml_config():
+  def make_yaml_config(self):
     if not self.params.name:
       raise ValueError("Params is set. Name is are required")
     # load the template and populate the values
@@ -164,6 +166,8 @@ class GenerateRunJobConfig:
      print("Folder {} created".format(self.params.folder))
 
   def _run_eval_attack_mode(self):
+    self.params.job_name = '{}_{}'.format(
+      self.params.folder[-4:], self.params.mode)
     result = self.run_job(0)
     jobid = result.strip().split(' ')[-1]
     print("Submitted batch job {}".format(jobid))
