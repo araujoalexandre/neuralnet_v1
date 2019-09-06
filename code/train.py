@@ -8,7 +8,7 @@ from os.path import join, exists
 import models
 import utils
 from models import model, model_config
-from dataset import readers
+from dataset.readers import readers_config
 from train_utils import losses
 from train_utils.learning_rate import LearningRate
 from train_utils.optimizer import Optimizer
@@ -391,8 +391,7 @@ class Trainer:
 
     self.model = model_config.get_model_config(
         self.params.model, self.params.dataset, self.params)
-    # self.model = utils.find_class_by_name(self.params.model, [models])()
-    self.reader = utils.find_class_by_name(self.params.reader, [readers])(
+    self.reader = readers_config[self.params.dataset](
       self.params, self.batch_size, self.raw_devices,
       self.cpu_device, is_training=True)
 

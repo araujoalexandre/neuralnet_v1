@@ -12,9 +12,8 @@ from os.path import join, exists
 import attacks
 import utils
 from models import model, model_config
-from train_utils import losses
+from dataset.readers import readers_config
 from train_utils import variable_mgr, variable_mgr_util
-from dataset import readers
 from utils import make_summary
 from dump_files import DumpFiles
 
@@ -209,10 +208,9 @@ class Evaluate:
 
     self.model = model_config.get_model_config(
         self.params.model, self.params.dataset, self.params)
-    # self.model = utils.find_class_by_name(self.params.model, [models])()
-    self.reader = utils.find_class_by_name(self.params.reader, [readers])(
-      self.params, self.batch_size, self.raw_devices, self.cpu_device,
-      is_training=False)
+    self.reader = readers_config[self.params.dataset](
+      self.params, self.batch_size, self.raw_devices,
+      self.cpu_device, is_training=False)
 
     # # define the number of steps
     # num_steps_by_epochs = self.reader.n_train_files / self.global_batch_size
