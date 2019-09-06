@@ -8,7 +8,6 @@ import pprint
 from functools import partial
 from os.path import join, exists
 
-# import models
 import attacks
 import utils
 from models import model, model_config
@@ -25,54 +24,6 @@ from tensorflow import logging
 from tensorflow.python.lib.io import file_io
 
 from config import hparams as params
-
-
-# def load_checkpoint(saver, sess, ckpt_dir):
-#   """Loads checkpoint from provided directory or full path.
-# 
-#   Args:
-#     saver: Saver used to restore the checkpoint.
-#     sess: TensorFlow session.
-#     ckpt_dir: Path to a folder of checkpoints or full path to a checkpoint.
-# 
-#   Returns:
-#     Global step.
-#   """
-#   model_checkpoint_path = _get_checkpoint_to_load(ckpt_dir)
-#   global_step = model_checkpoint_path.split('/')[-1].split('-')[-1]
-#   if not global_step.isdigit():
-#     global_step = 0
-#   else:
-#     global_step = int(global_step)
-#   saver.restore(sess, model_checkpoint_path)
-#   log_fn('Successfully loaded model from %s.' % model_checkpoint_path)
-#   return global_step
-# 
-# 
-# def _get_checkpoint_to_load(ckpt_dir):
-#   """Returns which checkpoint to load.
-# 
-#   Args:
-#     ckpt_dir: Path to a folder of checkpoints or full path to a checkpoint.
-# 
-#   Returns:
-#     Full path to checkpoint to load.
-# 
-#   Raises:
-#     CheckpointNotFoundException: If checkpoint is not found.
-#   """
-#   p = re.compile(r'ckpt-\d+$')
-#   if p.search(ckpt_dir):
-#     model_checkpoint_path = ckpt_dir
-#   else:
-#     # Finds latest checkpoint in directory provided
-#     ckpt = tf.train.get_checkpoint_state(ckpt_dir)
-#     if ckpt and ckpt.model_checkpoint_path:
-#       model_checkpoint_path = ckpt.model_checkpoint_path
-#     else:
-#       raise CheckpointNotFoundException('No checkpoint file found in dir:{}'.
-#                                         format(ckpt_dir))
-#   return model_checkpoint_path
 
 
 
