@@ -842,8 +842,7 @@ class Trainer:
       checkpoint_dir=self.params.train_dir,
       hooks=hooks,
       save_checkpoint_steps=self.params.save_checkpoint_steps,
-      save_summaries_steps=10,
-      save_summaries_secs=None,
+      save_summaries_steps=self.params.save_summaries_steps,
       log_step_count_steps=0,
       config=utils.create_config_proto(params))
 
