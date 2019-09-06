@@ -25,7 +25,7 @@ class BaseReader:
     self.batch_size = batch_size
     self.batch_size_per_split = batch_size // self.num_splits
     self.is_training = is_training
-    self.display_tensorboard = self.params.display_tensorboard
+    self.summary_verbosity = self.params.summary_verbosity
 
     self.num_threads = self.params.datasets_num_private_threads
     self.datasets_interleave_cycle_length = \
@@ -594,7 +594,7 @@ class IMAGENETReader(BaseReader):
       # the coordinates are ordered [ymin, xmin, ymax, xmax].
 
       # Display the bounding box in the first thread only.
-      if self.display_tensorboard:
+      if self.summary_verbosity >= 3:
         image_with_box = tf.image.draw_bounding_boxes(tf.expand_dims(image, 0),
                                                       bbox)
         tf.summary.image('image_with_bounding_boxes', image_with_box)
@@ -615,7 +615,7 @@ class IMAGENETReader(BaseReader):
           max_attempts=100,
           use_image_if_no_bounding_boxes=True)
       bbox_begin, bbox_size, distort_bbox = sample_distorted_bounding_box
-      if self.display_tensorboard:
+      if self.summary_verbosity >= 3:
         image_with_distorted_box = tf.image.draw_bounding_boxes(
             tf.expand_dims(image, 0), distort_bbox)
         tf.summary.image('images_with_distorted_bounding_box',
@@ -637,7 +637,7 @@ class IMAGENETReader(BaseReader):
       # Restore the shape since the dynamic slice based upon the bbox_size loses
       # the third dimension.
       distorted_image.set_shape([height, width, 3])
-      if self.display_tensorboard:
+      if self.summary_verbosity >= 3:
         tf.summary.image('cropped_resized_image',
                          tf.expand_dims(distorted_image, 0))
 
@@ -647,7 +647,7 @@ class IMAGENETReader(BaseReader):
       # Randomly distort the colors.
       distorted_image = self._distort_color(distorted_image)
 
-      if self.display_tensorboard:
+      if self.summary_verbosity >= 3:
         tf.summary.image('final_distorted_image',
                          tf.expand_dims(distorted_image, 0))
       return distorted_image
