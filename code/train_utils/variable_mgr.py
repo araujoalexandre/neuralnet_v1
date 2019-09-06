@@ -22,6 +22,7 @@ import contextlib
 import re
 
 import tensorflow as tf
+import tensorflow.compat.v1 as tf_v1
 from tensorflow import logging
 
 from . import allreduce
@@ -238,7 +239,7 @@ class VariableMgrLocalFetchFromPS(VariableMgr):
       ]
     else:
       return [
-          tf.train.replica_device_setter(
+          tf_v1.train.replica_device_setter(
               worker_device=d,
               ps_device=self.benchmark_cnn.param_server_device,
               ps_tasks=1) for d in raw_devices
@@ -635,7 +636,7 @@ class VariableMgrDistributedFetchFromPS(VariableMgr):
     ps_strategy = tf.contrib.training.GreedyLoadBalancingStrategy(
         self.benchmark_cnn.num_ps, tf.contrib.training.byte_size_load_fn)
     return [
-        tf.train.replica_device_setter(
+        tf_v1.train.replica_device_setter(
             worker_device=d,
             cluster=self.benchmark_cnn.cluster_manager.get_cluster_spec(),
             ps_strategy=ps_strategy) for d in self.benchmark_cnn.raw_devices
