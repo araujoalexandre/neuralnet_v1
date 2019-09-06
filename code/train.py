@@ -739,7 +739,7 @@ class Trainer:
       execution_barrier = self.add_sync_queues_and_barrier(
           'execution_barrier_', [])
 
-    global_step = tf.train.get_global_step()
+    global_step = tf_v1.train.get_global_step()
     with tf.device(self.global_step_device), tf.name_scope('inc_global_step'):
       with tf.control_dependencies([main_fetch_group]):
         fetches['global_step'] = global_step.assign_add(1)
@@ -778,7 +778,7 @@ class Trainer:
                                              tf.get_default_graph())
 
     if self.is_master:
-      saver = tf.train.Saver(
+      saver = tf_v1.train.Saver(
           self.variable_mgr.savable_variables(),
           save_relative_paths=True,
           max_to_keep=0)
@@ -821,8 +821,8 @@ class Trainer:
     # operations by passing in None for summary_op to avoid a summary_thread 
     # being started. Running summaries and training operations in parallel 
     # could run out of GPU memory.
-    scaffold = tf.train.Scaffold(
-      saver=saver,
+    scaffold = tf_v1.tain.Scaffold(
+      aver=saver,
       ready_for_local_init_op=ready_for_local_init_op,
       local_init_op=local_var_init_op_group,
       summary_op=summary_op)
