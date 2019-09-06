@@ -663,3 +663,16 @@ class IMAGENETReader(BaseReader):
     image = normalize_image(image)
     return image
 
+
+readers_config = {
+  'mnist': MNISTReader,
+  'cifar10': CIFAR10Reader,
+  'cifar100': CIFAR100Reader,
+  'fashion_mnist': FashionMNISTReader,
+  'youtube_agg': YT8MAggregatedFeatureReader,
+  'youtube_frame': YT8MFrameFeatureReader,
+  'imagenet': IMAGENETReader
+}
+
+
+
