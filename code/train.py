@@ -10,12 +10,7 @@ import utils
 from models import model, model_config
 from dataset.readers import readers_config
 from train_utils import losses
-from train_utils.learning_rate import LearningRate
-from train_utils.optimizer import Optimizer
-from train_utils.gradients import ComputeAndProcessGradients
-from train_utils.gradients import compute_hessian_and_summary
-from train_utils.gradients import combine_gradients
-from train_utils.update_ops import UpdateOps
+from train_utils.learning_rate import get_learning_rate
 from train_utils import variable_mgr, variable_mgr_util
 from eval_utils import eval_util
 
@@ -69,22 +64,6 @@ def params_sanity_checks(params):
       not params.mkl):
     raise ValueError('device=cpu requires that data_format=NHWC')
 
-  # if ((params.num_epochs_per_decay or
-  #      params.learning_rate_decay_factor) and
-  #     not (params.init_learning_rate is not None and
-  #          params.num_epochs_per_decay
-  #          and params.learning_rate_decay_factor)):
-  #   raise ValueError('If one of num_epochs_per_decay or '
-  #                    'learning_rate_decay_factor is set, both must be set'
-  #                    'and learning_rate must be set')
-  # if (params.minimum_learning_rate and
-  #     not (params.init_learning_rate is not None and
-  #          params.num_epochs_per_decay and
-  #          params.learning_rate_decay_factor)):
-  #   raise ValueError('minimum_learning_rate requires learning_rate,'
-  #                    'num_epochs_per_decay, and '
-  #                    'learning_rate_decay_factor to be set')
-
   if (params.use_fp16 and params.fp16_vars and
       'replicated' in params.variable_update and
       params.all_reduce_spec and 'nccl' in params.all_reduce_spec):
@@ -107,14 +86,6 @@ def params_sanity_checks(params):
       raise ValueError('Automatic loss scaling is not supported with '
                        'variable_update=%s.' % params.variable_update)
 
-  if params.hierarchical_copy and params.num_gpus <= 1:
-    raise ValueError('--hierarchical_copy requires --num_gpus to be greater '
-                     'than 1')
-
-  if params.save_model_secs and params.save_model_steps:
-    raise ValueError('At most one of --save_model_secs and '
-                     '--save_model_steps can be specified')
-
   # controller is used for distributed_all_reduce with > 1 worker.
   use_controller = (
       params.variable_update == 'distributed_all_reduce' and
@@ -123,31 +94,6 @@ def params_sanity_checks(params):
     raise ValueError('When variable_update==distributed_all_reduce '
                      'controller_host must also be specified.')
 
-
-def get_learning_rate(params, global_step, num_examples_per_epoch, model,
-                      batch_size):
-  """Returns a learning rate tensor based on global_step.
-
-  Args:
-    params: Params tuple, typically created by make_params or
-      make_params_from_flags.
-    global_step: Scalar tensor representing the global step.
-    num_examples_per_epoch: The number of examples per epoch.
-    model: The model.Model object to obtain the default learning rate from if no
-      learning rate is specified.
-    batch_size: Number of examples per step
-
-  Returns:
-    A scalar float tensor, representing the learning rate. When evaluated, the
-    learning rate depends on the current value of global_step.
-
-  Raises:
-    ValueError: Invalid or unsupported params.
-  """
-  with tf.name_scope('learning_rate'):
-    num_batches_per_epoch = num_examples_per_epoch / batch_size
-    learning_rate = model.get_learning_rate(global_step, batch_size)
-  return learning_rate
 
 
 def generate_tfprof_profile(profiler, tfprof_file):
@@ -320,20 +266,10 @@ class Trainer:
 
     if self.params.variable_update == 'parameter_server':
       if self.job_name:
-        # TODO: REMOVE 
-        if not self.params.staged_vars:
-          self.variable_mgr = variable_mgr.VariableMgrDistributedFetchFromPS(
-              self)
-        else:
-          self.variable_mgr = (
-              variable_mgr.VariableMgrDistributedFetchFromStagedPS(self))
+        self.variable_mgr = \
+            variable_mgr.VariableMgrDistributedFetchFromPS(self)
       else:
-        # TODO: REMOVE
-        if not self.params.staged_vars:
-          self.variable_mgr = variable_mgr.VariableMgrLocalFetchFromPS(self)
-        else:
-          self.variable_mgr = variable_mgr.VariableMgrLocalFetchFromStagedPS(
-              self)
+        self.variable_mgr = variable_mgr.VariableMgrLocalFetchFromPS(self)
     elif self.variable_update == 'replicated':
       if self.job_name:
         raise ValueError('Invalid variable_update in distributed mode: %s' %
