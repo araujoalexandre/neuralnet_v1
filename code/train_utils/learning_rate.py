@@ -1,7 +1,7 @@
 
 import tensorflow as tf
 import tensorflow.compat.v1 as tf_v1
-from tensorflow import logging
+from tensorflow.compat.v1 import logging
 from tensorflow.python.eager import context
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import math_ops

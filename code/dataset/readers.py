@@ -2,7 +2,7 @@ import random
 from os.path import join
 
 import tensorflow as tf
-from tensorflow import logging
+from tensorflow.compat.v1 import logging
 from tensorflow.io import gfile
 from tensorflow.python.data.ops import multi_device_iterator_ops
 from tensorflow.contrib.data.python.ops import threadpool

@@ -18,9 +18,9 @@ from dump_files import DumpFiles
 
 import numpy as np
 import tensorflow as tf
-import tensorflow.contrib.slim as slim
+import tensorflow.compat.v1 as tf_v1
 from tensorflow import gfile
-from tensorflow import logging
+from tensorflow.compat.v1 import logging
 from tensorflow.python.lib.io import file_io
 
 from config import hparams as params
@@ -196,10 +196,10 @@ class Evaluate:
     with tf.control_dependencies([local_var_init_op]):
       variable_mgr_init_ops.extend(self.variable_mgr.get_post_init_ops())
     local_var_init_op_group = tf.group(*variable_mgr_init_ops)
-    self.saver = tf.train.Saver(self.variable_mgr.savable_variables())
+    self.saver = tf_v1.train.Saver(self.variable_mgr.savable_variables())
     filename_suffix= "_{}_{}".format("eval",
                 re.findall("[a-z0-9]+", self.params.data_pattern.lower())[0])
-    self.summary_writer = tf.summary.FileWriter(
+    self.summary_writer = tf_v1.summary.FileWriter(
       self.params.train_dir,
       filename_suffix=filename_suffix,
       graph=tf.get_default_graph())

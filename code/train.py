@@ -449,7 +449,7 @@ class Trainer:
       seed_adjustment = hvd.rank()
     else:
       seed_adjustment = 0
-    tf.set_random_seed(self.params.tf_random_seed + seed_adjustment)
+    tf_v1.set_random_seed(self.params.tf_random_seed + seed_adjustment)
     np.random.seed(4321 + seed_adjustment)
     is_training = True
 
@@ -821,14 +821,14 @@ class Trainer:
     # operations by passing in None for summary_op to avoid a summary_thread 
     # being started. Running summaries and training operations in parallel 
     # could run out of GPU memory.
-    scaffold = tf_v1.tain.Scaffold(
-      aver=saver,
+    scaffold = tf_v1.train.Scaffold(
+      saver=saver,
       ready_for_local_init_op=ready_for_local_init_op,
       local_init_op=local_var_init_op_group,
       summary_op=summary_op)
 
     hooks = [
-      tf.train.NanTensorHook(fetches['loss']),
+      tf.estimator.NanTensorHook(fetches['loss']),
       tf.train.StopAtStepHook(num_steps=self.max_steps)]
 
     # For the purpose of Supervisor, all Horovod workers are 'chiefs',
