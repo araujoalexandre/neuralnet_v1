@@ -103,16 +103,19 @@ _model_name_to_cifar_model = {
     'resnet56_v2': resnet_model.create_resnet56_v2_cifar_model,
     'resnet110': resnet_model.create_resnet110_cifar_model,
     'resnet110_v2': resnet_model.create_resnet110_v2_cifar_model,
-    'wide_resnet': wide_resnet_model.WideResnetModel,
-    'diagonal_circulant': circulant_model.DiagonalCirculantModel,
     'densenet40_k12': densenet_model.create_densenet40_k12_model,
     'densenet100_k12': densenet_model.create_densenet100_k12_model,
     'densenet100_k24': densenet_model.create_densenet100_k24_model,
     'nasnet': nasnet_model.NasnetCifarModel,
+
+    'wide_resnet': wide_resnet_model.WideResnetModel,
+    'diagonal_circulant': circulant_model.DiagonalCirculantModel,
     'distillation_resnet56_v2_circulant':
       distillation_model.create_distillation_resnet56_v2_circulant,
     'scattering_circulant': scattering_model.ScatteringHybridCirculantModel,
-    'scattering_dense': scattering_model.ScatteringHybridDenseModel
+    'scattering_dense': scattering_model.ScatteringHybridDenseModel,
+    'conv_circulant': circulant_model.ConvCirculant,
+    'random_conv_circulant': circulant_model.RandomConvDiagonalCirculantModel,
 }
 
 _model_name_to_object_detection_model = {
@@ -142,9 +145,9 @@ def _get_model_map(dataset_name):
     raise ValueError('Invalid dataset name: %s' % dataset_name)
 
 
-def get_model_config(model_name, dataset, params):
+def get_model_config(model_name, dataset_name, params):
   """Map model name to model network configuration."""
-  model_map = _get_model_map(dataset)
+  model_map = _get_model_map(dataset_name)
   if model_name not in model_map:
     raise ValueError('Invalid model name \'%s\' for dataset \'%s\'' %
                      (model_name, dataset_name))
@@ -159,3 +162,4 @@ def register_model(model_name, dataset_name, model_func):
     raise ValueError('Model "%s" is already registered for dataset "%s"' %
                      (model_name, dataset_name))
   model_map[model_name] = model_func
+

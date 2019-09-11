@@ -14,14 +14,11 @@
 # ==============================================================================
 """Convolution blocks for mobilenet."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import contextlib
 import functools
 
 import tensorflow as tf
+from tensorflow.compat.v1 import logging
 
 slim = tf.contrib.slim
 
@@ -229,6 +226,7 @@ def expanded_conv(input_tensor,
   Raises:
     TypeError: on inval
   """
+  logging.info('input shape: {}'.format(input_tensor.get_shape()))
   with tf.variable_scope(scope, default_name='expanded_conv') as s, \
        tf.name_scope(s.original_name_scope):
     prev_depth = input_tensor.get_shape().as_list()[3]
@@ -314,6 +312,7 @@ def expanded_conv(input_tensor,
           net.get_shape().as_list()[3] ==
           input_tensor.get_shape().as_list()[3]):
       net += input_tensor
+    logging.info('output shape: {}'.format(net.get_shape()))
     return tf.identity(net, name='output')
 
 
@@ -359,3 +358,4 @@ def split_conv(input_tensor,
     n = tf.identity(n, scope + '_output')
     outs.append(n)
   return tf.concat(outs, 3, name=scope + '_concat')
+

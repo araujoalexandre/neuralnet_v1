@@ -308,8 +308,7 @@ class ScatteringHybridDenseModel(model_lib.CNNModel):
     cnn.top_layer = Scattering(M=M, N=N, J=2)(cnn.top_layer)
     cnn.batch_norm()
 
-    cnn.top_layer = tf.layers.flatten(cnn.top_layer)
-    cnn.top_size = cnn.top_layer.get_shape()[-1].value
+    cnn.flatten()
     cnn.affine(cnn.top_size)
 
 

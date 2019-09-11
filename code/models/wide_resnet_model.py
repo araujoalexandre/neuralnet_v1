@@ -12,6 +12,7 @@ class WideResnetModel(model_lib.CNNModel):
   def __init__(self, params):
 
     self.params = params
+    assert params.data_format == 'NHWC'
     super(WideResnetModel, self).__init__(
       'wide_resnet', params=params)
 

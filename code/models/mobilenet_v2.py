@@ -189,6 +189,8 @@ class MobilenetModel(model.CNNModel):
   """Mobilenet model configuration."""
 
   def __init__(self, params=None):
+    assert params.data_format == 'NHWC'
+    assert params.imagenet_image_size == 224
     super(MobilenetModel, self).__init__(
         'mobilenet', params=params)
 

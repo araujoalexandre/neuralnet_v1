@@ -105,12 +105,12 @@ class ConvNetBuilder(object):
     return tf.cast(var, cast_dtype)
 
   def _conv2d_impl(self, input_layer, num_channels_in, filters, kernel_size,
-                   strides, padding, kernel_initializer):
+                   strides, padding, kernel_initializer, trainable):
     if self.use_tf_layers:
       return conv_layers.conv2d(input_layer, filters, kernel_size, strides,
                                 padding, self.channel_pos,
                                 kernel_initializer=kernel_initializer,
-                                use_bias=False)
+                                use_bias=False, trainable=False)
     else:
       weights_shape = [kernel_size[0], kernel_size[1], num_channels_in, filters]
       # We use the name 'conv2d/kernel' so the variable has the same name as its
@@ -119,7 +119,8 @@ class ConvNetBuilder(object):
       # self.use_tf_layers == False, and vice versa.
       weights = self.get_variable('conv2d/kernel', weights_shape,
                                   self.variable_dtype, self.dtype,
-                                  initializer=kernel_initializer)
+                                  initializer=kernel_initializer,
+                                  trainable=False)
       if self.data_format == 'NHWC':
         strides = [1] + strides + [1]
       else:
@@ -140,7 +141,8 @@ class ConvNetBuilder(object):
            stddev=None,
            activation='relu',
            bias=0.0,
-           kernel_initializer=None):
+           kernel_initializer=None,
+           trainable=True):
     """Construct a conv2d layer on top of cnn."""
     if input_layer is None:
       input_layer = self.top_layer
@@ -160,14 +162,16 @@ class ConvNetBuilder(object):
         conv = self._conv2d_impl(input_layer, num_channels_in, num_out_channels,
                                  kernel_size=[k_height, k_width],
                                  strides=[d_height, d_width], padding=mode,
-                                 kernel_initializer=kernel_initializer)
+                                 kernel_initializer=kernel_initializer,
+                                 trainable=trainable)
       else:  # Special padding mode for ResNet models
         if d_height == 1 and d_width == 1:
           conv = self._conv2d_impl(input_layer, num_channels_in,
                                    num_out_channels,
                                    kernel_size=[k_height, k_width],
                                    strides=[d_height, d_width], padding='SAME',
-                                   kernel_initializer=kernel_initializer)
+                                   kernel_initializer=kernel_initializer,
+                                   trainable=trainable)
         else:
           rate = 1  # Unused (for 'a trous' convolutions)
           kernel_height_effective = k_height + (k_height - 1) * (rate - 1)
@@ -491,20 +495,14 @@ class ConvNetBuilder(object):
       kernel = tf.get_variable(name='kernel', shape=num_channels_in,
         initializer=kernel_initializer)
       x = self.top_layer
-      x = tf.check_numerics(x, 'nan in start')
-      # x = tf.cast(self.top_layer, tf.complex64)
       # pad the input
       if num_channels_out > num_channels_in:
         padding_size = np.abs(num_channels_out - num_channels_in)
         x = tf.pad(x, ((0, 0), (padding_size, 0)))
       x_fft = tf.signal.rfft(x)
-      # x_fft = tf.check_numerics(tf.cast(x_fft, tf.float32), 'nan in x_fft')
       k_fft = tf.signal.rfft(kernel)
-      # k_fft = tf.check_numerics(tf.cast(k_fft, tf.float32), 'nan in k_fft')
       x = tf.multiply(x_fft, k_fft)
-      # x = tf.check_numerics(tf.cast(x, tf.float32), 'nan in multiply')
       x = tf.signal.irfft(x)
-      x = tf.check_numerics(x, 'nan in irfft')
       x = x[..., :num_channels_out]
       if use_diag:
         diag_initializer = np.float32(
@@ -527,5 +525,70 @@ class ConvNetBuilder(object):
       self.top_layer = x
       self.top_size = num_channels_out
     return x
+
+
+  def depth_conv_circ(self,
+                      input_layer=None,
+                      num_channels_in=None,
+                      kernel_initializer=None,
+                      diag_initializer=None,
+                      bias_initializer=None,
+                      use_diag=True,
+                      use_bias=True,
+                      alpha=2,
+                      activation='leaky_relu',
+                      activation_slope=0.1,
+                      **kwargs):
+
+    if input_layer is None:
+      input_layer = self.top_layer
+    num_channels_in = self.top_size
+    name = 'depth_conv_circ' + str(self.counts['depth_conv_circ'])
+    self.counts['depth_conv_circ'] += 1
+    with tf.variable_scope(name):
+      x = input_layer
+      img_size = x.get_shape().as_list()[-1]
+      x = tf.reshape(x, [-1, num_channels_in, img_size**2])
+
+      kernel_initializer = tf.random_normal_initializer(
+        stddev=np.sqrt(alpha/img_size**2))
+      kernel = tf.get_variable(name='kernel',
+        shape=[num_channels_in, img_size**2],
+        initializer=kernel_initializer)
+
+      x_fft = tf.signal.rfft(x)
+      k_fft = tf.signal.rfft(kernel)
+      x = tf.multiply(x_fft, k_fft)
+      x = tf.signal.irfft(x)
+
+      if use_diag:
+        diag_initializer = np.float32(
+          np.random.choice([-1, 1], size=[num_channels_in, img_size**2]))
+        diag = tf.get_variable(name='diag', initializer=diag_initializer)
+        x = tf.multiply(x, diag)
+      if use_bias:
+        bias_initializer = tf.constant_initializer(0.1)
+        bias = tf.get_variable(name="bias", shape=[num_channels_in, img_size**2],
+          initializer=bias_initializer)
+        x = x + bias
+
+      if activation == 'leaky_relu':
+        x = tf.nn.leaky_relu(x, alpha=activation_slope, name=name)
+      elif activation == 'relu':
+        x = tf.nn.relu(x, name=name)
+      elif activation == 'relu6':
+        x = tf.nn.relu6(x, name=name)
+      elif activation == 'linear' or activation is None:
+        pass
+      else:
+        raise KeyError('Invalid activation type \'%s\'' % activation)
+
+      x = tf.reshape(x, [-1, num_channels_in, img_size, img_size])
+      self.top_layer = x
+    return x
+
+
+
+
 
 
