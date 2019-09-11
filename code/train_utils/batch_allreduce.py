@@ -27,19 +27,14 @@ all-reduce, care is taken to evenly distribute the reduction computations
 across devices and inter-device tensor transfers across device links.
 """
 
-# TODO(reedwm): Support distributed all-reduces in this file.
-# TODO(reedwm): Merge this code with allreduce.py, which contains some batch
-# all-reduce code that this file calls. allreduce.py also supports distributed
-# batch-reduce while this file only supports single-machine all-reduce.
-
 import abc
 
 import six
 import tensorflow as tf
+from tensorflow.compat.v1 import logging
 
 from tensorflow.python.ops import data_flow_ops
 from . import allreduce
-# import constants
 
 
 def _all_reduce_using_copy(tensors_across_devices, use_mean):
