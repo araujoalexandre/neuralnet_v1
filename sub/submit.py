@@ -72,11 +72,12 @@ class GenerateRunJobConfig:
       elif self.params.mode in ['eval', 'attack']:
         self.params.file = "eval"
 
-    # check if config file exist
-    projectdir = os.environ['PROJECTDIR']
-    assert exists(
-      join(projectdir, 'config', "{}.yaml".format(self.params.config))), \
-        "config file '{}' does not exist".format(self.params.config)
+    if params.mode == 'train':
+      # check if config file exist
+      projectdir = os.environ['PROJECTDIR']
+      assert exists(
+        join(projectdir, 'config', "{}.yaml".format(self.params.config))), \
+          "config file '{}' does not exist".format(self.params.config)
 
     # check if path to model folder exists
     assert isdir(self.params.path), \
