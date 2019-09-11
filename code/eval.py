@@ -103,9 +103,6 @@ class Evaluate:
     else:
       self.batch_size = self.params.batch_size
 
-    pp = pprint.PrettyPrinter(indent=2, compact=True)
-    logging.info(pp.pformat(params.values()))
-
     if self.params.eval_under_attack:
       attack_method = self.params.attack_method
       attack_cls = getattr(attacks, attack_method, None)
