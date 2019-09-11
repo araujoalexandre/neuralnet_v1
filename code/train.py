@@ -829,7 +829,7 @@ class Trainer:
 
     hooks = [
       tf.estimator.NanTensorHook(fetches['loss']),
-      tf.train.StopAtStepHook(num_steps=self.max_steps)]
+      tf.estimator.StopAtStepHook(num_steps=self.max_steps)]
 
     # For the purpose of Supervisor, all Horovod workers are 'chiefs',
     # since we want session to be initialized symmetrically on all the
@@ -851,7 +851,7 @@ class Trainer:
     profiler = tf_v1.profiler.Profiler() if self.params.tfprof_file else None
 
     logging.info("Start training")
-    with tf.train.MonitoredTrainingSession(**session_args) as sess:
+    with tf_v1.train.MonitoredTrainingSession(**session_args) as sess:
       # if not self.params.start_new_model:
       #   load_checkpoint(saver, sess, ckpt_dir, self.params.train_dir)
 
