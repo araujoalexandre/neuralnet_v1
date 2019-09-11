@@ -48,7 +48,7 @@ srun --output $LOGS_DIR/log_train.logs -u \
   --nodes=1 \
   --gres=gpu:{{n_gpus}} \
   --cpus-per-task={{cpu}} \
-  python3 {{projectdir}}/code/{{file}}.py \
+  python3 {{projectdir}}/src/{{file}}.py \
     --config_file=$CONFIG_PATH \
     --config_name=train \
     --train_dir=$TRAIN_DIR \
@@ -60,7 +60,7 @@ srun --output $LOGS_DIR/log_eval.logs -u \
   --nodes=1 \
   --gres=gpu:{{n_gpus}} \
   --cpus-per-task={{cpu}} \
-  python3 {{projectdir}}/code/{{file}}.py \
+  python3 {{projectdir}}/src/{{file}}.py \
     --config_file=$CONFIG_PATH \
     --config_name=eval \
     --train_dir=$TRAIN_DIR \
@@ -71,7 +71,7 @@ srun --output  $LOGS_DIR/log_{{attack}}.logs -u \
   --nodes=1 \
   --gres=gpu:{n_gpus} \
   --cpus-per-task={{cpu}} \
-  python3 {{projectdir}}/code/{{file}}.py \
+  python3 {{projectdir}}/src/{{file}}.py \
     --config_file=$CONFIG_PATH \
     --config_name={{attack}} \
     --train_dir=$TRAIN_DIR \
@@ -79,7 +79,7 @@ srun --output  $LOGS_DIR/log_{{attack}}.logs -u \
   {% endif -%}
 {%- elif cluster != "slurm" %}
   {%- if mode == "train" %}
-python3 {{projectdir}}/code/{{file}}.py \
+python3 {{projectdir}}/src/{{file}}.py \
   --config_file=$CONFIG_PATH \
   --config_name=train \
   --train_dir=$TRAIN_DIR \
@@ -87,14 +87,14 @@ python3 {{projectdir}}/code/{{file}}.py \
   --start_new_model={{start_new_model}} \
   &>> $LOGS_DIR/log_train.logs
   {%- elif mode == "eval"  %}
-python3 {{projectdir}}/code/{{file}}.py \
+python3 {{projectdir}}/src/{{file}}.py \
   --config_file=$CONFIG_PATH \
   --config_name=eval_test \
   --train_dir=$TRAIN_DIR \
   --data_dir=$DATADIR \
   &>> $LOGS_DIR/log_eval.logs
   {%- elif mode == "attack" %}
-python3 {{projectdir}}/code/{{file}}.py \
+python3 {{projectdir}}/src/{{file}}.py \
   --config_file=$CONFIG_PATH \
   --config_name={{attack}} \
   --train_dir=$TRAIN_DIR \
