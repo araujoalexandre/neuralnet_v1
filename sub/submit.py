@@ -229,9 +229,8 @@ if __name__ == '__main__':
   args = parser.parse_args()
 
   # sanity checks
-  if args.config is None:
-    parser.print_help()
-    sys.exit(0)
+  if args.mode == 'train' and args.config is None:
+    raise ValueError("Train mode needs a config file.")
   if not args.mode in ("train", "eval", "attack"):
     raise ValueError("config not recognized")
 
