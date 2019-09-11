@@ -863,7 +863,7 @@ class Trainer:
         step = self._training(
           sess, step, fetches, profiler, collective_graph_key)
       logging.info("Done training -- epoch limit reached.")
-      if self.params.profiler:
+      if self.params.tfprof_file:
         generate_tfprof_profile(profiler, self.params.tfprof_file)
     logging.info("Exited training loop.")
 
