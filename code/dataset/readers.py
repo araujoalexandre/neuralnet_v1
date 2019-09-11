@@ -37,7 +37,7 @@ class BaseReader:
   def _get_tfrecords(self, name):
     paths = self.params.data_dir.split(':')
     for path in paths:
-      if gfile.exists(path):
+      if gfile.exists(join(path, name)):
         data_dir = path
         break
     paths = list(map(lambda x: join(data_dir, name, x),
