@@ -196,6 +196,9 @@ if __name__ == '__main__':
   parser.add_argument("--mode", type=str, default="train",
                         choices=("train", "eval", "attack"),
                         help="Choose job type train, eval, attack.")
+  parser.add_argument("--backend", type=str, default="tensorflow",
+                        choices=("tensorflow", "tf", "pytorch", "torch", "py"),
+                        help="Choose job type train, eval, attack.")
   parser.add_argument("--with_eval", type=bool, default=True,
                         help="Run the evaluation after training.")
   parser.add_argument("--path", type=str, default=path,
