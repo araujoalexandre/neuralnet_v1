@@ -1,3 +1,7 @@
-ruamel.yaml==0.15.60
+yaml
+absl-py
 git+https://github.com/tensorflow/cleverhans.git@master
-tensorflow-gpu==1.12
+tensorflow-gpu==1.14
+torch
+torchvision
+
