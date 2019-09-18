@@ -6,7 +6,6 @@ import re
 import socket
 import pprint
 import logging
-from functools import partial
 from os.path import join
 from os.path import exists
 
@@ -22,45 +21,6 @@ from .dump_files import DumpFiles
 import numpy as np
 import tensorflow as tf
 import tensorflow.compat.v1 as tf_v1
-from tensorflow import gfile
-from tensorflow.python.lib.io import file_io
-
-
-def get_global_step_from_ckpt(filename):
-  regex = "(?<=ckpt-)[0-9]+"
-  return int(re.findall(regex, filename)[-1])
-
-
-def get_list_checkpoints(train_dir):
-  files = file_io.get_matching_files(
-    join(train_dir, 'model.ckpt-*.index'))
-  files = sorted(files, key=get_global_step_from_ckpt)
-  files = [filename[:-6] for filename in files]
-  return files
-
-
-def get_checkpoint(train_dir, last_global_step):
-  files = get_list_checkpoints(train_dir)
-  if not files:
-    return None, None
-  for filename in files:
-    global_step = get_global_step_from_ckpt(filename)
-    if last_global_step < global_step:
-      return filename, global_step
-  return None, None
-
-
-def get_best_checkpoint(logs_dir):
-  best_acc_file = join(logs_dir, "best_accuracy.txt")
-  if not exists(best_acc_file):
-    raise ValueError("Could not find best_accuracy.txt in {}".format(
-            logs_dir))
-  with open(best_acc_file) as f:
-    content = f.readline().split('\t')
-    best_ckpt = content[0]
-  best_ckpt_path = file_io.get_matching_files(
-      join(self.train_dir, 'model.ckpt-{}.index'.format(best_ckpt)))
-  return best_ckpt_path[-1][:-6], int(best_ckpt)
 
 
 
@@ -211,7 +171,9 @@ class Evaluator:
         # pass session to attack class for Carlini Attack
         self.attack.sess = sess
         # Restores from bast checkpoint
-        best_checkpoint, global_step = self.get_best_checkpoint()
+        best_checkpoint, global_step = \
+            global_utils.get_best_checkpoint(
+              self.logs_dir, backend='tensorflow')
         self.saver.restore(sess, best_checkpoint)
         acc_val, acc_adv_val = self.eval_attack(sess, fetches)
       path = join(self.logs_dir, "attacks_score.txt")
@@ -231,8 +193,8 @@ class Evaluator:
         if self.params.eval_during_training:
           last_global_step = 0
           while True:
-            latest_checkpoint, global_step = get_checkpoint(
-              self.train_dir, last_global_step)
+            latest_checkpoint, global_step = global_utils.get_checkpoint(
+              self.train_dir, last_global_step, backend='tensorflow')
             if latest_checkpoint is None or global_step == last_global_step:
               time.sleep(self.params.eval_interval_secs)
               continue
@@ -247,13 +209,15 @@ class Evaluator:
         # if the evaluation is made after training, we look for all
         # checkpoints 
         else:
-          ckpts = get_list_checkpoints(self.train_dir)
+          ckpts = global_utils.get_list_checkpoints(
+            self.train_dir, backend='tensorflow')
           # remove first checkpoint model.ckpt-0
           ckpts.pop(0)
           for ckpt in ckpts:
             logging.info(
               "Loading checkpoint for eval: {}".format(ckpt))
-            global_step = get_global_step_from_ckpt(ckpt)
+            global_step = global_utils.get_global_step_from_ckpt(
+              ckpt, backend='tensorflow')
             # Restores from checkpoint
             self.saver.restore(sess, ckpt)
             sess.run(local_var_init_op_group)

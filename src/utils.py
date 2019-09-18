@@ -1,10 +1,14 @@
 
 import os
 import sys
+import re
 import shutil
 import json
 import logging
+import glob
 import absl.logging
+from os.path import join
+from os.path import exists
 
 from yaml import load, dump
 try:
@@ -14,10 +18,48 @@ except ImportError:
 
 
 
-# from collections import OrderedDict
-# from ruamel.yaml import YAML
-# from ruamel.yaml.comments import CommentedMap, CommentedSeq
-# from ruamel.yaml.scalarfloat import ScalarFloat
+def get_global_step_from_ckpt(filename):
+  regex = "(?<=ckpt-)[0-9]+"
+  return int(re.findall(regex, filename)[-1])
+
+
+def get_list_checkpoints(train_dir, backend='tensorflow'):
+  ext = {'tensorflow': 'index', 'pytorch': 'pth'}[backend]
+  files = glob.glob(join(train_dir, 'model.ckpt-*.{}'.format(ext)))
+  files = sorted(files, key=get_global_step_from_ckpt)
+  if backend == 'tensorflow':
+    # we need to remove the extension
+    return [filename[:-6] for filename in files]
+  return [filename for filename in files]
+
+
+def get_checkpoint(train_dir, last_global_step, backend='tensorflow'):
+  files = get_list_checkpoints(train_dir, backend=backend)
+  if not files:
+    return None, None
+  for filename in files:
+    global_step = get_global_step_from_ckpt(filename)
+    if last_global_step < global_step:
+      return filename, global_step
+  return None, None
+
+
+def get_best_checkpoint(logs_dir, backend='tensorflow'):
+  ext = {'tensorflow': 'index', 'pytorch': 'pth'}[backend]
+  best_acc_file = join(logs_dir, "best_accuracy.txt")
+  if not exists(best_acc_file):
+    raise ValueError("Could not find best_accuracy.txt in {}".format(
+            logs_dir))
+  with open(best_acc_file) as f:
+    content = f.readline().split('\t')
+    best_ckpt = content[0]
+  best_ckpt_path = glob.glob(
+      join(self.train_dir, 'model.ckpt-{}.{}'.format(best_ckpt, ext)))
+  if backend == 'tensorflow':
+    return best_ckpt_path[-1][:-6], int(best_ckpt)
+  return best_ckpt_path[-1], int(best_ckpt)
+
+
 
 
 def remove_training_directory(train_dir):
