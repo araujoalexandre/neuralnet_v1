@@ -43,7 +43,7 @@ class BaseReader:
 
   def load_dataset(self):
     """Load or download dataset."""
-    if self.params.job_name:
+    if getattr(self.params, 'job_name', None):
       # TODO: fill up num_replicas and rank
       sampler = torch.utils.data.distributed.DistributedSampler(
         dataset, num_replicas=None, rank=None)
