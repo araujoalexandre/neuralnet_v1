@@ -155,14 +155,15 @@ class Trainer:
   def save_ckpt(self, step, epoch):
     """Save ckpt in train directory."""
     if step % self.params.save_checkpoint_steps == 0 and self.is_master:
-        state = {
-            'epoch': epoch,
-            'step': step,
-            'model_state_dict': self.model.state_dict(),
-        }
-        ckpt_name = "model.ckpt-{}.t7".format(step)
-        logging.info("Saving checkpoint '{}'.".format(ckpt_name))
-        torch.save(state, join(self.train_dir, ckpt_name))
+      state = {
+        'epoch': epoch,
+        'global_step': step,
+        'model_state_dict': self.model.state_dict(),
+        'optimizer_state_dict': self.optimizer.state_dict(),
+      }
+      ckpt_name = "model.ckpt-{}.pth".format(step)
+      logging.info("Saving checkpoint '{}'.".format(ckpt_name))
+      torch.save(state, join(self.train_dir, ckpt_name))
 
 
   def _training(self, data, epoch, step):
