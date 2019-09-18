@@ -96,9 +96,6 @@ class CIFARReader(BaseReader):
     self.n_classes = 10
     self.batch_shape = (None, 32, 32, 3)
     self.use_data_augmentation = self.params.data_augmentation
-    self.use_gray_scale = self.params.cifar_grayscale
-    if self.use_gray_scale:
-      self.batch_shape = (None, 32, 32, 1)
 
   def transform(self):
     if self.is_training:
