@@ -36,7 +36,7 @@ import tensorflow.compat.v1 as tf_v1
 from . import model as model_lib
 
 
-def bottleneck_block_v1(cnn, depth, depth_bottleneck, stride):
+def bottleneck_block_v1(cnn, depth, depth_bottleneck, stride, trainable=True):
   """Bottleneck block with identity short-cut for ResNet v1.
 
   Args:
@@ -59,28 +59,24 @@ def bottleneck_block_v1(cnn, depth, depth_bottleneck, stride):
         shortcut = cnn.apool(
             1, 1, stride, stride, input_layer=input_layer,
             num_channels_in=in_size)
-        mlperf.logger.log_projection(input_tensor=input_layer,
-                                     output_tensor=shortcut)
     else:
       shortcut = cnn.conv(
           depth, 1, 1, stride, stride, activation=None,
           use_batch_norm=True, input_layer=input_layer,
-          num_channels_in=in_size, bias=None)
+          num_channels_in=in_size, bias=None, trainable=trainable)
     cnn.conv(depth_bottleneck, 1, 1, stride, stride,
              input_layer=input_layer, num_channels_in=in_size,
-             use_batch_norm=True, bias=None)
+             use_batch_norm=True, bias=None, trainable=trainable)
     cnn.conv(depth_bottleneck, 3, 3, 1, 1, mode='SAME_RESNET',
-             use_batch_norm=True, bias=None)
+             use_batch_norm=True, bias=None, trainable=trainable)
     res = cnn.conv(depth, 1, 1, 1, 1, activation=None,
-                   use_batch_norm=True, bias=None)
-    mlperf.logger.log(key=mlperf.tags.MODEL_HP_SHORTCUT_ADD)
-    mlperf.logger.log(key=mlperf.tags.MODEL_HP_RELU)
+                   use_batch_norm=True, bias=None, trainable=trainable)
     output = tf.nn.relu(shortcut + res)
     cnn.top_layer = output
     cnn.top_size = depth
 
 
-def bottleneck_block_v1_5(cnn, depth, depth_bottleneck, stride):
+def bottleneck_block_v1_5(cnn, depth, depth_bottleneck, stride, trainable=True):
   """Bottleneck block with identity short-cut for ResNet v1.5.
 
   ResNet v1.5 is the informal name for ResNet v1 where stride 2 is used in the
@@ -111,30 +107,24 @@ def bottleneck_block_v1_5(cnn, depth, depth_bottleneck, stride):
         shortcut = cnn.apool(
             1, 1, stride, stride, input_layer=input_layer,
             num_channels_in=in_size)
-        mlperf.logger.log_projection(input_tensor=input_layer,
-                                     output_tensor=shortcut)
     else:
       shortcut = cnn.conv(
           depth, 1, 1, stride, stride, activation=None,
           use_batch_norm=True, input_layer=input_layer,
-          num_channels_in=in_size, bias=None)
-      mlperf.logger.log_projection(input_tensor=input_layer,
-                                   output_tensor=shortcut)
+          num_channels_in=in_size, bias=None, trainable=trainable)
     cnn.conv(depth_bottleneck, 1, 1, 1, 1,
              input_layer=input_layer, num_channels_in=in_size,
-             use_batch_norm=True, bias=None)
+             use_batch_norm=True, bias=None, trainable=trainable)
     cnn.conv(depth_bottleneck, 3, 3, stride, stride, mode='SAME_RESNET',
-             use_batch_norm=True, bias=None)
+             use_batch_norm=True, bias=None, trainable=trainable)
     res = cnn.conv(depth, 1, 1, 1, 1, activation=None,
-                   use_batch_norm=True, bias=None)
-    mlperf.logger.log(key=mlperf.tags.MODEL_HP_SHORTCUT_ADD)
-    mlperf.logger.log(key=mlperf.tags.MODEL_HP_RELU)
+                   use_batch_norm=True, bias=None, trainable=trainable)
     output = tf.nn.relu(shortcut + res)
     cnn.top_layer = output
     cnn.top_size = depth
 
 
-def bottleneck_block_v2(cnn, depth, depth_bottleneck, stride):
+def bottleneck_block_v2(cnn, depth, depth_bottleneck, stride, trainable=True):
   """Bottleneck block with identity short-cut for ResNet v2.
 
   The main difference from v1 is that a batch norm and relu are done at the
@@ -166,20 +156,21 @@ def bottleneck_block_v2(cnn, depth, depth_bottleneck, stride):
     else:
       shortcut = cnn.conv(
           depth, 1, 1, stride, stride, activation=None, use_batch_norm=False,
-          input_layer=preact, num_channels_in=in_size, bias=None)
+          input_layer=preact, num_channels_in=in_size, bias=None, trainable=trainable)
     cnn.conv(depth_bottleneck, 1, 1, stride, stride,
              input_layer=preact, num_channels_in=in_size,
-             use_batch_norm=True, bias=None)
+             use_batch_norm=True, bias=None, trainable=trainable)
     cnn.conv(depth_bottleneck, 3, 3, 1, 1, mode='SAME_RESNET',
-             use_batch_norm=True, bias=None)
+             use_batch_norm=True, bias=None, trainable=trainable)
     res = cnn.conv(depth, 1, 1, 1, 1, activation=None,
-                   use_batch_norm=False, bias=None)
+                   use_batch_norm=False, bias=None, trainable=trainable)
     output = shortcut + res
     cnn.top_layer = output
     cnn.top_size = depth
 
 
-def bottleneck_block(cnn, depth, depth_bottleneck, stride, version):
+def bottleneck_block(cnn, depth, depth_bottleneck, stride, version,
+                     trainable=True):
   """Bottleneck block with identity short-cut.
 
   Args:
@@ -190,14 +181,16 @@ def bottleneck_block(cnn, depth, depth_bottleneck, stride, version):
     version: version of ResNet to build.
   """
   if version == 'v2':
-    bottleneck_block_v2(cnn, depth, depth_bottleneck, stride)
+    bottleneck_block_v2(cnn, depth, depth_bottleneck, stride,
+                        trainable=trainable)
   elif version == 'v1.5':
-    bottleneck_block_v1_5(cnn, depth, depth_bottleneck, stride)
+    bottleneck_block_v1_5(cnn, depth, depth_bottleneck, stride, trainable=trainable)
   else:
-    bottleneck_block_v1(cnn, depth, depth_bottleneck, stride)
+    bottleneck_block_v1(cnn, depth, depth_bottleneck, stride, trainable=trainable)
 
 
-def residual_block(cnn, depth, stride, version, projection_shortcut=False):
+def residual_block(cnn, depth, stride, version, projection_shortcut=False,
+                   trainable=True):
   """Residual block with identity short-cut.
 
   Args:
@@ -216,7 +209,7 @@ def residual_block(cnn, depth, stride, version, projection_shortcut=False):
     shortcut = cnn.conv(
         depth, 1, 1, stride, stride, activation=None,
         use_batch_norm=True, input_layer=input_layer,
-        num_channels_in=in_size, bias=None)
+        num_channels_in=in_size, bias=None, trainable=trainable)
   elif in_size != depth:
     # Plan A of shortcut.
     shortcut = cnn.apool(1, 1, stride, stride,
@@ -238,14 +231,14 @@ def residual_block(cnn, depth, stride, version, projection_shortcut=False):
     res = input_layer
   cnn.conv(depth, 3, 3, stride, stride,
            input_layer=res, num_channels_in=in_size,
-           use_batch_norm=True, bias=None)
+           use_batch_norm=True, bias=None, trainable=trainable)
   if pre_activation:
     res = cnn.conv(depth, 3, 3, 1, 1, activation=None,
-                   use_batch_norm=False, bias=None)
+                   use_batch_norm=False, bias=None, trainable=trainable)
     output = shortcut + res
   else:
     res = cnn.conv(depth, 3, 3, 1, 1, activation=None,
-                   use_batch_norm=True, bias=None)
+                   use_batch_norm=True, bias=None, trainable=trainable)
     output = tf.nn.relu(shortcut + res)
   cnn.top_layer = output
   cnn.top_size = depth
@@ -254,7 +247,7 @@ def residual_block(cnn, depth, stride, version, projection_shortcut=False):
 class ResnetModel(model_lib.CNNModel):
   """Resnet cnn network configuration."""
 
-  def __init__(self, model, layer_counts, params=None):
+  def __init__(self, model, layer_counts, params=None, trainable=True):
     default_batch_sizes = {
         'resnet50': 64,
         'resnet101': 32,
@@ -281,6 +274,7 @@ class ResnetModel(model_lib.CNNModel):
       self.version = 'v1.5'
     else:
       self.version = 'v1'
+    self.trainable = trainable
 
   def add_inference(self, cnn):
     if self.layer_counts is None:
@@ -288,7 +282,8 @@ class ResnetModel(model_lib.CNNModel):
     # Drop batch size from shape logging.
     cnn.use_batch_norm = True
     cnn.batch_norm_config = {'decay': 0.9, 'epsilon': 1e-5, 'scale': True}
-    cnn.conv(64, 7, 7, 2, 2, mode='SAME_RESNET', use_batch_norm=True)
+    cnn.conv(64, 7, 7, 2, 2, mode='SAME_RESNET', use_batch_norm=True,
+             trainable=self.trainable)
     cnn.mpool(3, 3, 2, 2, mode='SAME')
     for _ in range(self.layer_counts[0]):
       bottleneck_block(cnn, 256, 64, 1, self.version)
@@ -378,7 +373,7 @@ class ResnetCifar10Model(model_lib.CNNModel):
   https://arxiv.org/pdf/1603.05027.pdf.
   """
 
-  def __init__(self, model, layer_counts, params=None):
+  def __init__(self, model, layer_counts, params=None, trainable=True):
     if 'v2' in model:
       self.version = 'v2'
     else:
@@ -386,6 +381,7 @@ class ResnetCifar10Model(model_lib.CNNModel):
     self.layer_counts = layer_counts
     super(ResnetCifar10Model, self).__init__(
         model, params=params)
+    self.trainable = trainable
 
   def add_inference(self, cnn):
     if self.layer_counts is None:
@@ -394,21 +390,22 @@ class ResnetCifar10Model(model_lib.CNNModel):
     cnn.use_batch_norm = True
     cnn.batch_norm_config = {'decay': 0.9, 'epsilon': 1e-5, 'scale': True}
     if self.version == 'v2':
-      cnn.conv(16, 3, 3, 1, 1, use_batch_norm=True)
+      cnn.conv(16, 3, 3, 1, 1, use_batch_norm=True, trainable=self.trainable)
     else:
-      cnn.conv(16, 3, 3, 1, 1, activation=None, use_batch_norm=True)
+      cnn.conv(16, 3, 3, 1, 1, activation=None, use_batch_norm=True,
+               trainable=self.trainable)
     for i in range(self.layer_counts[0]):
       # reshape to batch_size x 16 x 32 x 32
-      residual_block(cnn, 16, 1, self.version)
+      residual_block(cnn, 16, 1, self.version, trainable=self.trainable)
     for i in range(self.layer_counts[1]):
       # Subsampling is performed at the first convolution with a stride of 2
       stride = 2 if i == 0 else 1
       # reshape to batch_size x 32 x 16 x 16
-      residual_block(cnn, 32, stride, self.version)
+      residual_block(cnn, 32, stride, self.version, trainable=self.trainable)
     for i in range(self.layer_counts[2]):
       stride = 2 if i == 0 else 1
       # reshape to batch_size x 64 x 8 x 8
-      residual_block(cnn, 64, stride, self.version)
+      residual_block(cnn, 64, stride, self.version, trainable=self.trainable)
     if self.version == 'v2':
       cnn.batch_norm()
       cnn.top_layer = tf.nn.relu(cnn.top_layer)

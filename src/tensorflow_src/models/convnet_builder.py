@@ -110,7 +110,7 @@ class ConvNetBuilder(object):
       return conv_layers.conv2d(input_layer, filters, kernel_size, strides,
                                 padding, self.channel_pos,
                                 kernel_initializer=kernel_initializer,
-                                use_bias=False, trainable=False)
+                                use_bias=False, trainable=trainable)
     else:
       weights_shape = [kernel_size[0], kernel_size[1], num_channels_in, filters]
       # We use the name 'conv2d/kernel' so the variable has the same name as its
@@ -120,7 +120,7 @@ class ConvNetBuilder(object):
       weights = self.get_variable('conv2d/kernel', weights_shape,
                                   self.variable_dtype, self.dtype,
                                   initializer=kernel_initializer,
-                                  trainable=False)
+                                  trainable=trainable)
       if self.data_format == 'NHWC':
         strides = [1] + strides + [1]
       else:
@@ -480,6 +480,7 @@ class ConvNetBuilder(object):
                          alpha=np.sqrt(2),
                          activation='leaky_relu',
                          activation_slope=0.1,
+                         trainable=True,
                          **kwargs):
 
     if input_layer is None:
@@ -493,7 +494,7 @@ class ConvNetBuilder(object):
       kernel_initializer = tf.random_normal_initializer(
         stddev=alpha/np.sqrt(num_channels_out))
       kernel = tf.get_variable(name='kernel', shape=num_channels_in,
-        initializer=kernel_initializer)
+        initializer=kernel_initializer, trainable=trainable)
       x = self.top_layer
       # pad the input
       if num_channels_out > num_channels_in:
@@ -507,12 +508,13 @@ class ConvNetBuilder(object):
       if use_diag:
         diag_initializer = np.float32(
           np.random.choice([-1, 1], size=[num_channels_out]))
-        diag = tf.get_variable(name='diag', initializer=diag_initializer)
+        diag = tf.get_variable(name='diag', initializer=diag_initializer,
+                              trainable=trainable)
         x = tf.multiply(x, diag)
       if use_bias:
         bias_initializer = tf.constant_initializer(0.1)
         bias = tf.get_variable(name="bias", shape=[num_channels_out],
-          initializer=bias_initializer)
+          initializer=bias_initializer, trainable=trainable)
         x = x + bias
       if activation == 'leaky_relu':
         x = tf.nn.leaky_relu(x, alpha=activation_slope, name=name)
@@ -538,6 +540,7 @@ class ConvNetBuilder(object):
                       alpha=2,
                       activation='leaky_relu',
                       activation_slope=0.1,
+                      trainable=True,
                       **kwargs):
 
     if input_layer is None:
@@ -554,7 +557,7 @@ class ConvNetBuilder(object):
         stddev=np.sqrt(alpha/img_size**2))
       kernel = tf.get_variable(name='kernel',
         shape=[num_channels_in, img_size**2],
-        initializer=kernel_initializer)
+        initializer=kernel_initializer, trainable=trainable)
 
       x_fft = tf.signal.rfft(x)
       k_fft = tf.signal.rfft(kernel)
@@ -564,12 +567,14 @@ class ConvNetBuilder(object):
       if use_diag:
         diag_initializer = np.float32(
           np.random.choice([-1, 1], size=[num_channels_in, img_size**2]))
-        diag = tf.get_variable(name='diag', initializer=diag_initializer)
+        diag = tf.get_variable(name='diag',
+                               initializer=diag_initializer,
+                               trainable=trainable)
         x = tf.multiply(x, diag)
       if use_bias:
         bias_initializer = tf.constant_initializer(0.1)
         bias = tf.get_variable(name="bias", shape=[num_channels_in, img_size**2],
-          initializer=bias_initializer)
+          initializer=bias_initializer, trainable=trainable)
         x = x + bias
 
       if activation == 'leaky_relu':
