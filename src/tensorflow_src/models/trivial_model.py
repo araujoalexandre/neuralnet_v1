@@ -34,6 +34,30 @@ class TrivialModel(model_lib.CNNModel):
     cnn.affine(32*32)
 
 
+class ConvDenseModel(model_lib.CNNModel):
+
+  def __init__(self, params):
+    self.model_params = params.model_params
+    super(ConvDenseModel, self).__init__(
+        'ConvDenseModel', params=params)
+
+  def add_inference(self, cnn):
+    trainable = self.model_params.get('trainable', True)
+    logging.info('trainable {}'.format(trainable))
+
+    cnn.conv(32, 3, 3, 1, 1, mode='SAME', trainable=trainable)
+    cnn.mpool(2, 2, 2, 2, mode='VALID')
+
+    cnn.conv(64, 3, 3, 1, 1, mode='SAME', trainable=trainable)
+    cnn.mpool(2, 2, 2, 2, mode='VALID')
+
+    cnn.conv(96, 3, 3, 1, 1, mode='SAME', trainable=trainable)
+    cnn.mpool(2, 2, 2, 2, mode='VALID')
+
+    cnn.top_layer = tf.layers.flatten(cnn.top_layer)
+    cnn.top_size = cnn.top_layer.get_shape()[-1].value
+
+
 
 class TrivialSSD300Model(model_lib.CNNModel):
   """Trivial SSD300 model configuration."""
