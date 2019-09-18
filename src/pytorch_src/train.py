@@ -102,8 +102,6 @@ class Trainer:
       global_utils.remove_training_directory(self.train_dir)
     mkdir(self.train_dir)
 
-
-
     if self.params.torch_random_seed is not None:
       random.seed(self.params.torch_random_seed)
       torch.manual_seed(self.params.torch_random_seed)
@@ -117,14 +115,13 @@ class Trainer:
     if self.params.cudnn_benchmark:
       cudnn.benchmark = True
 
-
-    # # save the parameters in json formet in the training directory
-    # model_flags_dict = self.params.to_json()
-    # log_folder = '{}_logs'.format(self.train_dir)
-    # flags_json_path = join(log_folder, "model_flags.json")
-    # if not exists(flags_json_path):
-    #   with open(flags_json_path, "w") as fout:
-    #     fout.write(model_flags_dict)
+    # save the parameters in json formet in the training directory
+    model_flags_dict = self.params.to_json()
+    log_folder = '{}_logs'.format(self.train_dir)
+    flags_json_path = join(log_folder, "model_flags.json")
+    if not exists(flags_json_path):
+      with open(flags_json_path, "w") as fout:
+        fout.write(model_flags_dict)
 
     self._run_training()
 
