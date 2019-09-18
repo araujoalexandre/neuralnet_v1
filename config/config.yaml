@@ -18,13 +18,6 @@ debug: &debug
   # Use resource variables instead of normal variables. Resource variables are 
   # slower, but this option is useful for debugging their performance.
   use_resource_vars: False
-  # frequency of logs during training 
-  frequency_log_steps: 100 
-  # Verbosity level for summary ops. level 0: disable any summary.
-  # level 1: small and fast ops, e.g.: learning_rate, total_loss.
-  # level 2: medium-cost ops, e.g. histogram of all gradients.
-  # level 3: expensive ops: images and histogram of each gradient.
-  summary_verbosity: 1
 
 #########################
 ### Models Parameters ###
@@ -34,6 +27,7 @@ dense: &dense
   n_layers: 5
   hidden: 0
   use_bias: True
+  trainable: True
 
 diagonal_circulant: &diagonal_circulant
   n_layers: 5
@@ -41,11 +35,6 @@ diagonal_circulant: &diagonal_circulant
   use_bias: True
   alpha: 1.414
   activation_slope: 0.1
-
-conv_circulant: &conv_circulant
-  use_diag: False
-  use_bias: True
-  activation: relu6
 
 youtube: &youtube
   n_layers: 1 
@@ -72,8 +61,8 @@ wide_resnet: &wide_resnet
 
 piecewise_constant: &piecewise_constant
   boundaries: [7500, 15000, 20000]
-  # values: [0.001, 0.002, 0.0004, 0.00008]
-  values: [0.0005, 0.00025, 0.00005, 0.00001]
+  values: [0.001, 0.002, 0.0004, 0.00008]
+  # values: [0.0005, 0.00025, 0.00005, 0.00001]
 
 exponential_decay: &exponential_decay
   base_lr: 0.01
@@ -113,19 +102,19 @@ adam: &adam
 adversarial_training: &adversarial_training
   attack_method: FastGradientMethod
   ProjectedGradientDescent:
-    rand_minmax: 0.03
-    eps: 0.3
-    eps_iter: 0.02
-    nb_iter: 5
-    ord: 1
-    clip_min: -1.0
-    clip_max: +1.0
-    sanity_checks: False
+    rand_minmax:            0.03
+    eps:                    0.3
+    eps_iter:               0.02
+    nb_iter:                5
+    ord:                    1
+    clip_min:               -1.0
+    clip_max:               +1.0
+    sanity_checks:          False
   FastGradientMethod:
-    eps: 3.0
-    ord: 1
-    clip_min: -1.0
-    clip_max: +1.0
+    eps:                    3.0
+    ord:                    1
+    clip_min:               -1.0
+    clip_max:               +1.0
 
 
 #########################
@@ -195,6 +184,37 @@ float16: &float16
 train: &TRAIN
   <<: *debug
   <<: *float16
+   
+  dataset: cifar10
+  model: scattering_dense 
+  model_params:
+    <<: *diagonal_circulant
+
+ 
+  # If True, instead of using an L2 loss op per variable, concatenate the 
+  # variables into a single tensor and do a single L2 loss on the 
+  # concatenated tensor.
+  single_l2_loss_op: False
+  # Weight decay factor for training.
+  weight_decay: 0.00004
+
+
+  one_hot_labels: False
+  cifar_grayscale: False
+  data_augmentation: True
+  imagenet_image_size: 299
+
+  # Do computations related to learning rate on the CPU: improve XLA
+  compute_lr_on_cpu: True
+  lr_strategy: piecewise_constant
+  lr_params: 
+    <<: *piecewise_constant
+  optimizer: adam
+  optimizer_params:
+    <<: *adam
+
+
+  
   # tensorflow random seed 
   tf_random_seed: 1234
   # data pattern of tf records
@@ -224,6 +244,13 @@ train: &TRAIN
   save_checkpoint_steps: 250
   # How often to save summaries for trained models, 0 to disable.
   save_summaries_steps: 125 
+  # frequency of logs during training 
+  frequency_log_steps: 100 
+  # Verbosity level for summary ops. level 0: disable any summary.
+  # level 1: small and fast ops, e.g.: learning_rate, total_loss.
+  # level 2: medium-cost ops, e.g. histogram of all gradients.
+  # level 3: expensive ops: images and histogram of each gradient.
+  summary_verbosity: 1
 
 
 
@@ -282,7 +309,7 @@ train: &TRAIN
   #       an MPI framework (e.g. Open MPI). Each worker runs training on
   #       single GPU, and averages gradients using NCCL or MPI all-reduce.
   #       See https://github.com/uber/horovod for more details.
-  variable_update: replicated
+  variable_update: parameter_server
   # Device to use as parameter server: cpu or gpu. 
   local_parameter_device: cpu
   cross_replica_sync: True
@@ -304,7 +331,7 @@ train: &TRAIN
   # reduce across workers.
   # "pscpu:32k:xring" == use pscpu algorithm for tensors of size up to 32kB, 
   # then xring for larger tensors.')
-  all_reduce_spec: null
+  all_reduce_spec: False
   # If variable_update==distributed_all_reduce then it may be advantageous
   # to aggregate small tensors into one prior to reduction.  These parameters
   # control that aggregation.
@@ -340,18 +367,9 @@ train: &TRAIN
   variable_consistency: strong
 
 
-
-
-
   # If True, use tf.layers for neural network layers. This should not affect 
   # performance or accuracy in any way.
   use_tf_layers: True
-
-
-
-
-  
-
 
 
   # Data layout to use: NHWC (TF native) or NCHW (cuDNN native, requires GPU). 
@@ -371,33 +389,8 @@ train: &TRAIN
   # performance, at the cost of additional memory.
   datasets_use_caching: False
 
-  dataset: cifar10
-  model: random_conv_circulant
-  model_params: 
-   <<: *diagonal_circulant
 
 
-  # If True, instead of using an L2 loss op per variable, concatenate the 
-  # variables into a single tensor and do a single L2 loss on the 
-  # concatenated tensor.
-  single_l2_loss_op: False
-  # Weight decay factor for training.
-  weight_decay: 0.00004
-
-
-  one_hot_labels: False
-  cifar_grayscale: False
-  data_augmentation: True
-  imagenet_image_size: 224
-
-  # Do computations related to learning rate on the CPU: improve XLA
-  compute_lr_on_cpu: True
-  lr_strategy: piecewise_constant
-  lr_params: 
-    <<: *piecewise_constant
-  optimizer: adam
-  optimizer_params:
-    <<: *adam
   
   
   
