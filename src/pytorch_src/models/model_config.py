@@ -4,6 +4,7 @@ from . import lenet_model
 from . import resnet_model
 from . import vgg_model
 from . import wide_resnet_model
+from . import circulant_model
 
 _model_name_to_imagenet_model = {
     'trivial': '',
@@ -27,6 +28,7 @@ _model_name_to_cifar_model = {
     # 'resnet56': resnet_model.create_resnet56_cifar_model,
     # 'resnet110': resnet_model.create_resnet110_cifar_model,
     'wide_resnet': wide_resnet_model.WideResnetModel,
+    'diagonal_circulant': circulant_model.DiagonalCirculantModel,
 }
 
 _model_name_to_mnist_model = {
