@@ -21,7 +21,6 @@ class BaseReader:
     self.num_gpus = num_gpus
     self.num_splits = num_gpus
     self.batch_size = batch_size
-    self.batch_size_per_split = batch_size // self.num_splits
     self.is_training = is_training
     self.path = join(self.get_data_dir(), self.params.dataset)
     self.num_threads = self.params.datasets_num_private_threads
@@ -50,7 +49,7 @@ class BaseReader:
     else:
       sampler = None
     loader = DataLoader(self.dataset,
-                        batch_size=self.batch_size_per_split,
+                        batch_size=self.batch_size,
                         num_workers=self.num_threads,
                         shuffle=self.is_training and not sampler,
                         pin_memory=bool(self.num_gpus),
