@@ -103,8 +103,11 @@ class Trainer:
     self.model = model_config.get_model_config(
         self.params.model, self.params.dataset, self.params,
         self.reader.n_classes, is_training=True)
-    if self.num_gpus:
-      self.model = torch.nn.DataParallel(self.model).cuda()
+    # we don't use DataParallel due to bug with fft
+    if self.num_gpus > 1:
+      self.model = torch.nn.DataParallel(self.model)
+    self.model = self.model.cuda()
+
 
 
   def run(self):
