@@ -35,6 +35,22 @@ diagonal_circulant: &diagonal_circulant
   use_bias: True
   alpha: 1.414
   activation_slope: 0.1
+  n_channels: 256
+  trainable: True
+
+diagonal_circulant_by_channel: &diagonal_circulant_by_channel
+  channels:
+    n_layers: {n_layers_channel}
+    use_diag: {use_diag}
+    use_bias: False
+    alpha: 1.414
+    activation_slope: 0.1
+  classification:
+    n_layers: {n_layers_classif}
+    use_diag: True
+    use_bias: True
+    alpha: 1.414
+    activation_slope: 0.1
 
 youtube: &youtube
   n_layers: 1 
@@ -60,9 +76,9 @@ wide_resnet: &wide_resnet
 ################################
 
 piecewise_constant: &piecewise_constant
-  boundaries: [7500, 15000, 20000]
-  values: [0.001, 0.002, 0.0004, 0.00008]
-  # values: [0.0005, 0.00025, 0.00005, 0.00001]
+  boundaries: [10000, 20000, 30000, 40000]
+  values: [0.001, 0.0005, 0.0001, 0.00008, 0.00001]
+  # values: [0.005, 0.001, 0.0001, 0.00001, 0.000001]
 
 exponential_decay: &exponential_decay
   base_lr: 0.01
@@ -102,19 +118,19 @@ adam: &adam
 adversarial_training: &adversarial_training
   attack_method: FastGradientMethod
   ProjectedGradientDescent:
-    rand_minmax:            0.03
-    eps:                    0.3
-    eps_iter:               0.02
-    nb_iter:                5
-    ord:                    1
-    clip_min:               -1.0
-    clip_max:               +1.0
-    sanity_checks:          False
+    rand_minmax: 0.03
+    eps: 0.3
+    eps_iter: 0.02
+    nb_iter: 5
+    ord: 1
+    clip_min: -1.0
+    clip_max: +1.0
+    sanity_checks: False
   FastGradientMethod:
-    eps:                    3.0
-    ord:                    1
-    clip_min:               -1.0
-    clip_max:               +1.0
+    eps: 3.0
+    ord: 1
+    clip_min: -1.0
+    clip_max: +1.0
 
 
 #########################
@@ -186,9 +202,9 @@ train: &TRAIN
   <<: *float16
    
   dataset: cifar10
-  model: scattering_dense 
-  model_params:
-    <<: *diagonal_circulant
+  model: mobilenet_v2 
+  model_params: null
+  #   <<: *diagonal_circulant_by_channel
 
  
   # If True, instead of using an L2 loss op per variable, concatenate the 
@@ -222,7 +238,7 @@ train: &TRAIN
   # Batch size per compute device (i.e. GPU)
   batch_size: 50
   # Number of epochs to run 
-  num_epochs: 250
+  num_epochs: 200
   # Device to use for computation: cpu or gpu
   device: gpu
   # The number of GPUs to run on
