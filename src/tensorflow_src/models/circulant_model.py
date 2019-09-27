@@ -77,30 +77,30 @@ class ConvCirculant(model_lib.CNNModel):
 
 
 
-class RandomConvDiagonalCirculantModel(model_lib.CNNModel):
+class ConvDiagonalCirculantModel(model_lib.CNNModel):
 
   def __init__(self, params):
     self.model_params = params.model_params
-    super(RandomConvDiagonalCirculantModel, self).__init__(
-        'RandomConvDiagonalCirculantModel', params=params)
+    super(ConvDiagonalCirculantModel, self).__init__(
+        'ConvDiagonalCirculantModel', params=params)
 
   def skip_final_affine_layer(self):
     return True
 
   def add_inference(self, cnn):
     n_layers = self.model_params['n_layers']
+    trainable = self.model_params['trainable']
+    n_channels = self.model_params['n_channels']
+    if type(n_channels) == str:
+      n_channels = list(map(int, n_channels.split('/')))
+    elif type(n_channels) == int:
+      n_channels = [n_channels]
+    else:
+      raise ValueError("n_channels type not recognized")
 
-    cnn.conv(32, 3, 3, 1, 1, mode='SAME', trainable=False)
-    cnn.mpool(2, 2, 2, 2, mode='VALID')
-    logging.info(cnn.top_layer.get_shape())
-
-    cnn.conv(64, 3, 3, 1, 1, mode='SAME', trainable=False)
-    cnn.mpool(2, 2, 2, 2, mode='VALID')
-    logging.info(cnn.top_layer.get_shape())
-
-    cnn.conv(96, 3, 3, 1, 1, mode='SAME', trainable=False)
-    cnn.mpool(2, 2, 2, 2, mode='VALID')
-    logging.info(cnn.top_layer.get_shape())
+    for channel in n_channels:
+      cnn.conv(channel, 3, 3, 1, 1, mode='SAME', trainable=trainable)
+      cnn.mpool(2, 2, 2, 2, mode='VALID')
 
     cnn.top_layer = tf.layers.flatten(cnn.top_layer)
     cnn.top_size = cnn.top_layer.get_shape()[-1].value
@@ -111,10 +111,48 @@ class RandomConvDiagonalCirculantModel(model_lib.CNNModel):
 
 
 
+class DiagonalCirculantByChannel(model_lib.CNNModel):
 
+  def __init__(self, params):
+    self.model_params = params.model_params
+    super(DiagonalCirculantByChannel, self).__init__(
+      'DiagonalCirculantByChannel', params=params)
 
+  def skip_final_affine_layer(self):
+    return True
 
+  def add_channel_inference(self, cnn, params_channel):
+    for _ in range(params_channel['n_layers']):
+      cnn.flatten()
+      cnn.diagonal_circulant(**params_channel)
+      cnn.reshape((-1, 1, 32, 32))
+      cnn.batch_norm()
+    cnn.flatten()
+    return cnn.top_layer
 
+  def add_inference(self, cnn):
+
+    params_channel = self.model_params['channels']
+    params_classification = self.model_params['classification']
+
+    x = cnn.top_layer
+    x1, x2, x3 = tf.unstack(x, axis=1)
+
+    cnn.top_layer = x1
+    x1 = self.add_channel_inference(cnn, params_channel)
+    cnn.top_layer = x2
+    x2 = self.add_channel_inference(cnn, params_channel)
+    cnn.top_layer = x3
+    x3 = self.add_channel_inference(cnn, params_channel)
+
+    x = tf.reduce_mean([x1, x2, x3], 0)
+
+    cnn.top_layer = x
+    cnn.top_size = x.get_shape()[-1].value
+    for i in range(params_classification['n_layers']):
+      cnn.diagonal_circulant(**params_classification)
+    cnn.diagonal_circulant(num_channels_out=cnn.nclass,
+                          activation='linear')
 
 
 
