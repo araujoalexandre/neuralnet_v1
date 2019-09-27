@@ -91,6 +91,7 @@ _model_name_to_imagenet_model = {
 
 _model_name_to_cifar_model = {
     'trivial': trivial_model.TrivialModel,
+    'conv_dense': trivial_model.ConvDenseModel,
     'lenet': lenet_model.Lenet5Model,
     'alexnet': alexnet_model.AlexnetCifar10Model,
     'resnet20': resnet_model.create_resnet20_cifar_model,
@@ -115,7 +116,11 @@ _model_name_to_cifar_model = {
     'scattering_circulant': scattering_model.ScatteringHybridCirculantModel,
     'scattering_dense': scattering_model.ScatteringHybridDenseModel,
     'conv_circulant': circulant_model.ConvCirculant,
-    'random_conv_circulant': circulant_model.RandomConvDiagonalCirculantModel,
+    'conv_diagonal_circulant': circulant_model.ConvDiagonalCirculantModel,
+    'random_diagonal_circulant': circulant_model.RandomDiagCirculantModel,
+    'random_resnet_diagonal_circulant':
+      circulant_model.RandomResnetDiagCirculantModel,
+    'diagonal_circulant_by_channel': circulant_model.DiagonalCirculantByChannel
 }
 
 _model_name_to_object_detection_model = {

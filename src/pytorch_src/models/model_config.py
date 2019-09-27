@@ -5,6 +5,8 @@ from . import resnet_model
 from . import vgg_model
 from . import wide_resnet_model
 from . import circulant_model
+from . import scattering_model
+from . import structured_model
 
 _model_name_to_imagenet_model = {
     'trivial': '',
@@ -29,6 +31,13 @@ _model_name_to_cifar_model = {
     # 'resnet110': resnet_model.create_resnet110_cifar_model,
     'wide_resnet': wide_resnet_model.WideResnetModel,
     'diagonal_circulant': circulant_model.DiagonalCirculantModel,
+    'scattering_circulant': scattering_model.ScatteringCirculantModel,
+    'scattering_pooling_circulant':
+      scattering_model.ScatteringPoolingCirculantModel,
+    'scattering_by_channel_circulant':
+      scattering_model.ScatteringByChannelCirculantModel,
+    'ldr_model': structured_model.LDRModel,
+    'ldr_multi_layer_model': structured_model.LDRMultiLayerModel
 }
 
 _model_name_to_mnist_model = {
