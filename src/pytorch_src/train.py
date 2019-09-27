@@ -185,6 +185,7 @@ class Trainer:
 
     batch_start_time = time.time()
     inputs, labels = data
+    inputs, labels = inputs.cuda(), labels.cuda()
     outputs = self.model(inputs)
     self.optimizer.zero_grad()
     loss = self.criterion(outputs, labels.cuda())
