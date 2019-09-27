@@ -17,8 +17,6 @@ from .dataset.readers import readers_config
 import numpy as np
 import torch
 import torch.nn.functional as F
-import torchvision.models as models
-import torchvision.transforms as transforms
 import torch.backends.cudnn as cudnn
 from torch.optim import lr_scheduler
 
