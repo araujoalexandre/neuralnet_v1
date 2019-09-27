@@ -147,12 +147,6 @@ class Params:
     # hyperparameter name.
     if getattr(self, name, None) is not None:
       raise ValueError('Hyperparameter name is reserved: %s' % name)
-    # if isinstance(value, CommentedMap):
-    #   value = dict(value)
-    # if isinstance(value, ScalarFloat):
-    #   value = float(value)
-    # if isinstance(value, CommentedSeq):
-    #   value = list(value)
     setattr(self, name, value)
     self._params[name] = value
 
