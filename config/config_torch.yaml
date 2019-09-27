@@ -14,6 +14,8 @@ diagonal_circulant: &diagonal_circulant
   use_bias: True
   alpha: 1.414
   activation_slope: 0.1
+  use_batch_norm: True
+  pooling: max
 
 conv_circulant: &conv_circulant
   use_diag: False
@@ -26,45 +28,73 @@ wide_resnet: &wide_resnet
   leaky_slope: 0.1
   dropout: 0.3
 
+structured: &structured
+  rank: 1
+  class_type: toeplitz
+  n_layers: 3
+
 
 ################################
 ### Learning Rate Parameters ###
 ################################
 
 piecewise_constant: &piecewise_constant
-  boundaries: [7500, 15000, 20000]
+  milestones: [7500, 15000, 20000]
   values: [0.001, 0.002, 0.0004, 0.00008]
 
-exponential_decay: &exponential_decay
-  base_lr: 0.01
-  lr_decay: 0.97
-  lr_decay_examples: 400000
+step_lr: &step_lr
+  step_size: 50
+  gamma: 0.2
+
+multi_step_lr: &multi_step_lr
+  milestones: [30, 60, 90, 120, 180]
+  gamma: 0.1
+
+exponential_lr: &exponential_lrr
+  gamma: 0.97 
+
+reduce_lr_on_plateau: &reduce_lr_on_plateau
+  mode: 'min'
+  factor: 0.1
+  patience: 10
+  verbose: False
+  threshold: 0.0001
+  threshold_mode: 'rel'
+  cooldown: 0
+  min_lr: 0
+  eps: 1.e-08
 
 cyclic_lr: &cyclic_lr
   base_lr: 0.01
-  min_lr: 0.001
-  max_lr: 1
-  step_size_lr: 100
-  mode_cyclic_lr: triangular
-  gamma: 0.99994
+  max_lr: 0.1
+  step_size_up: 2000
+  step_size_down: None
+  mode: 'triangular'
+  gamma: 0.999
+  scale_fn: None
+  scale_mode: 'cycle'
+  cycle_momentum: True
+  base_momentum: 0.8
+  max_momentum: 0.9
 
 ############################
 ### Optimizer Parameters ###
 ############################
 
-momentum: &momentum
+sgd: &sgd
   momentum: 0.9
-  use_nesterov: True
+  dampening: 0
+  nesterov: True
 
 rmsprop: &rmsprop
-  decay: 0.9,
-  momentum: 0.0,
-  epsilon: 1.e-10
+  alpha: 0.99
+  momentum: 0.0
+  eps: 1.e-08
 
 adam: &adam 
-  beta1: 0.9
-  beta2: 0.999
-  epsilon: 1.e-08
+  betas: [0.9, 0.999]
+  eps: 1.e-08
+  amsgrad: True
 
 
 ###########################
@@ -74,32 +104,28 @@ adam: &adam
 train: &TRAIN
 
   dataset: cifar10
-  model: wide_resnet
+  model: ldr_multi_layer_model
   model_params: 
-    <<: *wide_resnet
+    <<: *structured
 
+  init_learning_rate: 0.001
+  lr_scheduler: step_lr 
+  lr_scheduler_params: 
+    <<: *step_lr
+  optimizer: adam
+  optimizer_params:
+    <<: *adam
+
+  # Weight decay factor for training.
+  weight_decay: 0.00004
 
   # Data layout to use: NHWC (TF native) or NCHW (cuDNN native, requires GPU). 
   # Choices: NHWC, NCHW.
   data_format: NCHW
 
-  # If True, instead of using an L2 loss op per variable, concatenate the 
-  # variables into a single tensor and do a single L2 loss on the 
-  # concatenated tensor.
-  single_l2_loss_op: False
-  # Weight decay factor for training.
-  weight_decay: 0.00004
-
-
   data_augmentation: True
   imagenet_image_size: 224
 
-  lr_strategy: piecewise_constant
-  lr_params: 
-    <<: *piecewise_constant
-  optimizer: adam
-  optimizer_params:
-    <<: *adam
 
   # tensorflow random seed 
   torch_random_seed: null
@@ -110,7 +136,7 @@ train: &TRAIN
   # Device to use for computation: cpu or gpu
   device: gpu
   # The number of GPUs to run on
-  num_gpus: 4
+  num_gpus: 1
   # This flag allows you to enable the inbuilt cudnn auto-tuner to find the 
   # best algorithm to use for your hardware.
   cudnn_benchmark: True
@@ -129,6 +155,9 @@ train: &TRAIN
   # use the default tf-Compute threads for dataset operations, if False, we
   # don't use a private threadpool.
   datasets_num_private_threads: 0
+
+  gradient_clip_by_norm: null
+  gradient_clip_by_value: 5
 
   # Sets the threshold for what messages will be logged. 
   logging_verbosity: INFO 
