@@ -47,6 +47,24 @@ def get_scheduler(optimizer, lr_scheduler, lr_scheduler_params):
   return scheduler
 
 
+def get_optimizer(optimizer, opt_args, init_lr, weight_decay, params):
+  """Returns the optimizer that should be used based on params."""
+  if optimizer == 'sgd':
+    opt = torch.optim.SGD(
+      params, lr=init_lr, weight_decay=weight_decay, **opt_args)
+  elif optimizer == 'rmsprop':
+    opt = torch.optim.RMSprop(
+      params, lr=init_lr, weight_decay=weight_decay, **opt_args)
+  elif optimizer == 'adam':
+    opt = torch.optim.Adam(
+      params, lr=init_lr, weight_decay=weight_decay, **opt_args)
+  else:
+    raise ValueError("Optimizer was not recognized")
+  return opt
+
+
+
+
 class Trainer:
   """A Trainer to train a PyTorch."""
 
@@ -121,11 +139,13 @@ class Trainer:
   def _run_training(self):
 
     self.criterion = torch.nn.CrossEntropyLoss().cuda()
-    self.optimizer = torch.optim.SGD(
-                       self.model.parameters(),
-                       lr=0.01,
-                       momentum=0.9,
-                       weight_decay=5e-4)
+    self.optimizer = get_optimizer(
+                       self.params.optimizer,
+                       self.params.optimizer_params,
+                       self.params.init_learning_rate,
+                       self.params.weight_decay,
+                       self.model.parameters())
+
     scheduler = get_scheduler(
       self.optimizer, self.params.lr_scheduler,
       self.params.lr_scheduler_params)
