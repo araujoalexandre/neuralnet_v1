@@ -3,6 +3,8 @@ import os, sys
 import shutil
 import json
 import argparse
+import copy
+from itertools import product
 from subprocess import Popen, PIPE
 from os.path import isdir, exists, join
 from datetime import datetime
@@ -91,31 +93,29 @@ class GenerateRunJobConfig:
       if self.params.n_gpus == 1 and not self.params.gpu.split(','):
         self.params.n_gpus = 0
 
-    # if params is set, generate config file
-    if self.params.params:
+    if self.params.mode == 'train' or \
+       (self.params.mode in ('eval', 'attack') and self.params.params):
       self.params.config_folder = 'config_gen'
       self.params.config = self.make_yaml_config()
-    else:
-      self.params.config_folder = 'config'
 
 
-  def get_name_id(self, outdir, name):
+  def get_name_id(self, outdir):
     id_ = 0
     while exists(join(
-      outdir,  'config_{}_{}.yaml'.format(name, id_))):
+      outdir,  'config_{}.yaml'.format(id_))):
       id_ += 1
-    return 'config_{}_{}'.format(name, id_)
+    return 'config_{}'.format(id_)
 
   def make_yaml_config(self):
-    if not self.params.name:
-      raise ValueError("Params is set. Name is are required")
+    # if not self.params.name:
+    #   raise ValueError("Params is set. Name is are required")
     # load the template and populate the values
     projectdir = os.environ['PROJECTDIR']
-    template = join(projectdir, 'config', '{}.yaml'.format(
-      self.params.config))
-    with open(template) as f:
-      template = f.read()
-    config = template.format(**json.loads(self.params.params))
+    config = open(
+      join(projectdir, 'config', '{}.yaml'.format(self.params.config))).read()
+    if self.params.params:
+      # config = config.format(**json.loads(self.params.params))
+      config = config.format(**self.params.params)
     # save new config file in config_gen 
     outdir = join(projectdir, 'config_gen')
     # check if config_gen directory exists in PROJECTDIR
@@ -123,7 +123,7 @@ class GenerateRunJobConfig:
     if not exists(outdir):
       os.mkdir(outdir)
     # save the config on disk 
-    config_name = self.get_name_id(outdir,  self.params.name)
+    config_name = self.get_name_id(outdir)
     config_path = join(outdir, config_name)
     with open(config_path+'.yaml', "w") as f:
       f.write(config)
@@ -165,22 +165,29 @@ class GenerateRunJobConfig:
          self.params.folder[-4:], self.params.mode)
        self.run_job(i+1)
      print("Folder {} created".format(self.params.folder))
+     return self.params.folder
 
   def _run_eval_attack_mode(self):
     self.params.job_name = '{}_{}'.format(
       self.params.folder[-4:], self.params.mode)
+    self.params.time = self.times[0]
     result = self.run_job(0)
     jobid = result.strip().split(' ')[-1]
     print("Submitted batch job {}".format(jobid))
 
   def run(self):
     if self.params.mode == "train":
-      self._run_training_mode()
+      return self._run_training_mode()
     elif self.params.mode in ('eval', 'attack'):
-      self._run_eval_attack_mode()
+      return self._run_eval_attack_mode()
 
 
-
+def parse_grid_search(params):
+  params = params.split(';')
+  params = {p.split(':')[0]: p.split(':')[1].split(',') for p in params}
+  params = list(dict(zip(params.keys(), values)) \
+            for values in product(*params.values()))
+  return params
 
 if __name__ == '__main__':
 
@@ -188,7 +195,7 @@ if __name__ == '__main__':
   path = "{}/models".format(os.environ['WORKDIR'])
 
   parser = argparse.ArgumentParser(
-      description='Run attacks on trained models.')
+      description='Script to generate bash or slurm script.')
   parser.add_argument("--config", type=str,
                         help="Config file to use for training.")
   parser.add_argument("--folder", type=str,
@@ -223,12 +230,12 @@ if __name__ == '__main__':
   parser.add_argument("--debug", action="store_true",
                         help="Activate debug mode.")
 
-  # paramters for batch experiments
-  parser.add_argument("--params", type=str, default='',
-            help="Parameters to override in the config file.")
+  # parameters for batch experiments
+  parser.add_argument("--grid_search", type=str, default='',
+            help="Parameters to inject in a template config file.")
   parser.add_argument("--name", type=str, default='',
-            help="Name of the batch experiments. Required if params is set.")
-  # args = vars(parser.parse_args())
+            help="Name of the batch experiments. Required if grid_search is set.")
+  args = vars(parser.parse_args())
   args = parser.parse_args()
 
   # sanity checks
@@ -250,6 +257,24 @@ if __name__ == '__main__':
   # if debug mode overide time
   if args.debug:
     args.time = 0.1
-  GenerateRunJobConfig(args).run()
+
+  if args.grid_search:
+    assert args.name, "Required if grid_search is set"
+    f_acc = open('script_accuracy_{}.sh'.format(args.name), 'w')
+    f_params = open('script_params_{}.sh'.format(args.name), 'w')
+    for params in parse_grid_search(args.grid_search):
+      args.params = params
+      folder = GenerateRunJobConfig(copy.copy(args)).run()
+      f_acc.write("echo '{} {}'\n".format(folder, str(params)))
+      f_acc.write("cat {}/{}_logs/best_accuracy.txt\n".format(path, folder))
+      f_params.write("echo '{}'\n".format(folder))
+      f_params.write(
+        "python3 utils/inspect_checkpoint.py --folder={}\n".format(folder))
+    f_acc.close()
+    f_params.close()
+  else:
+    args.params = None
+    GenerateRunJobConfig(args).run()
+
 
 
