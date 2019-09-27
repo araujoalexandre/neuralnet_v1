@@ -21,35 +21,29 @@ import torch.backends.cudnn as cudnn
 from torch.optim import lr_scheduler
 
 
-def get_scheduler(optimizer, policy="multistep",
-                  milestones=[60, 120, 160], gamma=0.2):
+def get_scheduler(optimizer, lr_scheduler, lr_scheduler_params):
   """Return a learning rate scheduler
-  Parameters:
-      optimizer          -- the optimizer of the network
-      opt (option class) -- stores all the experiment flags; needs to be a
-                            subclass of BaseOptions. opt.lr_policy is the name
-                            of learning rate policy:
-                            linear | step | plateau | cosine
-  For 'linear', we keep the same learning rate for the first <opt.niter> epochs
-  and linearly decay the rate to zero over the next <opt.niter_decay> epochs.
-  For other schedulers (step, plateau, and cosine), we use the default PyTorch
   schedulers. See https://pytorch.org/docs/stable/optim.html for more details.
   """
-  if policy == 'linear':
-      def lambda_rule(epoch):
-          lr_l = 1.0 - max(0, epoch + opt.start_epoch -
-                           opt.niter) / float(opt.niter_decay + 1)
-          return lr_l
-      scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_rule)
-  elif policy == 'step':
-      scheduler = lr_scheduler.StepLR(
-          optimizer, step_size=milestones, gamma=gamma)
-  elif policy == 'multistep':
-      scheduler = lr_scheduler.MultiStepLR(
-          optimizer,   milestones=milestones, gamma=gamma, last_epoch=-1)
+  if lr_scheduler == 'piecewise_constant':
+    raise NotImplementedError
+  elif lr_scheduler == 'step_lr':
+    scheduler = torch.optim.lr_scheduler.StepLR(
+        optimizer, **lr_scheduler_params)
+  elif lr_scheduler == 'multi_step_lr':
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(
+      optimizer, **lr_scheduler_params)
+  elif lr_scheduler == 'exponential_lr':
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(
+      optimizer, **lr_scheduler_params)
+  elif lr_scheduler == 'reduce_lr_on_plateau':
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+      optimizer, **lr_scheduler_params)
+  elif lr_scheduler == 'cyclic_lr':
+    scheduler = torch.optim.lr_scheduler.CyclicLR(
+      optimizer, **lr_scheduler_params)
   else:
-      return NotImplementedError(
-        "learning rate policy [%s] is not implemented", policy)
+    raise ValueError("scheduler was not recognized")
   return scheduler
 
 
@@ -133,8 +127,8 @@ class Trainer:
                        momentum=0.9,
                        weight_decay=5e-4)
     scheduler = get_scheduler(
-      self.optimizer, policy="multistep",
-      milestones=[30, 60, 90], gamma=0.2)
+      self.optimizer, self.params.lr_scheduler,
+      self.params.lr_scheduler_params)
 
     batch_size = self.batch_size
     n_files = self.reader.n_train_files
