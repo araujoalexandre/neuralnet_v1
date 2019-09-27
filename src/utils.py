@@ -54,7 +54,7 @@ def get_best_checkpoint(logs_dir, backend='tensorflow'):
     content = f.readline().split('\t')
     best_ckpt = content[0]
   best_ckpt_path = glob.glob(
-      join(self.train_dir, 'model.ckpt-{}.{}'.format(best_ckpt, ext)))
+    join(logs_dir[:-5], 'model.ckpt-{}.{}'.format(best_ckpt, ext)))
   if backend == 'tensorflow':
     return best_ckpt_path[-1][:-6], int(best_ckpt)
   return best_ckpt_path[-1], int(best_ckpt)
