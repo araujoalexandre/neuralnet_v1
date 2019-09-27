@@ -6,6 +6,7 @@ import random
 import tarfile
 import pickle
 import logging
+import shutil
 from os.path import join, exists
 from six.moves import urllib
 from datetime import datetime
@@ -19,16 +20,35 @@ from tensorflow import gfile
 from tensorflow.python_io import TFRecordWriter
 from tensorflow.keras import datasets
 
+sys.path.insert(0, "../models")
+from scattering_utils import Scattering
+from readers import readers_config
+
+
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string("output_dir", "/tmp/",
                     "Output data directory")
+
+flags.DEFINE_string("dataset", "",
+                    "Dataset to save as TFRecords.")
 
 flags.DEFINE_integer("train_split", 10,
                      "Number of TFRecords to split the train dataset")
 
 flags.DEFINE_integer("test_split", 1,
                      "Number of TFRecords to split the test dataset")
+
+
+flags.DEFINE_string("data_dir", "",
+                    "Directory of ImageNet TFRecords.")
+
+flags.DEFINE_integer("J", 2,
+                     "Params for Scattering Transform.")
+
+flags.DEFINE_integer("imagenet_image_size", 299,
+                     "Size of ImageNet images.")
+
 
 
 def _int64_feature(value):
@@ -141,11 +161,150 @@ class ConvertCIFAR100(ConvertDataset):
     self.reshape()
 
 
+
+
+
+
+
+
+class ConvertCIFAR10Scattering(ConvertDataset):
+  def __init__(self, J=2):
+    self.J = J
+    self.name = "cifar10_scattering_j{}".format(self.J)
+    (self.x_train, self.y_train), (self.x_test, self.y_test) = \
+        datasets.cifar10.load_data()
+    self.x_train = self.make_scattering(self.x_train, J=1)
+    self.x_test = self.make_scattering(self.x_test, J=1)
+    self.reshape()
+
+  def make_scattering(self, x, J=None):
+    """Transform images with Scattering Transform."""
+    assert J != None
+    with tf.device('/gpu:0'):
+      x_placeholder = tf.placeholder(
+        tf.float32, shape=(None, 3, 32, 32))
+      scattering_transform = Scattering(M=M, N=N, J=2)
+      x_scattering = scattering_transform(x_placeholder)
+
+    x = x / 255
+    x_scattering = []
+    batch_size = 100
+    n_batch = x.shape[0] / batch_size
+    x_splited = np.array_split(x, n_batch)
+    with tf.Session() as sess:
+      for batch in x_splited:
+        data_to_feed = {x_placeholder: batch}
+        x_scattering_ = sess.run(x_scattering, feed_dict=data_to_feed)
+        x_scattering.append(x_scattering_)
+    return np.vstack(x_scattering)
+
+
+
+
+class Params:
+  pass
+
+class ConvertImageNetScattering(ConvertDataset):
+  def __init__(self):
+    self.J = FLAGS.J
+    self.name = "imagenet_{}_scattering_j{}".format(
+      FLAGS.imagenet_image_size, self.J)
+
+    output_dir = join(FLAGS.output_dir, self.name)
+    # if exists(output_dir):
+    #   shutil.rmtree(output_dir)
+    if not exists(output_dir):
+      os.mkdir(output_dir)
+
+    self.params = Params()
+    self.params.imagenet_image_size = FLAGS.imagenet_image_size
+    self.params.data_dir = FLAGS.data_dir
+    self.params.one_hot_labels = False
+    self.params.summary_verbosity = None
+    self.params.datasets_num_private_threads = 10
+    self.params.datasets_interleave_cycle_length = 10
+    self.params.datasets_interleave_block_length = 10
+    self.params.datasets_use_caching = False
+
+    self.height = self.params.imagenet_image_size
+    self.width = self.params.imagenet_image_size
+
+
+  def convert(self):
+    if self.J != 1:
+      self.make_scattering("train", self.params)
+    self.make_scattering("valid", self.params)
+
+  def make_scattering(self, dataset, params):
+    """Transform images with Scattering Transform."""
+    params.data_pattern = "{}*".format(dataset)
+    reader = readers_config['imagenet'](
+      params, 16, ['/gpu:0'],
+      '/cpu:0', is_training=False)
+    if dataset == "train":
+      n_images = getattr(reader, 'n_train_files')
+    else:
+      n_images = getattr(reader, 'n_test_files')
+    n_files = n_images // 1024
+    img_size = params.imagenet_image_size
+    images, labels = reader.input_fn().get_next()[0]
+    images = tf.transpose(images, [0, 3, 1, 2])
+    scattering_transform = Scattering(
+      M=img_size, N=img_size, J=self.J)
+    images = scattering_transform(images)
+
+    local_var_init_op = tf.local_variables_initializer()
+    table_init_ops = tf.tables_initializer()
+    variable_mgr_init_ops = [local_var_init_op]
+    if table_init_ops:
+      variable_mgr_init_ops.extend([table_init_ops])
+    local_var_init_op_group = tf.group(*variable_mgr_init_ops)
+
+    batch_images, batch_labels = [], []
+    with tf.Session() as sess:
+      sess.run(local_var_init_op_group)
+      id_file, counter = 0, 0
+      while True:
+        try:
+          images_, labels_ = sess.run([images, labels])
+          batch_images.append(images_)
+          batch_labels.append(labels_)
+          counter += 1
+          if counter == 64:
+            batch_images = np.vstack(batch_images)
+            batch_size, *feature_shape = batch_images.shape
+            batch_images = batch_images.reshape(batch_size, -1)
+            batch_labels = np.vstack(batch_labels)
+            print("saving batch {}".format(id_file))
+            self._process_images(
+              dataset, batch_images, batch_labels, id_file, n_files)
+            batch_images, batch_labels = [], []
+            counter = 0
+            id_file += 1
+        except tf.errors.OutOfRangeError:
+          break
+    return
+
+
 def main(_):
-  ConvertMNIST().convert()
-  ConvertFashionMNIST().convert()
-  ConvertCIFAR10().convert()
-  ConvertCIFAR100().convert()
+  if FLAGS.dataset == "mnist":
+    ConvertMNIST().convert()
+  elif FLAGS.dataset == "fashion_mnist":
+    ConvertFashionMNIST().convert()
+  elif FLAGS.dataset == "cifar10":
+    ConvertCIFAR10().convert()
+  elif FLAGS.dataset == "cifar_scattering":
+    ConvertCIFAR10Scattering().convert()
+  elif FLAGS.dataset == "cifar100":
+    ConvertCIFAR100().convert()
+  elif FLAGS.dataset == "imagenet_scattering":
+    ConvertImageNetScattering().convert()
+  elif FLAGS.dataset == "all":
+    ConvertMNIST().convert()
+    ConvertFashionMNIST().convert()
+    ConvertCIFAR10().convert()
+    ConvertCIFAR100().convert()
+
 
 if __name__ == '__main__':
   tf.app.run()
