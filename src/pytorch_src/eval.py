@@ -67,9 +67,10 @@ class Evaluator:
         self.reader.n_classes, is_training=False)
     # TODO: get the loss another way
     self.criterion = torch.nn.CrossEntropyLoss().cuda()
-
-    if self.num_gpus:
-      self.model = torch.nn.DataParallel(self.model).cuda()
+    # we don't use DataParallel with 1 gpu due to bug with fft
+    if self.num_gpus > 1:
+      self.model = torch.nn.DataParallel(self.model)
+    self.model = self.model.cuda()
 
 
   def run(self):
