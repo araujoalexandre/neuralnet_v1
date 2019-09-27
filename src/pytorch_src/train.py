@@ -89,7 +89,10 @@ class Trainer:
     self.start_new_model = self.params.start_new_model
     self.train_dir = self.params.train_dir
     self.num_gpus = self.params.num_gpus
-    self.batch_size = self.params.batch_size * self.num_gpus
+    if self.num_gpus:
+      self.batch_size = self.params.batch_size * self.num_gpus
+    else:
+      self.batch_size = self.params.batch_size
 
     # create a mesage builder for logging
     self.message = global_utils.MessageBuilder()
