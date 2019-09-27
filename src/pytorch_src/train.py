@@ -193,6 +193,12 @@ class Trainer:
     self.optimizer.zero_grad()
     loss = self.criterion(outputs, labels.cuda())
     loss.backward()
+    if self.params.gradient_clip_by_norm:
+      torch.nn.utils.clip_grad_norm_(
+        self.model.parameters(), self.params.gradient_clip_by_norm)
+    elif self.params.gradient_clip_by_value:
+      torch.nn.utils.clip_grad_value_(
+        self.model.parameters(), self.params.gradient_clip_by_value)
     self.optimizer.step()
     seconds_per_batch = time.time() - batch_start_time
     examples_per_second = self.batch_size / seconds_per_batch
