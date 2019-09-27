@@ -216,8 +216,7 @@ class Evaluator:
           for ckpt in ckpts:
             logging.info(
               "Loading checkpoint for eval: {}".format(ckpt))
-            global_step = global_utils.get_global_step_from_ckpt(
-              ckpt, backend='tensorflow')
+            global_step = global_utils.get_global_step_from_ckpt(ckpt)
             # Restores from checkpoint
             self.saver.restore(sess, ckpt)
             sess.run(local_var_init_op_group)
