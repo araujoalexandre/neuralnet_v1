@@ -444,16 +444,15 @@ class ConvNetBuilder(object):
     center = True
     with tf.variable_scope(name) as scope:
       if self.use_tf_layers:
-        bn = tf.contrib.layers.batch_norm(
+        bn = tf_v1.layers.batch_normalization(
             input_layer,
-            decay=decay,
-            scale=scale,
+            axis=3 if self.data_format == 'NHWC' else 1,
+            momentum=decay,
             epsilon=epsilon,
-            is_training=self.phase_train,
-            fused=True,
-            data_format=self.data_format,
-            scope=scope,
-            center=center)
+            center=center,
+            scale=scale,
+            training=self.phase_train,
+            fused=True)
       else:
         bn = self._batch_norm_without_layers(input_layer, decay, scale, epsilon)
     self.top_layer = bn
