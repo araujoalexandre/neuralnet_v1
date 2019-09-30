@@ -12,12 +12,14 @@ from jinja2 import Template
 
 _CLUSTER_MAX_TIME_JOB = 20
 
+LIST_ATTACKS = [
+  'fgm', 'pgd', 'carlini', 'elasticnet']
+
 
 class GenerateRunJobConfig:
 
   def __init__(self, params):
 
-    self.attacks = ('fgm', 'pgd', 'carlini', 'elasticnet')
     self.date_format = "%Y-%m-%d_%H.%M.%S_%f"
     self.params = params
     # load template for sbatch script
@@ -85,7 +87,7 @@ class GenerateRunJobConfig:
     assert isdir(self.params.path), \
         "path '{}' does not exist".format(self.params.path)
 
-    # setup ouessant job parameters 
+    # setup LSF job parameters
     if self.params.cluster != "slurm":
       self.params.ld_library = os.environ['LD_LIBRARY_PATH']
     elif self.params.cluster == "slurm":
@@ -135,6 +137,9 @@ class GenerateRunJobConfig:
 
   def run_job(self, script_id):
     script = self.template.render(**vars(self.params))
+    if self.params.cluster == 'None':
+      print(script)
+      return None
     script_name  = '/tmp/script{}.sh'.format(script_id)
     with open(script_name, 'w') as f:
       f.write(script)
@@ -151,6 +156,8 @@ class GenerateRunJobConfig:
      for i, time in enumerate(self.times):
        self.params.time = time
        result = self.run_job(i)
+       if result is None:
+         return self.params.folder
        jobid = result.strip().split(' ')[-1]
        if self.params.cluster == "slurm":
          if "Submitted batch job" in result:
@@ -172,8 +179,9 @@ class GenerateRunJobConfig:
       self.params.folder[-4:], self.params.mode)
     self.params.time = self.times[0]
     result = self.run_job(0)
-    jobid = result.strip().split(' ')[-1]
-    print("Submitted batch job {}".format(jobid))
+    if result is not None:
+      jobid = result.strip().split(' ')[-1]
+      print("Submitted batch job {}".format(jobid))
 
   def run(self):
     if self.params.mode == "train":
@@ -253,6 +261,7 @@ if __name__ == '__main__':
   if args.mode == 'attack':
     assert args.attack, \
         "Need to specify the name of the attack: --attack."
+    assert args.attack in LIST_ATTACKS, "Attack not recognized."
 
   # if debug mode overide time
   if args.debug:
