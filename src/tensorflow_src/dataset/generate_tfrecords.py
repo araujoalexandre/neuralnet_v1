@@ -168,13 +168,13 @@ class ConvertCIFAR100(ConvertDataset):
 
 
 class ConvertCIFAR10Scattering(ConvertDataset):
-  def __init__(self, J=2):
-    self.J = J
+  def __init__(self):
+    self.J = FLAGS.J
     self.name = "cifar10_scattering_j{}".format(self.J)
     (self.x_train, self.y_train), (self.x_test, self.y_test) = \
         datasets.cifar10.load_data()
-    self.x_train = self.make_scattering(self.x_train, J=1)
-    self.x_test = self.make_scattering(self.x_test, J=1)
+    self.x_train = self.make_scattering(self.x_train, J=self.J)
+    self.x_test = self.make_scattering(self.x_test, J=self.J)
     self.reshape()
 
   def make_scattering(self, x, J=None):
@@ -183,7 +183,7 @@ class ConvertCIFAR10Scattering(ConvertDataset):
     with tf.device('/gpu:0'):
       x_placeholder = tf.placeholder(
         tf.float32, shape=(None, 3, 32, 32))
-      scattering_transform = Scattering(M=M, N=N, J=2)
+      scattering_transform = Scattering(M=M, N=N, J=J)
       x_scattering = scattering_transform(x_placeholder)
 
     x = x / 255
