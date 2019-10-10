@@ -231,8 +231,7 @@ class ConvertImageNetScattering(ConvertDataset):
 
 
   def convert(self):
-    if self.J != 1:
-      self.make_scattering("train", self.params)
+    self.make_scattering("train", self.params)
     self.make_scattering("valid", self.params)
 
   def make_scattering(self, dataset, params):
@@ -275,7 +274,6 @@ class ConvertImageNetScattering(ConvertDataset):
             batch_size, *feature_shape = batch_images.shape
             batch_images = batch_images.reshape(batch_size, -1)
             batch_labels = np.vstack(batch_labels)
-            print("saving batch {}".format(id_file))
             self._process_images(
               dataset, batch_images, batch_labels, id_file, n_files)
             batch_images, batch_labels = [], []
