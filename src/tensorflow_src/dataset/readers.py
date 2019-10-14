@@ -412,7 +412,7 @@ class IMAGENETReader(BaseReader):
     self.n_train_files = 1281167
     self.n_test_files = 50000
     self.n_classes = 1001
-    self.batch_shape = (None, self.height, self.height, 1)
+    self.batch_shape = (None, self.height, self.height, 3)
 
     self.files = self._get_tfrecords('imagenet')
 
