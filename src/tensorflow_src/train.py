@@ -338,8 +338,8 @@ class Trainer:
       self.cpu_device, is_training=True)
 
     # define the number of steps
-    num_steps_by_epochs = self.reader.n_train_files / self.global_batch_size
-    self.max_steps = self.params.num_epochs * num_steps_by_epochs
+    self.num_steps_by_epoch = self.reader.n_train_files / self.global_batch_size
+    self.max_steps = self.params.num_epochs * self.num_steps_by_epoch
 
 
   def add_forward_pass_and_gradients(self,
@@ -554,11 +554,8 @@ class Trainer:
       examples_per_step = self.batch_size
     if self.params.compute_lr_on_cpu:
       with tf.device(self.cpu_device):
-        # learning_rate = LearningRate(
-        #   global_step, self.batch_size).get_learning_rate()
         learning_rate = get_learning_rate(
-            self.params, global_step, self.reader.n_train_files,
-            self.model, examples_per_step)
+          self.params, global_step, self.num_steps_by_epoch, self.model)
 
     training_ops = []
     for d, device in enumerate(apply_gradient_devices):
@@ -572,11 +569,8 @@ class Trainer:
         if not self.params.compute_lr_on_cpu:
           # We compute the learning rate once for each device in
           # `apply_gradient_devices`.
-          # learning_rate = LearningRate(
-          #   global_step, self.batch_size).get_learning_rate()
           learning_rate = get_learning_rate(
-              self.params, global_step, self.reader.n_train_files,
-              self.model, examples_per_step)
+            self.params, global_step, self.num_steps_by_epoch, self.model)
 
         gradient_clip = self.params.gradient_clip
         if gradient_clip:
