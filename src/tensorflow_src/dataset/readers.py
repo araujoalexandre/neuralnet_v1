@@ -36,10 +36,12 @@ class BaseReader:
 
   def _get_tfrecords(self, name):
     paths = self.params.data_dir.split(':')
+    data_dir = None
     for path in paths:
       if gfile.exists(join(path, name)):
         data_dir = path
         break
+    assert data_dir is not None, "data_dir not found"
     paths = list(map(lambda x: join(data_dir, name, x),
                      self.params.data_pattern.split(',')))
     files = gfile.glob(paths)
