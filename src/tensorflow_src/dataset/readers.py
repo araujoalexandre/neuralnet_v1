@@ -104,7 +104,7 @@ class BaseReader:
       if self.datasets_use_caching:
         ds = ds.cache()
       if self.is_training:
-        ds = ds.shuffle(10000).repeat()
+        ds = ds.shuffle(self.params.datasets_shuffle_buffer_size).repeat()
       ds = ds.map(self._parse_and_preprocess,
               num_parallel_calls=10)
       ds = ds.batch(self.batch_size_per_split)
