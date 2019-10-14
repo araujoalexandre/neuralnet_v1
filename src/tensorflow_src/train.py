@@ -808,7 +808,7 @@ class Trainer:
 
     hooks = [
       tf.estimator.NanTensorHook(fetches['loss']),
-      tf.estimator.StopAtStepHook(num_steps=self.max_steps)]
+      tf.estimator.StopAtStepHook(last_step=self.max_steps)]
 
     # For the purpose of Supervisor, all Horovod workers are 'chiefs',
     # since we want session to be initialized symmetrically on all the
