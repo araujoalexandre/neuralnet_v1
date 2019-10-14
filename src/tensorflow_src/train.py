@@ -115,28 +115,6 @@ def generate_tfprof_profile(profiler, tfprof_file):
   profiler.profile_operations(options)
 
 
-def load_checkpoint(saver, sess, ckpt_dir):
-  """Loads checkpoint from provided directory or full path.
-
-  Args:
-    saver: Saver used to restore the checkpoint.
-    sess: TensorFlow session.
-    ckpt_dir: Path to a folder of checkpoints or full path to a checkpoint.
-
-  Returns:
-    Global step.
-  """
-  model_checkpoint_path = _get_checkpoint_to_load(ckpt_dir)
-  global_step = model_checkpoint_path.split('/')[-1].split('-')[-1]
-  if not global_step.isdigit():
-    global_step = 0
-  else:
-    global_step = int(global_step)
-  saver.restore(sess, model_checkpoint_path)
-  logging.info('Successfully loaded model from %s.' % model_checkpoint_path)
-  return global_step
-
-
 def _get_checkpoint_to_load(ckpt_dir):
   """Returns which checkpoint to load.
 
@@ -859,8 +837,6 @@ class Trainer:
 
     logging.info("Start training")
     with tf_v1.train.MonitoredTrainingSession(**session_args) as sess:
-      # if not self.params.start_new_model:
-      #   load_checkpoint(saver, sess, ckpt_dir, self.params.train_dir)
 
       if bcast_global_variables_op:
         sess.run(bcast_global_variables_op)
