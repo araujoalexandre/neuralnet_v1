@@ -4,7 +4,7 @@ import tensorflow as tf
 import tensorflow.compat.v1 as tf_v1
 
 from . import model as model_lib
-from scattering_utils import Scattering
+from .scattering_utils import Scattering
 
 
 class ScatteringHybridCirculantModel(model_lib.CNNModel):
