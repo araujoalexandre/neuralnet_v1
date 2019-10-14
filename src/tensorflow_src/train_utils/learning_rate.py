@@ -132,8 +132,7 @@ def cyclic_learning_rate(global_step,
 
 
 
-def get_learning_rate(params, global_step, num_examples_per_epoch, model,
-                      batch_size):
+def get_learning_rate(params, global_step, num_step_by_epoch, model):
   """Returns a learning rate tensor based on global_step.
 
   Args:
@@ -158,7 +157,6 @@ def get_learning_rate(params, global_step, num_examples_per_epoch, model,
   with tf.name_scope('learning_rate'):
     if lr_strategy == "default":
       # get learning rate from model class
-      num_batches_per_epoch = num_examples_per_epoch / batch_size
       learning_rate = model.get_learning_rate(global_step, batch_size)
     elif lr_strategy == 'piecewise_constant':
       boundaries = lr_params['boundaries']
@@ -169,12 +167,14 @@ def get_learning_rate(params, global_step, num_examples_per_epoch, model,
         boundaries=boundaries,
         values=values)
     elif params.lr_strategy == 'exponential_decay':
-      learning_rate = tf.train.exponential_decay(
-          lr_params['base_lr'],
-          self.global_step * self.batch_size,
-          lr_params['lr_decay_examples'],
-          lr_params['lr_decay'],
-          staircase=True)
+      epoch = tf.math.floor(
+        tf.math.divide(tf.cast(global_step, tf.float32), num_step_by_epoch))
+      learning_rate = tf_v1.train.exponential_decay(
+        learning_rate=lr_params['learning_rate'],
+        global_step=epoch,
+        decay_steps=lr_params['decay_steps'],
+        decay_rate=lr_params['decay_rate'],
+        staircase=True)
     elif params.lr_strategy == 'cyclic_lr':
       learning_rate = cyclic_learning_rate(
           global_step,
