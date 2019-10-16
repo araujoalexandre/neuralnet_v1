@@ -184,9 +184,8 @@ class Params:
         sort_keys=sort_keys)
 
 
-def load_params(config_file, config_name, override_params):
+def load_params(config_file, config_name, override_params=None):
   params = Params()
-  # yaml = YAML()
   with open(config_file) as f:
     data = load(f, Loader=Loader)
   for k, v in data[config_name].items():
