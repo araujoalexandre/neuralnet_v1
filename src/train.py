@@ -29,8 +29,6 @@ flags.DEFINE_string('horovod_device', '', 'Device to do Horovod all-reduce on: '
                     'option, and CPU otherwise.')
 flags.DEFINE_string("backend", "tensorflow",
                     "Wheather run tensorflow model of Pytorch.")
-flags.DEFINE_string("params", None,
-                    "Parameters to override.")
 
 
 def main(_):
@@ -38,8 +36,7 @@ def main(_):
   if not FLAGS.train_dir or not FLAGS.data_dir:
     raise ValueError("train_dir and data_dir need to be set.")
 
-  params = utils.load_params(
-    FLAGS.config_file, FLAGS.config_name, FLAGS.params)
+  params = utils.load_params(FLAGS.config_file, FLAGS.config_name)
   params.train_dir = FLAGS.train_dir
   params.data_dir = FLAGS.data_dir
   params.start_new_model = FLAGS.start_new_model
