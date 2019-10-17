@@ -1,6 +1,7 @@
 
 import logging
 from os.path import join
+from functools import partial
 
 import tensorflow as tf
 from tensorflow.io import gfile
@@ -405,7 +406,7 @@ class IMAGENETReader(BaseReader):
     super(IMAGENETReader, self).__init__(
       params, batch_size, gpu_devices, cpu_device, is_training)
 
-    # Provide square images of this size. 
+    # Provide square images of this size.
     self.image_size = self.params.imagenet_image_size
 
     self.height, self.width = self.image_size, self.image_size
@@ -666,6 +667,48 @@ class IMAGENETReader(BaseReader):
     return image
 
 
+class ImagenetScatteringReader(BaseReader):
+
+  def __init__(self, image_size, j,
+               params, batch_size, gpu_devices, cpu_device,
+               is_training):
+    super(ImagenetScatteringReader, self).__init__(
+      params, batch_size, gpu_devices, cpu_device, is_training)
+
+    # Provide square images of this size. 
+    self.image_size = self.params.imagenet_image_size
+    channel = int(1 + j * 8 + (8**2  * j * (j - 1) / 2))
+    output_size  = int(image_size / 2**j)
+    self.reshape = (3, channel, output_size, output_size)
+
+    self.height, self.width = self.image_size, self.image_size
+    self.n_train_files = 1281167
+    self.n_test_files = 50000
+    self.n_classes = 1001
+    self.batch_shape = (None, self.height, self.height, 1)
+
+    self.files = self._get_tfrecords('imagenet_{}_scattering_j{}'.format(
+      image_size, j))
+
+  def _image_preprocessing(self, image_buffer):
+    """Decode and preprocess one image for evaluation or training.
+    Args:
+      image_buffer: JPEG encoded string Tensor
+    Returns:
+      Tensor containing an appropriately scaled image
+    """
+    image = tf.decode_raw(image_buffer, tf.float32)
+    image = tf.reshape(image, self.reshape)
+    return image
+
+
+def create_imagenet_scattering(*args, **kwargs):
+  image_size = kwargs['image_size']
+  j = kwargs['j']
+  del kwargs['image_size'], kwargs['j']
+  return ImagenetScatteringReader(image_size, j, *args, **kwargs)
+
+
 readers_config = {
   'mnist': MNISTReader,
   'cifar10': CIFAR10Reader,
@@ -673,8 +716,19 @@ readers_config = {
   'fashion_mnist': FashionMNISTReader,
   'youtube_agg': YT8MAggregatedFeatureReader,
   'youtube_frame': YT8MFrameFeatureReader,
-  'imagenet': IMAGENETReader
+  'imagenet': IMAGENETReader,
+  'imagenet_296_scattering_j1':
+    partial(create_imagenet_scattering, image_size=296, j=1),
+  'imagenet_296_scattering_j2':
+    partial(create_imagenet_scattering, image_size=296, j=2),
+  'imagenet_296_scattering_j3':
+    partial(create_imagenet_scattering, image_size=296, j=3),
+  'imagenet_224_scattering_j1':
+    partial(create_imagenet_scattering, image_size=224, j=1),
+  'imagenet_224_scattering_j2':
+    partial(create_imagenet_scattering, image_size=224, j=2),
+  'imagenet_224_scattering_j3':
+    partial(create_imagenet_scattering, image_size=224, j=3),
 }
-
 
 
