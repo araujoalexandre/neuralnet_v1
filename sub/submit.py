@@ -3,191 +3,231 @@ import os, sys
 import shutil
 import json
 import argparse
-import copy
+import tempfile
+import time
 from itertools import product
 from subprocess import Popen, PIPE
 from os.path import isdir, exists, join
+from os.path import basename, dirname
 from datetime import datetime
-from jinja2 import Template
+
+from script import GenerateScript
 
 _CLUSTER_MAX_TIME_JOB = 20
 
 LIST_ATTACKS = [
   'fgm', 'pgd', 'carlini', 'elasticnet']
 
+DATE_FORMAT = "%Y-%m-%d_%H.%M.%S_%f"
+
 
 class GenerateRunJobConfig:
 
-  def __init__(self, params):
+  def __init__(self,
+               config_file=None,
+               models_dir=None,
+               train_dir=None,
+               mode=None,
+               backend='tensorflow',
+               with_eval=None,
+               start_new_model=None,
+               attack_name=None,
+               file_to_run=None,
+               n_cpus=None,
+               n_gpus=None,
+               partition=None,
+               cluster=None,
+               time=None,
+               dependency=None,
+               template_config_params=None,
+               override_params=None,
+               debug=False,
+               dev=False,
+               verbose=False,
+               distributed_config=None):
 
-    self.date_format = "%Y-%m-%d_%H.%M.%S_%f"
-    self.params = params
-    # load template for sbatch script
-    with open('sub/template.job') as f:
-      self.template = Template(f.read())
+    self.config_file = '{}.yaml'.format(config_file)
+    self.models_dir = models_dir
+    self.train_dir = train_dir
+    self.mode = mode
+    self.backend = backend
+    self.with_eval = with_eval
+    self.start_new_model = start_new_model
+    self.attack_name = attack_name
+    self.file_to_run = file_to_run
+    self.n_cpus = n_cpus
+    self.n_gpus = n_gpus
+    self.slurm_partition = partition
+    self.cluster = cluster
+    self.time = time
+    self.dependency = dependency
+    self.template_config_params = template_config_params
+    self.override_params = override_params
+    self.debug = debug
+    self.dev = dev
+    self.verbose = verbose
+    self.dev_or_debug_mode = self.debug or self.dev
+    self.distributed_config = distributed_config
 
-    # get environnement variables
-    self.params.home = os.environ['HOME']
-    self.params.projectdir = os.environ['PROJECTDIR']
-    self.params.bash_path = shutil.which("bash")
+    if self.cluster == "slurm":
+      self.executable = 'sbatch'
+    else:
+      self.executable = 'bash'
+    
+    self.projectdir = os.environ.get('PROJECTDIR', None)
+    assert self.projectdir is not None, \
+      "You need to define a project directory in environement variable"
+
+    # define the name of the log file
+    if self.mode == 'train':
+      self.log_filename = 'train'
+    elif self.mode in 'eval':
+      self.log_filename = 'eval'
+    elif self.mode == 'attack':
+      self.log_filename = 'attack_{}'.format(self.attack_name)
 
     # define folder name for training
-    if not self.params.debug and not self.params.folder:
-      self.params.folder = datetime.now().strftime(
-        self.date_format)[:-2]
-    elif self.params.debug and not self.params.folder:
-      self.params.folder = 'folder_debug'
-
-    if not self.params.debug:
-      self.params.with_eval = True
-      self.params.job_name = '{}_{}'.format(
-        self.params.folder[-4:], self.params.mode)
+    if not self.dev_or_debug_mode and not self.train_dir:
+      self.train_dir = join(
+        models_dir, datetime.now().strftime(DATE_FORMAT)[:-2])
+    elif self.dev_or_debug_mode and not self.train_dir:
+      self.train_dir = join(models_dir, 'folder_debug')
     else:
-      self.params.with_eval = False
-      self.params.job_name = 'debug'
+      self.train_dir = join(models_dir, self.train_dir)
+    
+    self.logs_dir  = '{}_logs'.format(self.train_dir)
+    # we don't create the train directory because it will be created by the
+    # train session 
+    if not exists(self.logs_dir):
+      os.mkdir(self.logs_dir)
 
-    if self.params.cluster == "slurm":
-      self.executable = "sbatch"
-    elif self.params.cluster == "lsf":
-      self.executable = "bsub"
+    if not self.dev_or_debug_mode:
+      self.job_name = '{}_{}'.format(self.train_dir[-4:], self.mode)
     else:
-      self.executable = "bash"
+      self.with_eval = False
+      self.job_name = 'debug'
 
     # if we run the job on a cluster, we may run multiple jobs 
-    # to match the time required: if params.time > _CLUSTER_MAX_TIME_JOB, 
+    # to match the time required: if self.time > _CLUSTER_MAX_TIME_JOB, 
     # we run multiple jobs with dependency
-    if not self.params.debug:
-      if self.params.cluster in ('lsf', 'slurm'):
-        njobs = self.params.time // _CLUSTER_MAX_TIME_JOB
+    if not self.dev_or_debug_mode:
+      if self.cluster == 'slurm':
+        njobs = self.time // _CLUSTER_MAX_TIME_JOB
         self.times = [60 * _CLUSTER_MAX_TIME_JOB] * njobs
-        if self.params.time % _CLUSTER_MAX_TIME_JOB:
-          self.times += [(self.params.time % _CLUSTER_MAX_TIME_JOB) * 60]
+        if self.time % _CLUSTER_MAX_TIME_JOB:
+          self.times += [(self.time % _CLUSTER_MAX_TIME_JOB) * 60]
         self.times = list(map(int, self.times))
       else:
-        # we convert the time in minutes
-        self.times = [self.params.time * 60]
+        # not cluster job, unlimitied time
+        self.times = None
     else:
+      # in dev or debug mode, we only ask for 60 minutes
       self.times = [60]
 
     # define file to run if it is not set 
-    if not self.params.file:
-      if self.params.mode == "train":
-        self.params.file = "train"
-      elif self.params.mode in ['eval', 'attack']:
-        self.params.file = "eval"
+    if not self.file_to_run:
+      if self.mode == "train":
+        self.file_to_run = "train.py"
+      elif self.mode in ['eval', 'attack']:
+        self.file_to_run = "eval.py"
 
-    if params.mode == 'train':
-      # check if config file exist
-      projectdir = os.environ['PROJECTDIR']
-      assert exists(
-        join(projectdir, 'config', "{}.yaml".format(self.params.config))), \
-          "config file '{}' does not exist".format(self.params.config)
+    if self.mode == 'train':
+      self.config_path = self.make_yaml_config()
+    elif self.mode in ('eval', 'attack'):
+      self.config_path = join(self.logs_dir, 'config.yaml')
+      assert exists(self.config_path), \
+          "config.yaml not found in '{}'.".format(basename(self.train_dir))
 
-    # check if path to model folder exists
-    assert isdir(self.params.path), \
-        "path '{}' does not exist".format(self.params.path)
+    # init script template object
+    self.script_template = GenerateScript(
+                        cluster=self.cluster,
+                        mode=self.mode,
+                        train_dir=self.train_dir,
+                        job_name=self.job_name,
+                        partition=self.slurm_partition,
+                        n_gpus=self.n_gpus,
+                        n_cpus=self.n_cpus,
+                        dependency=self.dependency,
+                        file_to_run=self.file_to_run,
+                        attack_name=self.attack_name,
+                        log_filename=self.log_filename,
+                        config_file=self.config_path,
+                        backend=self.backend,
+                        start_new_model=self.start_new_model,
+                        dev_mode=self.dev,
+                        distributed_config=self.distributed_config)
 
-    # setup LSF job parameters
-    if self.params.cluster != "slurm":
-      self.params.ld_library = os.environ['LD_LIBRARY_PATH']
-    elif self.params.cluster == "slurm":
-      self.params.n_gpus = len(self.params.gpu.split(','))
-      if self.params.n_gpus == 1 and not self.params.gpu.split(','):
-        self.params.n_gpus = 0
-
-    if self.params.mode == 'train' or \
-       (self.params.mode in ('eval', 'attack') and self.params.params):
-      self.params.config_folder = 'config_gen'
-      self.params.config = self.make_yaml_config()
-
-
-  def get_name_id(self, outdir):
-    id_ = 0
-    while exists(join(
-      outdir,  'config_{}.yaml'.format(id_))):
-      id_ += 1
-    return 'config_{}'.format(id_)
 
   def make_yaml_config(self):
-    # if not self.params.name:
-    #   raise ValueError("Params is set. Name is are required")
     # load the template and populate the values
-    projectdir = os.environ['PROJECTDIR']
-    config = open(
-      join(projectdir, 'config', '{}.yaml'.format(self.params.config))).read()
-    if self.params.params:
-      # config = config.format(**json.loads(self.params.params))
-      config = config.format(**self.params.params)
-    # save new config file in config_gen 
-    outdir = join(projectdir, 'config_gen')
-    # check if config_gen directory exists in PROJECTDIR
-    # create the folder if it does not exist
-    if not exists(outdir):
-      os.mkdir(outdir)
+    config_path = join(self.projectdir, 'config', self.config_file)
+    assert exists(config_path), \
+          "config file '{}' does not exist".format(self.config_file)
+    with open(config_path) as f:
+      config = f.read()
+    if getattr(self, 'template_config_params', None):
+      config = config.format(**self.template_config_params)
     # save the config on disk 
-    config_name = self.get_name_id(outdir)
-    config_path = join(outdir, config_name)
-    with open(config_path+'.yaml', "w") as f:
+    config_path = join(self.logs_dir, 'config.yaml')
+    with open(config_path, "w") as f:
       f.write(config)
-    return config_name
+    return config_path
 
   def _execute(self, *args, **kwargs):
     cmd = [self.executable] + list(args)
     return Popen(cmd, stdout=PIPE, stderr=PIPE, **kwargs).communicate()
 
-  def run_job(self, script_id):
-    script = self.template.render(**vars(self.params))
-    if self.params.cluster == 'None':
-      print(script)
-      return None
-    script_name  = '/tmp/script{}.sh'.format(script_id)
-    with open(script_name, 'w') as f:
-      f.write(script)
-    p = self._execute(script_name)
-    result, error = list(map(lambda x: x.decode('utf8'), p))
-    if error != '':
-      raise RuntimeError("Error in the job submission {}".format(error))
-    os.remove(script_name)
-    return result
+  def run_job(self, script):
+    with tempfile.NamedTemporaryFile(mode='w') as fp:
+      fp.write(script)
+      fp.flush()
+      if self.verbose:
+        print(script)
+      p = self._execute(fp.name)
+    if self.cluster is not None:
+      result, error = list(map(lambda x: x.decode('utf8'), p))
+      if error:
+        raise RuntimeError("Error in the job submission {}".format(error))
+      return result 
+    return None
 
-  def _run_training_mode(self):
-     # run training
-     self.params.start_new_model = True
-     for i, time in enumerate(self.times):
-       self.params.time = time
-       result = self.run_job(i)
-       if result is None:
-         return self.params.folder
-       jobid = result.strip().split(' ')[-1]
-       if self.params.cluster == "slurm":
-         if "Submitted batch job" in result:
-           self.params.start_new_model = False
-           self.params.dependency = jobid
-       print("Submitted batch job {}".format(jobid))
-     # run eval
-     if self.params.with_eval:
-       self.params.mode = "eval"
-       self.params.file = "eval"
-       self.params.job_name = '{}_{}'.format(
-         self.params.folder[-4:], self.params.mode)
-       self.run_job(i+1)
-     print("Folder {} created".format(self.params.folder))
-     return self.params.folder
+  def run_training_mode(self):
+    # run training jobs
+    # we may run several dependent job if time > MAX_CLUSTER_TIME
+    self.script_template.dependency = None
+    for time in self.times:
+      self.script_template.time = time 
+      script = self.script_template.generate()
+      result = self.run_job(script)
+      if result is None:
+        return self.train_dir
+      jobid = result.strip().split(' ')[-1]
+      if self.cluster == "slurm":
+        if "Submitted batch job" in result:
+          self.script_template.start_new_model = False
+          self.script_template.dependency = jobid
+      print("Submitted batch job {}".format(jobid))
+    # run eval
+    if self.with_eval:
+      self.script_template.switch_to_eval_mode()
+      script = self.script_template.generate()
+      self.run_job(script)
+    print("Folder '{}' created".format(basename(self.train_dir)))
+    return self.train_dir
 
-  def _run_eval_attack_mode(self):
-    self.params.job_name = '{}_{}'.format(
-      self.params.folder[-4:], self.params.mode)
-    self.params.time = self.times[0]
-    result = self.run_job(0)
+  def run_eval_attack_mode(self):
+    self.script_template.time = self.times[0]
+    script = self.script_template.generate()
+    result = self.run_job(script)
     if result is not None:
       jobid = result.strip().split(' ')[-1]
       print("Submitted batch job {}".format(jobid))
 
   def run(self):
-    if self.params.mode == "train":
-      return self._run_training_mode()
-    elif self.params.mode in ('eval', 'attack'):
-      return self._run_eval_attack_mode()
+    if self.mode == "train":
+      return self.run_training_mode()
+    elif self.mode in ('eval', 'attack'):
+      return self.run_eval_attack_mode()
 
 
 def parse_grid_search(params):
@@ -199,35 +239,44 @@ def parse_grid_search(params):
 
 if __name__ == '__main__':
 
-  # default path 
-  path = "{}/models".format(os.environ['WORKDIR'])
+  project_dir = os.environ.get('PROJECTDIR', None)
+  assert project_dir is not None, \
+    "A project directory needs to be set in environnement variables"
+  work_dir = os.environ.get('WORKDIR', None)
+  assert work_dir is not None, \
+    "A working directory needs to be set in environnement variables"
+  data_dir = os.environ.get('DATADIR', None)
+  assert data_dir is not None, \
+    "A project directory needs to be set in environnement variables"
 
   parser = argparse.ArgumentParser(
       description='Script to generate bash or slurm script.')
   parser.add_argument("--config", type=str,
-                        help="Config file to use for training.")
-  parser.add_argument("--folder", type=str,
-                        help="Folder of the trained models.")
+                        help="Name of the config file to use for training.")
+  parser.add_argument("--train_dir", type=str,
+                        help="Name or path of train directory.")
   parser.add_argument("--mode", type=str, default="train",
                         choices=("train", "eval", "attack"),
                         help="Choose job type train, eval, attack.")
   parser.add_argument("--backend", type=str, default="tensorflow",
                         choices=("tensorflow", "tf", "pytorch", "torch", "py"),
                         help="Choose job type train, eval, attack.")
-  parser.add_argument("--with_eval", type=bool, default=True,
+  parser.add_argument("--no_eval", action="store_true", default=False,
                         help="Run the evaluation after training.")
-  parser.add_argument("--path", type=str, default=path,
-                        help="Set path of trained folder.")
+  parser.add_argument("--restart_model", action="store_true", default=False,
+                        help="Start the training of a new model or restart one.")
+  parser.add_argument("--models_dir", type=str,
+                        help="Set path of trained folders.")
   parser.add_argument("--attack", type=str, default='',
                         help="Attack to perform.")
-  parser.add_argument("--file", type=str,
+  parser.add_argument("--file_to_run", type=str,
                         help="Set file to run")
-  parser.add_argument("--cpu", type=int, default=60,
-                        help="Set the number of CPU to use.")
-  parser.add_argument("--gpu", type=str, default="0,1,2,3",
-                        help="Set CUDA_VISIBLE_DEVICES")
-  parser.add_argument("--partition", type=str, default="gpu_gct3",
-                        help="define the slurm partition to use")
+  parser.add_argument("--n_cpus", type=int, default=40,
+                        help="Number of cpu to use.")
+  parser.add_argument("--n_gpus", type=int, default=4,
+                        help="Number of gpu to use.")
+  parser.add_argument("--partition", type=str, default="gpu_p1",
+                        help="Define the slurm partition to use")
   parser.add_argument("--cluster", type=str, default="slurm",
                         help="slurm to generate slurm srun code, bash otherwise")
   parser.add_argument("--time", type=int, default=20,
@@ -237,53 +286,112 @@ if __name__ == '__main__':
                              "the specified job_id completed.")
   parser.add_argument("--debug", action="store_true",
                         help="Activate debug mode.")
+  parser.add_argument("--dev", action="store_true",
+                        help="Activate dev mode.")
+  parser.add_argument("--verbose", action="store_true",
+                        help="Activate print information.")
 
   # parameters for batch experiments
   parser.add_argument("--grid_search", type=str, default='',
             help="Parameters to inject in a template config file.")
   parser.add_argument("--name", type=str, default='',
             help="Name of the batch experiments. Required if grid_search is set.")
-  args = vars(parser.parse_args())
+  
+  # parameters for distributed settings
+  parser.add_argument("--nodes", type=int, default=1,
+                      help="Number of nodes to use for cluster job.")
+  parser.add_argument("--num_ps", type=int, default=0,
+                      help="Number of parameter server to use for distributed jobs.")
+  parser.add_argument("--ps_port", type=int, default=9001,
+                      help="Port to use for parameter server.")
+  parser.add_argument("--wk_port", type=int, default=9000,
+                      help="Port to use for workers." )
+ 
+  # parse all arguments 
   args = parser.parse_args()
+
+
+  if args.nodes > 1 and args.mode == 'train':
+    assert args.num_ps <= args.nodes // 2, \
+        "Number of parameter server seems to high."
+    distributed_config = {
+      "nodes": args.nodes,
+      "num_ps": args.num_ps,
+      "ps_port": args.ps_port,
+      "wk_port": args.wk_port
+    }
+  else:
+    distributed_config = None
+
+
+  # define or create a models directory in workdir
+  if args.models_dir is None:
+    args.models_dir = join(work_dir, "models")
+    if not exists(args.models_dir):
+      os.mkdir(args.models_dir)
 
   # sanity checks
   if args.mode == 'train' and args.config is None:
-    raise ValueError("Train mode needs a config file.")
+    raise ValueError("Train mode needs the name of a config file.")
   if not args.mode in ("train", "eval", "attack"):
-    raise ValueError("config not recognized")
+    raise ValueError(
+      "mode not recognized, should be ('train', 'eval', 'attack')")
 
   if args.mode == 'eval':
-    assert args.folder, \
+    assert args.train_dir, \
         "Need to specify the name of the model to evaluate: --folder."
   elif args.mode == 'attack':
-    assert args.folder, \
+    assert args.train_dir, \
         "Need to specify the name of the model to attack: --folder."
   if args.mode == 'attack':
     assert args.attack, \
         "Need to specify the name of the attack: --attack."
     assert args.attack in LIST_ATTACKS, "Attack not recognized."
 
-  # if debug mode overide time
-  if args.debug:
-    args.time = 0.1
-
   if args.grid_search:
     assert args.name, "Required if grid_search is set"
+  
+  job_params = dict(
+    config_file=args.config,
+    train_dir=args.train_dir,
+    mode=args.mode,
+    backend=args.backend,
+    with_eval=not args.no_eval,
+    start_new_model=not args.restart_model,
+    models_dir=args.models_dir,
+    attack_name=args.attack,
+    file_to_run=args.file_to_run,
+    n_cpus=args.n_cpus,
+    n_gpus=args.n_gpus,
+    partition=args.partition,
+    cluster=args.cluster,
+    time=args.time,
+    dependency=args.dependency,
+    debug=args.debug,
+    dev=args.dev,
+    verbose=args.verbose,
+    distributed_config=distributed_config)
+
+  if args.grid_search:
     f_acc = open('script_accuracy_{}.sh'.format(args.name), 'w')
     f_params = open('script_params_{}.sh'.format(args.name), 'w')
     for params in parse_grid_search(args.grid_search):
-      args.params = params
-      folder = GenerateRunJobConfig(copy.copy(args)).run()
+      print(params)
+      job = GenerateRunJobConfig(
+        template_config_params=params, **job_params)
+      folder = job.run()
+      time.sleep(0.1)
       f_acc.write("echo '{} {}'\n".format(folder, str(params)))
-      f_acc.write("cat {}/{}_logs/best_accuracy.txt\n".format(path, folder))
+      f_acc.write("cat {}/{}_logs/best_accuracy.txt\n".format(
+        args.models_dir, folder))
       f_params.write("echo '{}'\n".format(folder))
       f_params.write(
         "python3 utils/inspect_checkpoint.py --folder={}\n".format(folder))
     f_acc.close()
     f_params.close()
   else:
-    args.params = None
-    GenerateRunJobConfig(args).run()
+    job = GenerateRunJobConfig(**job_params)
+    job.run()
 
 
 
