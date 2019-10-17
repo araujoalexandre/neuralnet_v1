@@ -15,8 +15,6 @@ flags.DEFINE_string("train_dir", "",
                     "Name of the training directory")
 flags.DEFINE_string("data_dir", "",
                     "Name of the data directory")
-flags.DEFINE_bool("start_new_model", False,
-                  "Start training a new model or restart an existing one.")
 flags.DEFINE_string("backend", "tensorflow",
                     "Wheather run tensorflow model of Pytorch.")
 flags.DEFINE_string("params", "",
@@ -31,7 +29,7 @@ def main(_):
     FLAGS.config_file, FLAGS.config_name, FLAGS.params)
   params.train_dir = FLAGS.train_dir
   params.data_dir = FLAGS.data_dir
-  params.start_new_model = FLAGS.start_new_model
+  params.start_new_model = False
 
   if FLAGS.backend.lower() in ('tensorflow', 'tf'):
     from tensorflow_src.eval import Evaluator
