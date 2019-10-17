@@ -86,6 +86,8 @@ _model_name_to_imagenet_model = {
     'nasnetlarge': nasnet_model.NasnetLargeModel,
     'mobilenet': mobilenet_v2.MobilenetModel,
     'ncf': official_ncf_model.NcfModel,
+    'diagonal_circulant': circulant_model.DiagonalCirculantModel,
+    'diagonal_circulant_1x1conv': circulant_model.DiagonalCirculant1x1ConvModel
 }
 
 
