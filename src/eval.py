@@ -17,7 +17,7 @@ flags.DEFINE_string("data_dir", "",
                     "Name of the data directory")
 flags.DEFINE_string("backend", "tensorflow",
                     "Wheather run tensorflow model of Pytorch.")
-flags.DEFINE_string("params", "",
+flags.DEFINE_string("override_params", "",
                     "Parameters to override.")
 
 def main(_):
