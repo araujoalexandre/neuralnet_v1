@@ -119,9 +119,6 @@ _model_name_to_cifar_model = {
     'scattering_dense': scattering_model.ScatteringHybridDenseModel,
     'conv_circulant': circulant_model.ConvCirculant,
     'conv_diagonal_circulant': circulant_model.ConvDiagonalCirculantModel,
-    'random_diagonal_circulant': circulant_model.RandomDiagCirculantModel,
-    'random_resnet_diagonal_circulant':
-      circulant_model.RandomResnetDiagCirculantModel,
     'diagonal_circulant_by_channel': circulant_model.DiagonalCirculantByChannel
 }
 
