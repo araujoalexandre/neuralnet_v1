@@ -729,6 +729,8 @@ readers_config = {
     partial(create_imagenet_scattering, image_size=224, j=2),
   'imagenet_224_scattering_j3':
     partial(create_imagenet_scattering, image_size=224, j=3),
+  'imagenet_224_scattering_j4':
+    partial(create_imagenet_scattering, image_size=224, j=4),
 }
 
 
