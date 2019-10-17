@@ -139,7 +139,7 @@ def _get_model_map(dataset_name):
     return _model_name_to_cifar_model
   elif dataset_name == 'mnist':
     return _model_name_to_mnist_model
-  elif dataset_name in ('imagenet', 'synthetic'):
+  elif 'imagenet' in dataset_name:
     return _model_name_to_imagenet_model
   elif dataset_name == 'librispeech':
     return {'deepspeech2': deepspeech.DeepSpeech2Model}
