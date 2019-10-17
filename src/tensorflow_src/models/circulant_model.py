@@ -27,6 +27,39 @@ class DiagonalCirculantModel(model_lib.CNNModel):
                           activation='linear')
 
 
+class DiagonalCirculant1x1ConvModel(model_lib.CNNModel):
+
+  def __init__(self, params):
+    self.model_params = params.model_params
+    super(DiagonalCirculant1x1ConvModel, self).__init__(
+        'DiagonalCirculant1x1ConvModel', params=params)
+
+  def skip_final_affine_layer(self):
+    return True
+
+  def add_inference(self, cnn):
+
+    cnn.data_format = "NCHW"
+    n_conv = self.params.model_params['n_conv']
+    n_dc = self.params.model_params['n_dc']
+    channels = self.params.model_params['channels']
+
+    _, channel1, channel2, size1, size2 = cnn.top_layer.get_shape()
+    cnn.reshape([-1, channel1 * channel2, size1, size2])
+    cnn.top_size = channel1 * channel2
+    for i in range(n_conv):
+      cnn.conv(channels, 1, 1, use_batch_norm=True, activation='relu')
+
+    cnn.top_layer = tf.layers.flatten(cnn.top_layer)
+    cnn.top_size = cnn.top_layer.get_shape()[-1].value
+    for i in range(n_dc):
+      cnn.diagonal_circulant(**self.model_params)
+      cnn.batch_norm()
+    cnn.diagonal_circulant(num_channels_out=cnn.nclass,
+                          activation='linear')
+
+
+
 class ConvCirculant(model_lib.CNNModel):
 
   def __init__(self, params):
