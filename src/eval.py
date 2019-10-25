@@ -1,5 +1,6 @@
 
 import json
+from os.path import join
 from absl import app, flags
 
 import utils
@@ -7,7 +8,7 @@ import utils
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("config_file", "params.yaml",
+flags.DEFINE_string("config_file", "config.yaml",
                     "Name of the yaml config file.")
 flags.DEFINE_string("config_name", "eval",
                     "Define the execution mode.")
@@ -25,8 +26,12 @@ def main(_):
   if not FLAGS.train_dir or not FLAGS.data_dir:
     raise ValueError("train_dir and data_dir need to be set.")
 
+  config_path = join('{}_logs'.format(FLAGS.train_dir), FLAGS.config_file)
+  config_name = FLAGS.config_name
+  override_params = FLAGS.override_params
+
   params = utils.load_params(
-    FLAGS.config_file, FLAGS.config_name, FLAGS.params)
+    config_path, config_name, override_params=override_params)
   params.train_dir = FLAGS.train_dir
   params.data_dir = FLAGS.data_dir
   params.start_new_model = False
