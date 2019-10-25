@@ -108,6 +108,40 @@ class ConvCirculant(model_lib.CNNModel):
 
     cnn.flatten()
 
+  def filter_l2_loss_vars(self, variables):
+    """Filters out variables that the L2 loss should not be computed for."""
+    filtered_params = []
+    for v in variables:
+      if "batchnorm" not in v.name and "circulant" not in v.name:
+        filtered_params.append(v)
+    return filtered_params
+
+  def filter_l1_loss_vars(self, variables):
+    """Filters out variables that the L1 loss should not be computed for."""
+    filtered_params = []
+    for v in variables:
+      if "circulant" in v.name:
+        filtered_params.append(v)
+    return variables
+
+  def regularization(self, trainable_variables, rel_device_num, n_devices,
+                     params):
+    """Return the regularization of the model."""
+    l2_loss = tf.constant(0.)
+    with tf.name_scope('l2_loss'):
+      filtered_params = self.filter_l2_loss_vars(trainable_variables)
+      if rel_device_num == n_devices - 1:
+        l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in filtered_params])
+    l2_loss = n_devices * params.l2_weight_decay * l2_loss
+
+    l1_loss = tf.constant(0.)
+    with tf.name_scope('l1_loss'):
+      filtered_params = self.filter_l1_loss_vars(trainable_variables)
+      if rel_device_num == n_devices - 1:
+        l1_loss = tf.add_n([tf.reduce_sum(tf.abs(v)) for v in filtered_params])
+    l1_loss = n_devices * params.l1_weight_decay * l1_loss
+
+    return l1_loss + l2_loss
 
 
 class ConvDiagonalCirculantModel(model_lib.CNNModel):
