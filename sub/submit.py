@@ -184,6 +184,7 @@ class GenerateRunJobConfig:
       if self.verbose:
         print(script)
       p = self._execute(fp.name)
+      # p = (bytes('Submitted batch job 1234'.encode('utf8')), bytes(''.encode('utf8')))
     if self.cluster is not None:
       result, error = list(map(lambda x: x.decode('utf8'), p))
       if error:
