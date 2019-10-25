@@ -76,14 +76,13 @@ class ConvCirculant(model_lib.CNNModel):
   def _bottleneck(self, cnn, channel, strides=1, residual=True):
     if residual:
       x = cnn.top_layer
-    cnn.conv(channel, 1, 1)
+    cnn.conv(channel, 1, 1, use_batch_norm=True)
     cnn.depth_conv_circ(**self.model_params)
     if strides > 1:
       cnn.mpool(strides, strides)
     cnn.conv(channel, 1, 1, activation='linear')
     if residual and strides == 1:
       cnn.top_layer = cnn.top_layer + x
-    logging.info('shape {}'.format(cnn.top_layer.get_shape()))
 
   def add_inference(self, cnn):
 
