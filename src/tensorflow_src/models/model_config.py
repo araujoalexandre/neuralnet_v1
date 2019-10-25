@@ -35,6 +35,7 @@ from . import wide_resnet_model
 from . import circulant_model
 from . import distillation_model
 from . import scattering_model
+from . import efficientnet_builder
 
 from .experimental import deepspeech
 from .experimental import official_ncf_model
@@ -87,9 +88,18 @@ _model_name_to_imagenet_model = {
     'mobilenet': mobilenet_v2.MobilenetModel,
     'ncf': official_ncf_model.NcfModel,
     'diagonal_circulant': circulant_model.DiagonalCirculantModel,
-    'diagonal_circulant_1x1conv': circulant_model.DiagonalCirculant1x1ConvModel
+    'diagonal_circulant_1x1conv':
+      circulant_model.DiagonalCirculant1x1ConvModel,
+    'efficientnet-b0': efficientnet_builder.create_efficientnet_b0,
+    'efficientnet-b1': efficientnet_builder.create_efficientnet_b1,
+    'efficientnet-b2': efficientnet_builder.create_efficientnet_b2,
+    'efficientnet-b3': efficientnet_builder.create_efficientnet_b3,
+    'efficientnet-b4': efficientnet_builder.create_efficientnet_b4,
+    'efficientnet-b5': efficientnet_builder.create_efficientnet_b5,
+    'efficientnet-b6': efficientnet_builder.create_efficientnet_b6,
+    'efficientnet-b7': efficientnet_builder.create_efficientnet_b7,
+    'dense1x1conv': trivial_model.Dense1x1ConvModel,
 }
-
 
 _model_name_to_cifar_model = {
     'trivial': trivial_model.TrivialModel,
