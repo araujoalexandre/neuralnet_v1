@@ -117,21 +117,16 @@ class VariableMgr(object):
     """Returns a list/dict of savable variables to pass to tf.train.Saver."""
     return tf.global_variables()
 
-  def trainable_variables_on_device(self,
-                                    rel_device_num,
-                                    abs_device_num,
-                                    writable=False):
+  def trainable_variables_on_device(self, abs_device_num):
     """Return the set of trainable variables on device.
 
     Args:
-      rel_device_num: local worker device index.
       abs_device_num: global graph device index.
       writable: whether to get a reference to the underlying variable.
 
     Returns:
       The set of trainable variables on the specified device.
     """
-    del rel_device_num, writable
     if self.each_tower_has_variables():
       params = [
           v for v in tf.trainable_variables()
