@@ -19,6 +19,7 @@
 
 from collections import namedtuple
 
+from absl import logging
 import tensorflow as tf
 import tensorflow.compat.v1 as tf_v1
 
@@ -70,6 +71,19 @@ class Model(object):
     """
     return [v for v in variables if 'batchnorm' not in v.name]
 
+  def filter_l1_loss_vars(self, variables):
+    """Filters out variables that the L1 loss should not be computed for.
+
+    By default, no filter.
+
+    Args:
+      variables: A list of the trainable variables.
+
+    Returns:
+      A list of variables that the L1 loss should be computed for.
+    """
+    return variables
+
   def get_learning_rate(self, global_step, batch_size):
     del global_step
     del batch_size
@@ -98,6 +112,22 @@ class Model(object):
 
     Returns:
       The loss tensor of the model.
+    """
+    raise NotImplementedError('Must be implemented in derived classes')
+
+
+  def regularization(self, trainable_variables, rel_device_num, n_devices,
+                     params):
+    """Return the regularization of the model.
+
+    Args:
+      trainable_variables: trainable variables of the model.
+      rel_device_num: device id.
+      n_devices: the number of devices use for training.
+      params: configuration of the training & model.
+
+    Returns:
+      The regularization tensor of the model.
     """
     raise NotImplementedError('Must be implemented in derived classes')
 
@@ -214,5 +244,22 @@ class CNNModel(Model):
         loss = tf.add_n([loss, aux_loss])
     return loss
 
-
+  def regularization(self, trainable_variables, rel_device_num, n_devices,
+                     params):
+    """Returns the regularization of the model."""
+    l2_loss = tf.constant(0.)
+    with tf.name_scope('l2_loss'):
+      filtered_params = self.filter_l2_loss_vars(trainable_variables)
+      if rel_device_num == n_devices - 1:
+        # We compute the L2 loss for only one device instead of all of them,
+        # because the L2 loss for each device is the same. To adjust for this,
+        # we multiply the L2 loss by the number of devices. We choose the
+        # last device because for some reason, on a Volta DGX1, the first four
+        # GPUs take slightly longer to complete a step than the last four.
+        if params.single_l2_loss_op:
+          reshaped_params = [tf.reshape(p, (-1,)) for p in filtered_params]
+          l2_loss = tf.nn.l2_loss(tf.concat(reshaped_params, axis=0))
+        else:
+          l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in filtered_params])
+    return n_devices * params.weight_decay * l2_loss
 
