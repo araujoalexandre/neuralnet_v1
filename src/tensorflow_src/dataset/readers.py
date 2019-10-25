@@ -101,15 +101,14 @@ class BaseReader:
         cycle_length=self.params.datasets_interleave_cycle_length,
         block_length=self.params.datasets_interleave_block_length,
         num_parallel_calls=5)
-      ds = ds.prefetch(buffer_size=self.batch_size)
+      # ds = ds.prefetch(buffer_size=10*self.batch_size)
       if self.datasets_use_caching:
         ds = ds.cache()
+      ds = ds.map(self._parse_and_preprocess, num_parallel_calls=10)
       if self.is_training:
         ds = ds.shuffle(self.params.datasets_shuffle_buffer_size).repeat()
-      ds = ds.map(self._parse_and_preprocess,
-              num_parallel_calls=10)
       ds = ds.batch(self.batch_size_per_split)
-      ds = ds.prefetch(buffer_size=self.num_splits)
+      ds = ds.prefetch(buffer_size=5*self.num_splits)
       if self.num_threads:
         ds = threadpool.override_threadpool(
           ds,
