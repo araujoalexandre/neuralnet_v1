@@ -194,7 +194,7 @@ class GenerateRunJobConfig:
   def run_training_mode(self):
     # run training jobs
     # we may run several dependent job if time > MAX_CLUSTER_TIME
-    self.script_template.dependency = None
+    jobids = []
     for time in self.times:
       self.script_template.time = time 
       script = self.script_template.generate()
@@ -202,18 +202,23 @@ class GenerateRunJobConfig:
       if result is None:
         return self.train_dir
       jobid = result.strip().split(' ')[-1]
+      jobids.append(jobid)
       if self.cluster == "slurm":
         if "Submitted batch job" in result:
           self.script_template.start_new_model = False
           self.script_template.dependency = jobid
-      print("Submitted batch job {}".format(jobid))
     # run eval
     if self.with_eval:
       self.script_template.switch_to_eval_mode()
       script = self.script_template.generate()
-      self.run_job(script)
+      result = self.run_job(script)
+      if result is not None:
+        jobid = result.strip().split(' ')[-1]
+        jobids.append(jobid)
+
+    print("Submitted batch job {}".format(' '.join(jobids)))
     print("Folder '{}' created".format(basename(self.train_dir)))
-    return self.train_dir
+    return self.train_dir, jobids
 
   def run_eval_attack_mode(self):
     self.script_template.time = self.times[0]
@@ -228,6 +233,40 @@ class GenerateRunJobConfig:
       return self.run_training_mode()
     elif self.mode in ('eval', 'attack'):
       return self.run_eval_attack_mode()
+
+
+class GridSearchUtils:
+  """Create utils scripts for grid search experiment."""
+
+  def __init__(self, xp_name):
+
+    # bash script to get parameters of all models
+    self.file1 = open('script_accuracy_{}.sh'.format(xp_name), 'w')
+    # bash script to get accuracy of all models
+    self.file2 = open('script_params_{}.sh'.format(xp_name), 'w')
+    # bash script to scancel all jobs
+    self.file3 = open('script_scancel_jobs_{}.sh'.format(xp_name), 'w')
+    # bash script to print all jobs
+    self.file4 = open('script_squeue_jobs_{}.sh'.format(xp_name), 'w')
+
+    self.all_jobids = []
+
+  def write(self, folder, params, jobids):
+    self.all_jobids.extend(jobids)
+    self.file1.write("echo '{} {}'\n".format(folder, str(params)))
+    self.file1.write("cat {}_logs/best_accuracy.txt\n".format(folder))
+    self.file2.write("echo '{}'\n".format(folder))
+    self.file2.write(
+      "python3 utils/inspect_checkpoint.py --folder={}\n".format(folder))
+    self.file3.write("scancel {}\n".format(' '.join(jobids)))
+
+  def close(self):
+    self.file1.close()
+    self.file2.close()
+    self.file3.close()
+    self.file4.write('squeue -j {}'.format(','.join(self.all_jobids)))
+    self.file4.close()
+
 
 
 def parse_grid_search(params):
@@ -373,22 +412,15 @@ if __name__ == '__main__':
     distributed_config=distributed_config)
 
   if args.grid_search:
-    f_acc = open('script_accuracy_{}.sh'.format(args.name), 'w')
-    f_params = open('script_params_{}.sh'.format(args.name), 'w')
+    grid_search_utils = GridSearchUtils(args.name)
     for params in parse_grid_search(args.grid_search):
       print(params)
       job = GenerateRunJobConfig(
         template_config_params=params, **job_params)
-      folder = job.run()
+      folder, jobids = job.run()
       time.sleep(0.1)
-      f_acc.write("echo '{} {}'\n".format(folder, str(params)))
-      f_acc.write("cat {}/{}_logs/best_accuracy.txt\n".format(
-        args.models_dir, folder))
-      f_params.write("echo '{}'\n".format(folder))
-      f_params.write(
-        "python3 utils/inspect_checkpoint.py --folder={}\n".format(folder))
-    f_acc.close()
-    f_params.close()
+      grid_search_utils.write(folder, params, jobids)
+    grid_search_utils.close()
   else:
     job = GenerateRunJobConfig(**job_params)
     job.run()
