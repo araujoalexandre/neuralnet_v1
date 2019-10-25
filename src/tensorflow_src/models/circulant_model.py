@@ -47,8 +47,10 @@ class DiagonalCirculant1x1ConvModel(model_lib.CNNModel):
     _, channel1, channel2, size1, size2 = cnn.top_layer.get_shape()
     cnn.reshape([-1, channel1 * channel2, size1, size2])
     cnn.top_size = channel1 * channel2
+    logging.info(cnn.top_layer.get_shape())
     for i in range(n_conv):
       cnn.conv(channels, 1, 1, use_batch_norm=True, activation='relu')
+      logging.info(cnn.top_layer.get_shape())
 
     cnn.top_layer = tf.layers.flatten(cnn.top_layer)
     cnn.top_size = cnn.top_layer.get_shape()[-1].value
