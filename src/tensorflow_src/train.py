@@ -362,30 +362,14 @@ class Trainer:
       logits = build_network_result.logits
 
       base_loss = self.model.loss_function(input_list, build_network_result)
-      params = self.variable_mgr.trainable_variables_on_device(
-          rel_device_num, abs_device_num)
-      l2_loss = None
-      total_loss = base_loss
-      with tf.name_scope('l2_loss'):
-        filtered_params = self.model.filter_l2_loss_vars(params)
-        if rel_device_num == len(self.devices) - 1:
-          # We compute the L2 loss for only one device instead of all of them,
-          # because the L2 loss for each device is the same. To adjust for this,
-          # we multiply the L2 loss by the number of devices. We choose the
-          # last device because for some reason, on a Volta DGX1, the first four
-          # GPUs take slightly longer to complete a step than the last four.
-          if self.params.single_l2_loss_op:
-            reshaped_params = [tf.reshape(p, (-1,)) for p in filtered_params]
-            l2_loss = tf.nn.l2_loss(tf.concat(reshaped_params, axis=0))
-          else:
-            l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in filtered_params])
-      weight_decay = self.params.weight_decay
-      if (weight_decay is not None and weight_decay != 0. and
-          l2_loss is not None):
-        total_loss += len(self.devices) * weight_decay * l2_loss
+      trainable_variables = self.variable_mgr.trainable_variables_on_device(
+        abs_device_num)
+      reg_loss = self.model.regularization(
+        trainable_variables, rel_device_num, len(self.devices), self.params)
+      total_loss = base_loss + reg_loss
 
-      aggmeth = tf.AggregationMethod.DEFAULT
-      grads = tf.gradients(total_loss, params, aggregation_method=aggmeth)
+      grads = tf.gradients(total_loss, trainable_variables,
+                           aggregation_method=tf.AggregationMethod.DEFAULT)
       if self.params.variable_update == 'horovod':
         import horovod.tensorflow as hvd  # pylint: disable=g-import-not-at-top
         if self.params.horovod_device:
@@ -400,9 +384,10 @@ class Trainer:
       results['logits'] = logits
       results['loss'] = total_loss
       results['grads'] = grads
-      param_refs = self.variable_mgr.trainable_variables_on_device(
-          rel_device_num, abs_device_num, writable=True)
-      results['gradvars'] = list(zip(results['grads'], param_refs))
+      # trainable_variables_refs = \
+      #   self.variable_mgr.trainable_variables_on_device(
+      #     rel_device_num, abs_device_num, writable=True)
+      results['gradvars'] = list(zip(results['grads'], trainable_variables))
       return results
 
     with tf.device(self.devices[rel_device_num]):
