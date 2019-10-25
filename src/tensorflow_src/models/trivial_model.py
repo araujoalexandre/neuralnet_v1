@@ -59,6 +59,30 @@ class ConvDenseModel(model_lib.CNNModel):
 
 
 
+class Dense1x1ConvModel(model_lib.CNNModel):
+
+  def __init__(self, params):
+    self.model_params = params.model_params
+    super(Dense1x1ConvModel, self).__init__(
+        'Dense1x1ConvModel', params=params)
+
+  def add_inference(self, cnn):
+
+    cnn.data_format = "NCHW"
+    n_conv = self.params.model_params['n_conv']
+    channels = self.params.model_params['channels']
+
+    _, channel1, channel2, size1, size2 = cnn.top_layer.get_shape()
+    cnn.reshape([-1, channel1 * channel2, size1, size2])
+    cnn.top_size = channel1 * channel2
+    for i in range(n_conv):
+      cnn.conv(channels, 1, 1, use_batch_norm=True, activation='relu')
+
+    cnn.top_layer = tf.layers.flatten(cnn.top_layer)
+    cnn.top_size = cnn.top_layer.get_shape()[-1].value
+
+
+
 class TrivialSSD300Model(model_lib.CNNModel):
   """Trivial SSD300 model configuration."""
 
