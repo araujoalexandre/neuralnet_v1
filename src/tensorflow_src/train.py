@@ -390,11 +390,8 @@ class Trainer:
       results = {}
       results['logits'] = logits
       results['loss'] = total_loss
-      results['grads'] = grads
-      # trainable_variables_refs = \
-      #   self.variable_mgr.trainable_variables_on_device(
-      #     rel_device_num, abs_device_num, writable=True)
-      results['gradvars'] = list(zip(results['grads'], trainable_variables))
+      assert len(trainable_variables) == len(grads)
+      results['gradvars'] = list(zip(grads, trainable_variables))
       return results
 
     with tf.device(self.devices[rel_device_num]):
@@ -457,6 +454,11 @@ class Trainer:
           update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, name_scope)
           # TODO: remove attributes
           assert not self.variable_mgr.staging_delta_ops
+
+    # assert that the number of variables and the number of gradient are the
+    # same on all towers
+    n_grads = [len(g) for g in grads]
+    assert all(x == n_grads[0] for x in n_grads)
 
     fetches = self._build_fetches(global_step, losses, grads, update_ops)
     return fetches
