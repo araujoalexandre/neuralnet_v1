@@ -62,12 +62,22 @@ class GenerateScript:
     else:
       self.distributed = False
       self.nodes = 1
+
+    if backend in ['py', 'pytorch'] and self.distributed:
+      # add torch.distributed.launch config before main script
+      setup_dist_pytorch = [' -m torch.distributed.launch']
+      setup_dist_pytorch.append('--nnodes {}'.format(self.nodes))
+      setup_dist_pytorch.append('--node_rank ${node_rank}')
+      setup_dist_pytorch.append('--nproc_per_node={}'.format(self.n_gpus))
+      setup_dist_pytorch.append('--master_addr ${master_host}')
+      setup_dist_pytorch.append('--master_port ${master_port}')
+      self.python_exec += ' '.join(setup_dist_pytorch)
     
     # module to load
     self.modules = [
       'cuda/10.1.1',
       'cudnn/10.1-v7.5.1.10',
-      'nccl/2.4.2-1+cuda10.1'
+      'nccl/2.5.6-2-cuda'
     ]
 
     # python config
@@ -88,10 +98,16 @@ class GenerateScript:
 
   def switch_to_eval_mode(self):
     self.distributed_config = None
+    self.distributed = False
+    self.nodes = 1
+    self.num_ps = 0
+    self.num_wk = self.nodes - self.num_ps
+    self.srun_worker_id = 0
     self.log_filename = "eval"
     self.mode = "eval"
     self.file_to_run = "eval.py"
     self.job_name = '{}_{}'.format(self.train_dir[-4:], 'eval')
+    self.python_exec = "python3"
 
   def create_slurm_header(self):
     slurm_header = []
@@ -103,8 +119,9 @@ class GenerateScript:
     slurm_header.append('--partition={}'.format(self.partition))
     slurm_header.append('--nodes={}'.format(self.nodes))
     slurm_header.append('--gres=gpu:{}'.format(self.n_gpus))
-    slurm_header.append('--cpus-per-task={}'.format(self.n_cpus))
+    # slurm_header.append('--cpus-per-task={}'.format(self.n_cpus))
     slurm_header.append('--wait-all-nodes=1')
+    slurm_header.append('--exclusive')
     if self.dependency:
       slurm_header.append('--dependency=afterany:{}'.format(self.dependency))
     if self.dev_mode:
@@ -115,8 +132,7 @@ class GenerateScript:
 
   def create_load_cmd(self):
     load_cmd = ['module load {}'.format(module) for module in self.modules]
-    load_cmd = '\n'.join(load_cmd)
-    load_cmd += '\n'
+    load_cmd = '\n'.join(load_cmd) + '\n'
     if self.backend == 'tensorflow':
       load_cmd += 'module load tensorflow-gpu/py3/1.14'
     elif self.backend == 'pytorch':
@@ -132,18 +148,19 @@ class GenerateScript:
     ps_port = self.distributed_config['ps_port']
     wk_port = self.distributed_config['wk_port']
     setup = [
-      'workers=$(scontrol show hostname $SLURM_JOB_NODELIST)']
+      'workers_str=$(scontrol show hostname $SLURM_JOB_NODELIST)']
+    setup.append('for i in ${workers_str[@]}; do workers+=("$i"); done')
 
     def _create_hosts(setup, host_type, port, start_id, end_id):
-      hosts = ['${{workers}}[{}]:{}'.format(i, port) 
+      hosts = ['${{workers[{}]}}:{}'.format(i, port) 
                  for i in range(start_id, end_id)]
-      hosts = ';'.join(hosts)
+      hosts = '"{}"'.format(';'.join(hosts))
       setup.append('{}_hosts={}'.format(host_type, hosts))
 
     if self.num_ps:
       _create_hosts(setup, 'ps', ps_port, 0, self.num_ps)
     _create_hosts(setup, 'wk', wk_port, self.num_ps, self.nodes)
-    return '\n'.join(setup)
+    return '\n'.join(setup) + '\n'
 
   def create_srun_cmd(self, job_name=None, task_id=None):
     srun_args = []
@@ -157,9 +174,9 @@ class GenerateScript:
     srun_args.append('--open-mode=append')
     srun_args.append('--nodes=1')
     srun_args.append('--gres=gpu:{}'.format(self.n_gpus))
-    srun_args.append('--cpus-per-task={}'.format(self.n_cpus))
+    # srun_args.append('--cpus-per-task={}'.format(self.n_cpus))
     if self.distributed:
-      srun_args.append('--nodelist=${{workers}}[{}]'.format(
+      srun_args.append('--nodelist="${{workers[{}]}}"'.format(
         self.srun_worker_id))
       self.srun_worker_id += 1
     srun_cmd = 'srun {}'.format(' '.join(srun_args)) + ' '
@@ -207,23 +224,27 @@ class GenerateScript:
       job_script += '{}\n'.format(self.unset_proxy())
     if self.distributed:
       job_script += '{}\n'.format(self.create_distribution_setup())
-    
+
     if self.cluster and self.distributed:
+      if self.backend in ['py', 'pytroch']:
+        job_script += "master_host=${workers[0]}\n"
+        job_script += "master_port={}\n\n".format(
+          self.distributed_config['ps_port'])
+        # job_script += 'export NCCL_DEBUG=INFO\n\n'
       if self.num_ps:
-        job_script += 'declare -a pids\n'
         for ps_id in range(self.num_ps):
           job_script += self.create_srun_cmd(
             job_name='ps', task_id=ps_id)
           job_script += '{} &\n'.format(self.create_python_cmd(
             job_name='ps', task_id=ps_id))
       for wk_id in range(self.num_wk):
+        job_script += "node_rank={}\n".format(wk_id)
         job_script += self.create_srun_cmd(
-          job_name='wk', task_id=wk_id)
+          job_name='worker', task_id=wk_id)
         job_script += '{} &\n'.format(self.create_python_cmd(
-          job_name='wk', task_id=wk_id))
-        job_script += 'pids[{}]=$!\n'.format(wk_id)
-      for wk_id in range(self.num_wk):
-        job_script += 'wait ${{pids}}[{}]\n'.format(wk_id)
+          job_name='worker', task_id=wk_id))
+        job_script += 'pids+=($!)\n'.format(wk_id)
+      job_script += 'wait "${pids[@]}"\n'
 
     else:
       if self.cluster:
