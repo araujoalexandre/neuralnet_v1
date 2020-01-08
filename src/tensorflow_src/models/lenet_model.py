@@ -29,7 +29,7 @@ class Lenet5Model(model_lib.CNNModel):
 
   def __init__(self, params=None):
     if params.dataset == 'imagenet':
-      assert params.imagenet_image_size == 28
+      assert params.reader['image_size'] == 28
     super(Lenet5Model, self).__init__('lenet5', params=params)
 
   def add_inference(self, cnn):

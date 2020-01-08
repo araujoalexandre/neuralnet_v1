@@ -28,7 +28,7 @@ class AlexnetModel(model_lib.CNNModel):
   """Alexnet cnn model."""
 
   def __init__(self, params=None):
-    assert params.imagenet_image_size == 227
+    assert params.reader['image_size'] == 227
     super(AlexnetModel, self).__init__(
         'alexnet', params=params)
 

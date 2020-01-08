@@ -28,7 +28,7 @@ class GooglenetModel(model.CNNModel):
   """GoogLeNet."""
 
   def __init__(self, params=None):
-    assert params.imagenet_image_size == 224
+    assert params.reader['image_size'] == 224
     super(GooglenetModel, self).__init__(
         'googlenet', params=params)
 

@@ -266,7 +266,7 @@ class ResnetModel(model_lib.CNNModel):
     if params and params.resnet_base_lr:
       base_lr = params.resnet_base_lr
     self.layer_counts = layer_counts
-    assert params.imagenet_image_size == 224
+    assert params.reader['image_size'] == 224
     super(ResnetModel, self).__init__(model, params=params)
     if 'v2' in model:
       self.version = 'v2'

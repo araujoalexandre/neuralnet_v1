@@ -44,7 +44,7 @@ class Inceptionv3Model(model_lib.CNNModel):
   """InceptionV3."""
 
   def __init__(self, auxiliary=False, params=None):
-    assert params.imagenet_image_size == 299
+    assert params.reader['image_size'] == 299
     self._auxiliary = auxiliary
     super(Inceptionv3Model, self).__init__(
         'inception3', params=params)

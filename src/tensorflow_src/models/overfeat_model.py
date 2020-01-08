@@ -29,7 +29,7 @@ class OverfeatModel(model_lib.CNNModel):
   """OverfeatModel."""
 
   def __init__(self, params=None):
-    assert params.imagenet_image_size == 231
+    assert params.reader['image_size'] == 231
     super(OverfeatModel, self).__init__(
         'overfeat', params=params)
 

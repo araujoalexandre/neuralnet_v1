@@ -54,7 +54,7 @@ def _construct_vgg(cnn, num_conv_layers):
 class Vgg11Model(model_lib.CNNModel):
 
   def __init__(self, params=None):
-    assert params.imagenet_image_size == 224
+    assert params.reader['image_size'] == 224
     super(Vgg11Model, self).__init__('vgg11', params=params)
 
   def add_inference(self, cnn):
@@ -64,7 +64,7 @@ class Vgg11Model(model_lib.CNNModel):
 class Vgg16Model(model_lib.CNNModel):
 
   def __init__(self, params=None):
-    assert params.imagenet_image_size == 224
+    assert params.reader['image_size']== 224
     super(Vgg16Model, self).__init__('vgg16', params=params)
 
   def add_inference(self, cnn):
@@ -74,7 +74,7 @@ class Vgg16Model(model_lib.CNNModel):
 class Vgg19Model(model_lib.CNNModel):
 
   def __init__(self, params=None):
-    assert params.imagenet_image_size == 224
+    assert params.reader['image_size']== 224
     super(Vgg19Model, self).__init__('vgg19', params=params)
 
   def add_inference(self, cnn):
