@@ -275,7 +275,6 @@ def aggregate_gradients_using_copy_with_variable_colocation(
       is over towers. The inner list is over individual gradients. All variables
       of the same gradient across towers must be the same (that is,
       tower_grads[x][a][1] == tower_grads[y][a][1] for all indices x, y, and a)
-    use_mean: if True, mean is taken, else sum of gradients is taken.
     check_inf_nan: If true, check grads for nans and infs.
 
   Returns:
@@ -357,7 +356,6 @@ def aggregate_single_gradient_using_copy(grad_and_vars, use_mean,
   """
   grads = [g for g, _ in grad_and_vars]
   if any(isinstance(g, tf.IndexedSlices) for g in grads):
-    # TODO(reedwm): All-reduce IndexedSlices more effectively.
     grad = gradients_util._AggregateIndexedSlicesGradients(grads)  # pylint: disable=protected-access
   else:
     grad = tf.add_n(grads)
