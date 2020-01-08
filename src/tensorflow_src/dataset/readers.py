@@ -43,12 +43,13 @@ class BaseReader:
     self.is_training = is_training
     self.summary_verbosity = self.params.summary_verbosity
 
-    self.num_threads = self.params.datasets_num_private_threads
-    self.datasets_interleave_cycle_length = \
-        self.params.datasets_interleave_cycle_length
-    self.datasets_interleave_block_length = \
-        self.params.datasets_interleave_block_length
-    self.datasets_use_caching = self.params.datasets_use_caching
+    self.num_threads = self.params.reader['num_private_threads']
+    self.interleave_cycle_length = \
+        self.params.reader['interleave_cycle_length']
+    self.interleave_block_length = \
+        self.params.reader['interleave_block_length']
+    self.use_caching = self.params.reader['use_caching']
+    self.shuffle_buffer_size = self.params.reader['shuffle_buffer_size']
 
   def _get_tfrecords(self, name):
     paths = self.params.data_dir.split(':')
@@ -70,7 +71,7 @@ class BaseReader:
 
   def _maybe_one_hot_encode(self, labels):
     """One hot encode the labels"""
-    if self.params.one_hot_labels:
+    if self.params.reader['one_hot_labels']:
       labels = tf.one_hot(labels, self.n_classes)
       labels = tf.squeeze(labels)
       return labels
@@ -113,15 +114,15 @@ class BaseReader:
       ds = tf.data.TFRecordDataset.list_files(files, shuffle=shuffle)
       ds = ds.interleave(
         tf.data.TFRecordDataset,
-        cycle_length=self.params.datasets_interleave_cycle_length,
-        block_length=self.params.datasets_interleave_block_length,
+        cycle_length=self.interleave_cycle_length,
+        block_length=self.interleave_block_length,
         num_parallel_calls=5)
       # ds = ds.prefetch(buffer_size=10*self.batch_size)
-      if self.datasets_use_caching:
+      if self.use_caching:
         ds = ds.cache()
       ds = ds.map(self._parse_and_preprocess, num_parallel_calls=10)
       if self.is_training:
-        ds = ds.shuffle(self.params.datasets_shuffle_buffer_size).repeat()
+        ds = ds.shuffle(self.shuffle_buffer_size).repeat()
       ds = ds.batch(self.batch_size_per_split)
       ds = ds.prefetch(buffer_size=5*self.num_splits)
       # if self.num_threads:
@@ -221,8 +222,8 @@ class CIFARReader(BaseReader):
     self.n_test_files = 10000
     self.n_classes = 10
     self.batch_shape = (None, 32, 32, 3)
-    self.use_data_augmentation = self.params.data_augmentation
-    self.use_gray_scale = self.params.cifar_grayscale
+    self.use_data_augmentation = self.params.reader['data_augmentation']
+    self.use_gray_scale = self.params.reader['grayscale']
     if self.use_gray_scale:
       self.batch_shape = (None, 32, 32, 1)
 
@@ -424,13 +425,15 @@ class IMAGENETReader(BaseReader):
       params, batch_size, gpu_devices, cpu_device, is_training)
 
     # Provide square images of this size.
-    self.image_size = self.params.imagenet_image_size
+    self.image_size = self.params.reader['image_size']
 
     self.height, self.width = self.image_size, self.image_size
     self.n_train_files = 1281167
     self.n_test_files = 50000
     self.n_classes = 1001
     self.batch_shape = (None, self.height, self.height, 3)
+    self.augmentation_strategy = self.params.reader['augmentation_strategy']
+    self.use_bfloat16 = self.params.use_fp16
 
     self.files = self._get_tfrecords('imagenet')
 
@@ -692,13 +695,10 @@ class ImagenetScatteringReader(BaseReader):
     super(ImagenetScatteringReader, self).__init__(
       params, batch_size, gpu_devices, cpu_device, is_training)
 
-    # Provide square images of this size. 
-    self.image_size = self.params.imagenet_image_size
     channel = int(1 + j * 8 + (8**2  * j * (j - 1) / 2))
     output_size  = int(image_size / 2**j)
     self.reshape = (3, channel, output_size, output_size)
 
-    self.height, self.width = self.image_size, self.image_size
     self.n_train_files = 1281167
     self.n_test_files = 50000
     self.n_classes = 1001
