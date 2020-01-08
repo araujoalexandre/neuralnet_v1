@@ -187,6 +187,17 @@ def get_learning_rate(params, global_step, num_step_by_epoch, model):
           mode=lr_params['mode_cyclic_lr'])
     else:
       raise ValueError("Learning Rate stategy not recognized")
+
+  warmup_epochs = lr_params.get('warmup_epochs', None)
+  if warmup_epochs:
+    logging.info('Learning rate warmup_epochs: %d', warmup_epochs)
+    warmup_steps = int(warmup_epochs * num_step_by_epoch)
+    warmup_lr = (
+      lr_params['learning_rate'] * tf.cast(global_step, tf.float32) / \
+        tf.cast(warmup_steps, tf.float32))
+    learning_rate = tf.cond(
+      global_step < warmup_steps, lambda: warmup_lr, lambda: learning_rate)
+
   logging.info("Using '{}' strategy for learning rate".format(lr_strategy))
   tf_v1.summary.scalar('learning_rate', learning_rate)
   return learning_rate
