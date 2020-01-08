@@ -28,7 +28,7 @@ across devices and inter-device tensor transfers across device links.
 """
 
 import abc
-import logging
+from absl import logging
 
 import six
 import tensorflow as tf

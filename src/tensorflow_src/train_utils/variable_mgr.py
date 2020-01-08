@@ -18,10 +18,10 @@
 """Defines VariableMgr and subclasses used to manage variables.
 """
 
-import logging
 import contextlib
 import re
 
+from absl import logging
 import tensorflow as tf
 import tensorflow.compat.v1 as tf_v1
 

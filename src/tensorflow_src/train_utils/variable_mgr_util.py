@@ -16,10 +16,10 @@
 # This file has been modified by My Alexandre Araujo.
 # ==============================================================================
 """Utilities for VariableMgr."""
-import logging
 import collections as pycoll
 import operator
 
+from absl import logging
 import tensorflow as tf
 
 # pylint: disable=g-direct-tensorflow-import
