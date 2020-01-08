@@ -167,12 +167,14 @@ def get_learning_rate(params, global_step, num_step_by_epoch, model):
         boundaries=boundaries,
         values=values)
     elif params.lr_strategy == 'exponential_decay':
-      epoch = tf.math.floor(
-        tf.math.divide(tf.cast(global_step, tf.float32), num_step_by_epoch))
+      if lr_params['decay_steps']:
+        decay_steps = int(lr_params['decay_steps'])
+      elif lr_params['decay_epochs']:
+        decay_steps = int(lr_params['decay_epochs'] * num_step_by_epoch)
       learning_rate = tf_v1.train.exponential_decay(
         learning_rate=lr_params['learning_rate'],
-        global_step=epoch,
-        decay_steps=lr_params['decay_steps'],
+        global_step=global_step,
+        decay_steps=decay_steps,
         decay_rate=lr_params['decay_rate'],
         staircase=True)
     elif params.lr_strategy == 'cyclic_lr':
