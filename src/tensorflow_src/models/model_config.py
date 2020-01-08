@@ -123,8 +123,6 @@ _model_name_to_cifar_model = {
 
     'wide_resnet': wide_resnet_model.WideResnetModel,
     'diagonal_circulant': circulant_model.DiagonalCirculantModel,
-    'distillation_resnet56_v2_circulant':
-      distillation_model.create_distillation_resnet56_v2_circulant,
     'scattering_circulant': scattering_model.ScatteringHybridCirculantModel,
     'scattering_dense': scattering_model.ScatteringHybridDenseModel,
     'conv_circulant': circulant_model.ConvCirculant,
