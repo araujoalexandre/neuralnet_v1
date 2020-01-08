@@ -19,9 +19,12 @@ flags.DEFINE_bool("start_new_model", True,
 flags.DEFINE_enum('job_name', '', ('ps', 'worker', 'controller', ''),
                   'One of "ps", "worker", "controller", "".  Empty for local '
                   'training')
+flags.DEFINE_integer('local_rank', 0, 'Define local rank.')
 flags.DEFINE_string('ps_hosts', '', 'Comma-separated list of target hosts')
 flags.DEFINE_string('worker_hosts', '', 'Comma-separated list of target hosts')
 flags.DEFINE_string('controller_host', None, 'optional controller host')
+flags.DEFINE_string('master_host', '', 'ip/hostname of the master')
+flags.DEFINE_string('master_port', '', 'port of the master')
 flags.DEFINE_integer('task_index', 0, 'Index of task within the job')
 flags.DEFINE_string('horovod_device', '', 'Device to do Horovod all-reduce on: '
                     'empty (default), cpu or gpu. Default with utilize GPU if '
@@ -41,9 +44,12 @@ def main(_):
   params.data_dir = FLAGS.data_dir
   params.start_new_model = FLAGS.start_new_model
   params.job_name = FLAGS.job_name
+  params.local_rank = FLAGS.local_rank
   params.ps_hosts = FLAGS.ps_hosts
   params.worker_hosts = FLAGS.worker_hosts
   params.controller_host = FLAGS.controller_host
+  params.master_host = FLAGS.master_host
+  params.master_port = FLAGS.master_port
   params.task_index = FLAGS.task_index
   params.horovod_device = FLAGS.horovod_device
 
