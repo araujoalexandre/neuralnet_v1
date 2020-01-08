@@ -1,5 +1,7 @@
 
+import os
 import time
+import datetime
 import pprint
 import socket
 import logging
@@ -18,7 +20,10 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
+import torch.distributed as dist
 from torch.optim import lr_scheduler
+from torch.nn.parallel import DistributedDataParallel
+
 
 
 def get_scheduler(optimizer, lr_scheduler, lr_scheduler_params):
@@ -84,15 +89,33 @@ class Trainer:
     logging.info(pp.pformat(params.values()))
 
     self.job_name = self.params.job_name  # "" for local training
+    self.is_distributed = bool(self.job_name)
     self.task_index = self.params.task_index
-    self.is_master = (self.job_name in ('', 'worker') and self.task_index == 0)
+    self.local_rank = self.params.local_rank
     self.start_new_model = self.params.start_new_model
     self.train_dir = self.params.train_dir
     self.num_gpus = self.params.num_gpus
-    if self.num_gpus:
+    if self.num_gpus and not self.is_distributed:
       self.batch_size = self.params.batch_size * self.num_gpus
     else:
       self.batch_size = self.params.batch_size
+
+    if self.is_distributed:
+      self.num_nodes = len(params.worker_hosts.split(';'))
+      self.world_size = self.num_nodes * self.num_gpus
+      self.rank = self.task_index * self.num_gpus + self.local_rank
+      dist.init_process_group(
+        backend='nccl', rank=self.rank, world_size=self.world_size,
+        timeout=datetime.timedelta(seconds=30))
+      if self.local_rank == 0:
+        logging.info('world size={}'.format(self.world_size))
+      logging.info('Distributed init done, local_rank={}, rank={}'.format(
+        self.local_rank, self.rank))
+      self.is_master = bool(self.rank == 0)
+      # reduce the learning rate for each process
+      # torch.backends.cudnn.enabled = False
+    else:
+      self.is_master = True
 
     # create a mesage builder for logging
     self.message = global_utils.MessageBuilder()
@@ -104,10 +127,18 @@ class Trainer:
         self.params.model, self.params.dataset, self.params,
         self.reader.n_classes, is_training=True)
     # we don't use DataParallel due to bug with fft
-    if self.num_gpus > 1:
+    # if self.num_gpus > 1:
+    #   self.model = torch.nn.DataParallel(self.model)
+    if not params.job_name:
       self.model = torch.nn.DataParallel(self.model)
-    self.model = self.model.cuda()
-
+      self.model = self.model.cuda()
+    else:
+      # self.model = self.model.to(device_ids[0])
+      torch.cuda.set_device(params.local_rank)
+      self.model = self.model.cuda()
+      i = params.local_rank
+      self.model = DistributedDataParallel(
+        self.model, device_ids=[i], output_device=i)
 
 
   def run(self):
@@ -116,7 +147,8 @@ class Trainer:
     # reset the training directory if start_new_model is True
     if self.is_master and self.start_new_model and exists(self.train_dir):
       global_utils.remove_training_directory(self.train_dir)
-    mkdir(self.train_dir)
+    if self.is_master:
+      mkdir(self.train_dir)
 
     if self.params.torch_random_seed is not None:
       random.seed(self.params.torch_random_seed)
@@ -156,23 +188,33 @@ class Trainer:
       self.optimizer, self.params.lr_scheduler,
       self.params.lr_scheduler_params)
 
-    batch_size = self.batch_size
-    n_files = self.reader.n_train_files
-
-    logging.info("Start training")
     global_step = 0
-    for _ in range(self.params.num_epochs):
-      for data in self.reader.load_dataset():
-        epoch = ((global_step * batch_size) / n_files)
+    data_loader, sampler = self.reader.load_dataset()
+
+    batch_size = self.batch_size
+    if self.is_distributed:
+      n_files = sampler.num_samples
+    else:
+      n_files = self.reader.n_train_files
+
+    if self.local_rank == 0:
+      logging.info("Start training")
+    for i in range(self.params.num_epochs):
+      if self.is_distributed:
+        sampler.set_epoch(i)
+      for data in data_loader:
+        epoch = (int(global_step) * batch_size) / n_files
         self._training(data, epoch, global_step)
         self.save_ckpt(global_step, epoch)
         global_step += 1
       scheduler.step()
+    self.save_ckpt(global_step, epoch, final=True)
     logging.info("Done training -- epoch limit reached.")
 
-  def save_ckpt(self, step, epoch):
+  def save_ckpt(self, step, epoch, final=False):
     """Save ckpt in train directory."""
-    if step % self.params.save_checkpoint_steps == 0 and self.is_master:
+    if (epoch % self.params.save_checkpoint_epochs == 0
+         and self.is_master) or (final and self.is_master):
       state = {
         'epoch': epoch,
         'global_step': step,
@@ -188,7 +230,9 @@ class Trainer:
 
     batch_start_time = time.time()
     inputs, labels = data
-    inputs, labels = inputs.cuda(), labels.cuda()
+    inputs = inputs.cuda(non_blocking=True)
+    labels = labels.cuda(non_blocking=True)
+
     outputs = self.model(inputs)
     self.optimizer.zero_grad()
     loss = self.criterion(outputs, labels.cuda())
@@ -203,8 +247,9 @@ class Trainer:
     seconds_per_batch = time.time() - batch_start_time
     examples_per_second = self.batch_size / seconds_per_batch
 
+    local_rank = self.local_rank
     to_print = step % self.params.frequency_log_steps == 0
-    if (self.is_master and to_print) or step == 1:
+    if (to_print and local_rank == 0) or (step == 1 and local_rank == 0):
       lr = self.optimizer.param_groups[0]['lr']
       self.message.add("epoch", epoch, format="4.2f")
       self.message.add("step", step, width=5, format=".0f")
