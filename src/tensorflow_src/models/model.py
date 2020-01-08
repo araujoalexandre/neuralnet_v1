@@ -82,7 +82,7 @@ class Model(object):
     Returns:
       A list of variables that the L1 loss should be computed for.
     """
-    return variables
+    return []
 
   def get_learning_rate(self, global_step, batch_size):
     del global_step
@@ -250,16 +250,14 @@ class CNNModel(Model):
     l2_loss = tf.constant(0.)
     with tf.name_scope('l2_loss'):
       filtered_params = self.filter_l2_loss_vars(trainable_variables)
-      if rel_device_num == n_devices - 1:
-        # We compute the L2 loss for only one device instead of all of them,
-        # because the L2 loss for each device is the same. To adjust for this,
-        # we multiply the L2 loss by the number of devices. We choose the
-        # last device because for some reason, on a Volta DGX1, the first four
-        # GPUs take slightly longer to complete a step than the last four.
-        if params.single_l2_loss_op:
-          reshaped_params = [tf.reshape(p, (-1,)) for p in filtered_params]
-          l2_loss = tf.nn.l2_loss(tf.concat(reshaped_params, axis=0))
-        else:
-          l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in filtered_params])
-    return n_devices * params.weight_decay * l2_loss
+      if filtered_params and rel_device_num == n_devices - 1:
+        l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in filtered_params])
+    l2_loss = n_devices * params.l2_weight_decay * l2_loss
+    l1_loss = tf.constant(0.)
+    with tf.name_scope('l1_loss'):
+      filtered_params = self.filter_l1_loss_vars(trainable_variables)
+      if filtered_params and rel_device_num == n_devices - 1:
+        l1_loss = tf.add_n([tf.reduce_sum(tf.abs(v)) for v in filtered_params])
+    l1_loss = n_devices * params.l1_weight_decay * l1_loss
+    return l1_loss + l2_loss
 
