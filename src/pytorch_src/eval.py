@@ -141,7 +141,8 @@ class Evaluator:
     running_accuracy = 0
     running_inputs = 0
     running_loss = 0
-    for batch_n, data in enumerate(self.reader.load_dataset()):
+    data_loader, _ = self.reader.load_dataset() 
+    for batch_n, data in enumerate(data_loader):
 
       with torch.no_grad():
         batch_start_time = time.time()
