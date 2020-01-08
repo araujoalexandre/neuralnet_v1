@@ -289,7 +289,9 @@ def aggregate_gradients_using_copy_with_variable_colocation(
     #   ((grad0_gpu0, var0_gpu0), ... , (grad0_gpuN, var0_gpuN))
     var = single_grads[0][1]
 
-    for _, v in single_grads:
+    for g, v in single_grads:
+      assert g is not None, v
+      assert v is not None, g
       assert v == var
 
     with tf.device(var.device):
