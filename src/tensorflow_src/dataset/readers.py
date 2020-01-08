@@ -15,6 +15,21 @@ def normalize_image(image):
   return tf.subtract(image, 1.0)
 
 
+class MultiDeviceIterator:
+
+  def __init__(self, iterator, gpu_devices):
+    self.iterator = iterator
+    self.gpu_devices = gpu_devices
+
+  def get_next(self):
+    l = []
+    for device in self.gpu_devices:
+      with tf.device(device):
+        l.append(self.iterator.get_next())
+    return l
+
+
+
 class BaseReader:
 
   def __init__(self, params, batch_size, gpu_devices, cpu_device,
@@ -109,17 +124,20 @@ class BaseReader:
         ds = ds.shuffle(self.params.datasets_shuffle_buffer_size).repeat()
       ds = ds.batch(self.batch_size_per_split)
       ds = ds.prefetch(buffer_size=5*self.num_splits)
-      if self.num_threads:
-        ds = threadpool.override_threadpool(
-          ds,
-          threadpool.PrivateThreadPool(
-            self.num_threads, display_name='input_pipeline_thread_pool'))
-      multi_device_iterator = multi_device_iterator_ops.MultiDeviceIterator(
-          ds,
-          self.gpu_devices,
-          source_device=self.cpu_device)
-      tf.add_to_collection(tf.GraphKeys.TABLE_INITIALIZERS,
-                           multi_device_iterator.initializer)
+      # if self.num_threads:
+      #   ds = threadpool.override_threadpool(
+      #     ds,
+      #     threadpool.PrivateThreadPool(
+      #       self.num_threads, display_name='input_pipeline_thread_pool'))
+      # multi_device_iterator = multi_device_iterator_ops.MultiDeviceIterator(
+      #     ds,
+      #     self.gpu_devices,
+      #     source_device=self.cpu_device)
+      # tf.add_to_collection(tf.GraphKeys.TABLE_INITIALIZERS,
+      #                      multi_device_iterator.initializer)
+      # return multi_device_iterator
+      iterator = ds.make_one_shot_iterator()
+      multi_device_iterator = MultiDeviceIterator(iterator, self.gpu_devices)
       return multi_device_iterator
 
 
