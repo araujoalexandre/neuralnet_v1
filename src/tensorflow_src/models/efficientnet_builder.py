@@ -54,7 +54,7 @@ class BlockDecoder(object):
         strides=[int(options['s'][0]),
                  int(options['s'][1])],
         conv_type=int(options['c']) if 'c' in options else 0,
-        fused_conv=int(options['f']) if 'f' in options else 0,
+        fused_conv=int(options['f']) if 'f' in options else 1,
         super_pixel=int(options['p']) if 'p' in options else 0,
         condconv=('cc' in block_string))
 
@@ -108,113 +108,6 @@ class BlockDecoder(object):
     return block_strings
 
 
-# def swish(features, use_native=True, use_hard=False):
-#   """Computes the Swish activation function.
-#
-#   We provide three alternnatives:
-#     - Native tf.nn.swish, use less memory during training than compsible swish.
-#     - Quantization friendly hard swish.
-#     - A composible swish, equavilant to tf.nn.swish, but more general for
-#       finetuning and TF-Hub.
-#
-#   Args:
-#     features: A `Tensor` representing preactivation values.
-#     use_native: Whether to use the native swish from tf.nn that uses a custom
-#       gradient to reduce memory usage, or to use customized swish that uses
-#       default TensorFlow gradient computation.
-#     use_hard: Whether to use quantization-friendly hard swish.
-#
-#   Returns:
-#     The activation value.
-#   """
-#   if use_native:
-#     return tf.nn.swish(features)
-#
-#   if use_hard:
-#     return features * tf.nn.relu6(features + np.float32(3)) * (1. / 6.)
-#
-#   features = tf.convert_to_tensor(features, name='features')
-#   return features * tf.nn.sigmoid(features)
-
-
-# def efficientnet(width_coefficient=None,
-#                  depth_coefficient=None,
-#                  dropout_rate=0.2,
-#                  drop_connect_rate=0.2):
-#   """Creates a efficientnet model."""
-
-
-# def get_model_params(model_name, override_params):
-#   """Get the block args and global params for a given model."""
-#   if model_name.startswith('efficientnet'):
-#   else:
-#     raise NotImplementedError('model name is not pre-defined: %s' % model_name)
-#
-#   if override_params:
-#     # ValueError will be raised here if override_params has fields not included
-#     # in global_params.
-#     global_params = global_params._replace(**override_params)
-#
-#   logging.info('global_params= %s', global_params)
-#   logging.info('blocks_args= %s', blocks_args)
-#   return blocks_args, global_params
-
-
-# def build_model(images,
-#                 model_name,
-#                 training,
-#                 override_params=None,
-#                 model_dir=None,
-#                 fine_tuning=False,
-#                 features_only=False,
-#                 pooled_features_only=False):
-#   """A helper functiion to creates a model and returns predicted logits.
-#
-#   Args:
-#     images: input images tensor.
-#     model_name: string, the predefined model name.
-#     training: boolean, whether the model is constructed for training.
-#     override_params: A dictionary of params for overriding. Fields must exist in
-#       efficientnet_model.GlobalParams.
-#     fine_tuning: boolean, whether the model is used for finetuning.
-#     features_only: build the base feature network only (excluding final
-#       1x1 conv layer, global pooling, dropout and fc head).
-#     pooled_features_only: build the base network for features extraction (after
-#       1x1 conv layer and global pooling, but before dropout and fc head).
-#
-#   Returns:
-#     logits: the logits tensor of classes.
-#     endpoints: the endpoints for each layer.
-#
-#   Raises:
-#     When model_name specified an undefined model, raises NotImplementedError.
-#     When override_params has invalid fields, raises ValueError.
-#   """
-#   assert isinstance(images, tf.Tensor)
-#   assert not (features_only and pooled_features_only)
-#   # if not training or fine_tuning:
-#   #   if not override_params:
-#   #     override_params = {}
-#   #   override_params['batch_norm'] = utils.BatchNormalization
-#   #   override_params['relu_fn'] = functools.partial(swish, use_native=False)
-#   blocks_args, global_params = get_model_params(model_name, override_params)
-#
-#   with tf.variable_scope(model_name):
-#     model = efficientnet_model.Model(blocks_args, global_params)
-#     outputs = model(
-#         images,
-#         training=training,
-#         features_only=features_only,
-#         pooled_features_only=pooled_features_only)
-#   if features_only:
-#     outputs = tf.identity(outputs, 'features')
-#   elif pooled_features_only:
-#     outputs = tf.identity(outputs, 'pooled_features')
-#   else:
-#     outputs = tf.identity(outputs, 'logits')
-#   return outputs, model.endpoints
-
-
 class EfficientNetModel(model_lib.CNNModel):
 
   def __init__(self, model_name, params=None):
@@ -235,7 +128,7 @@ class EfficientNetModel(model_lib.CNNModel):
         'efficientnet-b7': (2.0, 3.1, 600, 0.5),
     }[model_name]
     (width_coef, depth_coef, image_size, dropout_rate) = base_config 
-    if image_size != params.imagenet_image_size:
+    if image_size != params.reader['image_size']:
       raise ValueError(
         "With model '{}' image size should be set to {}".format(
           model_name, image_size))
@@ -246,12 +139,17 @@ class EfficientNetModel(model_lib.CNNModel):
         'r3_k5_s11_e6_i80_o112_se0.25', 'r4_k5_s22_e6_i112_o192_se0.25',
         'r1_k3_s11_e6_i192_o320_se0.25',
     ]
+    if self.params.data_format == 'NCHW':
+      data_format = 'channels_first'
+    else:
+      data_format = 'channels_last'
+
     self.global_params = efficientnet_model.GlobalParams(
         batch_norm_momentum=0.99,
         batch_norm_epsilon=1e-3,
         dropout_rate=dropout_rate,
         drop_connect_rate=0.2,
-        data_format='channels_last',
+        data_format=data_format,
         num_classes=1001,
         width_coefficient=width_coef,
         depth_coefficient=depth_coef,
@@ -262,16 +160,15 @@ class EfficientNetModel(model_lib.CNNModel):
         use_se=True)
     decoder = BlockDecoder()
     self.blocks_args = decoder.decode(blocks_args)
+    self.model = efficientnet_model.Model(self.blocks_args, self.global_params)
 
   def skip_final_affine_layer(self):
     return True
 
   def add_inference(self, cnn):
-
-    with tf.variable_scope(self.model_name):
-      model = efficientnet_model.Model(self.blocks_args, self.global_params)
-      outputs = model(cnn.top_layer, training=cnn.phase_train)
-      cnn.top_layer = outputs
+    x = cnn.top_layer
+    x = self.model.call(x, training=cnn.phase_train)
+    cnn.top_layer = x
 
 
 def create_efficientnet_b0(*args, **kwargs):

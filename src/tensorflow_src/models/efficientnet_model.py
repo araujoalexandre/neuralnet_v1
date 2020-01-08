@@ -173,7 +173,7 @@ def round_repeats(repeats, global_params):
   return int(math.ceil(multiplier * repeats))
 
 
-class MBConvBlock(tf.keras.layers.Layer):
+class MBConvBlock:
   """A class of MBConv: Mobile Inverted Residual Bottleneck.
 
   Attributes:
@@ -187,7 +187,6 @@ class MBConvBlock(tf.keras.layers.Layer):
       block_args: BlockArgs, arguments to create a Block.
       global_params: GlobalParams, a set of global parameters.
     """
-    super(MBConvBlock, self).__init__()
     self._block_args = block_args
     self._batch_norm_momentum = global_params.batch_norm_momentum
     self._batch_norm_epsilon = global_params.batch_norm_epsilon
@@ -281,7 +280,8 @@ class MBConvBlock(tf.keras.layers.Layer):
         depthwise_initializer=conv_kernel_initializer,
         padding='same',
         data_format=self._data_format,
-        use_bias=False)
+        use_bias=False,
+        name='depthwise_conv')
 
     self._bn1 = self._batch_norm(
         axis=self._channel_axis,
@@ -406,13 +406,22 @@ class MBConvBlock(tf.keras.layers.Layer):
     # Add identity so that quantization-aware training can insert quantization
     # ops correctly.
     x = tf.identity(x)
+
+    x_shape = x.get_shape().as_list()
+    inputs_shape = inputs.get_shape().as_list()
+    if self._data_format == 'channels_last':
+      equal_channels = inputs_shape[-1] == x_shape[-1]
+    else:
+      equal_channels = inputs_shape[1] == x_shape[1]
+
     if self._block_args.id_skip:
       if all(
           s == 1 for s in self._block_args.strides
-      ) and inputs.get_shape().as_list()[-1] == x.get_shape().as_list()[-1]:
+      ) and equal_channels:
         # only apply drop_connect if skip presents.
         if drop_connect_rate:
           x = drop_connect(x, training, drop_connect_rate)
+
         x = tf.add(x, inputs)
     logging.info('Project: %s shape: %s', x.name, x.shape)
     return x
@@ -445,6 +454,7 @@ class MBConvBlockWithoutDepthwise(MBConvBlock):
         kernel_size=[1, 1],
         strides=self._block_args.strides,
         kernel_initializer=conv_kernel_initializer,
+        data_format=self._data_format,
         padding='same',
         use_bias=False)
     self._bn1 = self._batch_norm(
@@ -489,7 +499,7 @@ class MBConvBlockWithoutDepthwise(MBConvBlock):
     return x
 
 
-class Model(tf.keras.Model):
+class Model:
   """A class implements tf.keras.Model for MNAS-like model.
 
     Reference: https://arxiv.org/abs/1807.11626
@@ -505,7 +515,6 @@ class Model(tf.keras.Model):
     Raises:
       ValueError: when blocks_args is not specified as a list.
     """
-    super(Model, self).__init__()
     if not isinstance(blocks_args, list):
       raise ValueError('blocks_args should be a list.')
     self._global_params = global_params
@@ -514,8 +523,6 @@ class Model(tf.keras.Model):
     self._batch_norm = global_params.batch_norm
 
     self.endpoints = None
-
-    self._build()
 
   def _get_conv_block(self, conv_type):
     conv_block_map = {0: MBConvBlock, 1: MBConvBlockWithoutDepthwise}
@@ -601,6 +608,7 @@ class Model(tf.keras.Model):
         filters=round_filters(1280, self._global_params),
         kernel_size=[1, 1],
         strides=[1, 1],
+        data_format=self._global_params.data_format,
         kernel_initializer=conv_kernel_initializer,
         padding='same',
         use_bias=False)
@@ -641,6 +649,8 @@ class Model(tf.keras.Model):
     Returns:
       output tensors.
     """
+    self._build()
+
     outputs = None
     self.endpoints = {}
     reduction_idx = 0
