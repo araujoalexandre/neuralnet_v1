@@ -55,8 +55,8 @@ def set_default_param_values_and_env_vars(params):
     num_monitoring_threads = 2 * params.num_gpus
     num_private_threads = max(
         cpu_count - total_gpu_thread_count - num_monitoring_threads, 1)
-    if params.datasets_num_private_threads == 0:
-      params.datasets_num_private_threads = num_private_threads
+    if params.reader['num_private_threads'] == 0:
+      params.reader['num_private_threads'] = num_private_threads
   return params
 
 
