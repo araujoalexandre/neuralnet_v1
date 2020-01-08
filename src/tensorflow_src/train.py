@@ -90,6 +90,13 @@ def params_sanity_checks(params):
     raise ValueError('When variable_update==distributed_all_reduce '
                      'controller_host must also be specified.')
 
+  if params.lr_strategy == 'exponential_decay':
+    lr_params = params.lr_params
+    if lr_params['decay_steps'] and  lr_params['decay_epochs']:
+      raise ValueError('Only one value should be set between decay_steps and '
+                       'decay_epochs for exponential_decay learning rate')
+
+
 
 
 def generate_tfprof_profile(profiler, tfprof_file):
