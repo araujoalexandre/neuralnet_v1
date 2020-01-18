@@ -10,6 +10,7 @@ from os.path import join
 from os.path import exists
 
 import utils as global_utils
+from dump_files import DumpFiles
 from . import utils
 from .models import model_config
 
@@ -75,6 +76,23 @@ class Evaluator:
       self.model = torch.nn.DataParallel(self.model)
     self.model = self.model.cuda()
 
+    if self.params.eval_under_attack:
+      if self.params.dump_files:
+        self.dump = DumpFiles(params)
+      if eot:
+        attack_model = utils.EOTWrapper(
+          self.model, self.reader.n_classes, self.params)
+      else:
+        attack_model = self.model
+
+      attack_params = self.params.attack_params
+      self.attack = utils.get_attack(
+                      attack_model,
+                      self.reader.n_classes,
+                      self.params.attack_method,
+                      attack_params)
+
+
 
   def run(self):
     """Evaluate a model every self.params.eval_interval_secs.
@@ -91,6 +109,31 @@ class Evaluator:
     # those variables are updated in eval_loop
     self.best_global_step = None
     self.best_accuracy = None
+
+    if self.params.eval_under_attack:
+      # normal evaulation has already been done
+      # we get the best checkpoint of the model
+      best_checkpoint, global_step = \
+          global_utils.get_best_checkpoint(
+            self.logs_dir, backend='pytorch')
+
+      checkpoint = torch.load(best_checkpoint)
+      global_step = checkpoint['global_step']
+      epoch = checkpoint['epoch']
+      self.model.load_state_dict(checkpoint['model_state_dict'])
+      self.model.eval()
+      self.eval_attack(global_step, epoch)
+
+      # save results
+      path = join(self.logs_dir, "attacks_score.txt")
+      with open(path, 'a') as f:
+        f.write("{}\n".format(self.params.attack_method))
+        f.write("sample {}, {}\n".format(self.params.eot_samples,
+                                       json.dumps(self.params.attack_params)))
+        f.write("{:.5f}\n\n".format(self.best_accuracy))
+      logging.info('Evalution under attack done.')
+      return
+
     # if the evaluation is made during training, we don't know how many 
     # checkpoint we need to process
     if self.params.eval_during_training:
@@ -177,5 +220,59 @@ class Evaluator:
     self.message.add('loss', loss, format='.5f')
     logging.info(self.message.get_message())
     logging.info("Done with batched inference.")
+    return
+
+  def eval_attack(self, global_step, epoch):
+    """Run evaluation under attack."""
+
+    running_accuracy = 0
+    running_inputs = 0
+    running_loss = 0
+    data_loader, _ = self.reader.load_dataset()
+    for batch_n, data in enumerate(data_loader):
+
+      batch_start_time = time.time()
+      inputs, labels = data
+      inputs, labels = inputs.cuda(), labels.cuda()
+      if self.add_noise:
+        inputs = self.noise(inputs)
+      outputs = self.model(inputs)
+
+      inputs_adv = self.attack.perturb(inputs, labels)
+      outputs_adv = self.model(inputs_adv)
+
+      loss = self.criterion(outputs_adv, labels)
+      _, predicted = torch.max(outputs_adv.data, 1)
+      seconds_per_batch = time.time() - batch_start_time
+      examples_per_second = inputs.size(0) / seconds_per_batch
+
+      running_accuracy += predicted.eq(labels.data).cpu().sum().numpy()
+      running_inputs += inputs.size(0)
+      running_loss += loss.cpu().detach().numpy()
+      accuracy = running_accuracy / running_inputs
+      loss = running_loss / (batch_n + 1)
+
+      if self.params.dump_files:
+        results = {
+          'images': inputs.cpu().numpy(),
+          'images_adv': inputs_adv.cpu().numpy(),
+          'predictions': outputs.detach().cpu().numpy(),
+          'predictions_adv': outputs_adv.detach().cpu().numpy()
+        }
+        self.dump.files(results)
+
+      self.message.add('step', global_step)
+      self.message.add('accuracy', accuracy, format='.5f')
+      self.message.add('loss', loss, format='.5f')
+      self.message.add('imgs/sec', examples_per_second, format='.0f')
+      logging.info(self.message.get_message())
+
+    self.best_global_step = global_step
+    self.best_accuracy = accuracy
+    self.message.add('step', global_step)
+    self.message.add('accuracy', accuracy, format='.5f')
+    self.message.add('loss', loss, format='.5f')
+    logging.info(self.message.get_message())
+    logging.info("Done with batched inference under attack.")
     return
 
