@@ -102,15 +102,13 @@ class Trainer:
       self.world_size = self.num_nodes * self.num_gpus
       self.rank = self.task_index * self.num_gpus + self.local_rank
       dist.init_process_group(
-        backend='nccl', rank=self.rank, world_size=self.world_size,
+        backend='nccl', init_method='env://',
         timeout=datetime.timedelta(seconds=30))
       if self.local_rank == 0:
         logging.info('world size={}'.format(self.world_size))
       logging.info('Distributed init done, local_rank={}, rank={}'.format(
         self.local_rank, self.rank))
       self.is_master = bool(self.rank == 0)
-      # reduce the learning rate for each process
-      # torch.backends.cudnn.enabled = False
     else:
       self.is_master = True
 
@@ -123,24 +121,21 @@ class Trainer:
     self.model = model_config.get_model_config(
         self.params.model, self.params.dataset, self.params,
         self.reader.n_classes, is_training=True)
-    # we don't use DataParallel due to bug with fft
-    # if self.num_gpus > 1:
-    #   self.model = torch.nn.DataParallel(self.model)
     if not params.job_name:
       self.model = torch.nn.DataParallel(self.model)
       self.model = self.model.cuda()
     else:
-      # self.model = self.model.to(device_ids[0])
       torch.cuda.set_device(params.local_rank)
       self.model = self.model.cuda()
       i = params.local_rank
       self.model = DistributedDataParallel(
         self.model, device_ids=[i], output_device=i)
+      logging.info('model defined with DistributedDataParallel')
 
     # if adversarial training, create the attack class
     if self.params.adversarial_training:
       attack_params = self.params.adversarial_training_params
-      self.attack = get_attack(
+      self.attack = utils.get_attack(
                       self.model,
                       self.reader.n_classes,
                       self.params.adversarial_training_name,
