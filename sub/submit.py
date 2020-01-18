@@ -150,6 +150,7 @@ class GenerateRunJobConfig:
                         dependency=self.dependency,
                         file_to_run=self.file_to_run,
                         attack_name=self.attack_name,
+                        override_params=self.override_params,
                         log_filename=self.log_filename,
                         config_file=self.config_path,
                         backend=self.backend,
@@ -336,6 +337,10 @@ if __name__ == '__main__':
             help="Parameters to inject in a template config file.")
   parser.add_argument("--name", type=str, default='',
             help="Name of the batch experiments. Required if grid_search is set.")
+
+  # argument for overriding parameters for evaluation or attacks
+  parser.add_argument("--override_params", type=str, default='',
+                      help="overriding parameters for evaluation or attacks")
   
   # parameters for distributed settings
   parser.add_argument("--nodes", type=int, default=1,
@@ -407,6 +412,7 @@ if __name__ == '__main__':
     cluster=args.cluster,
     time=args.time,
     dependency=args.dependency,
+    override_params=args.override_params,
     debug=args.debug,
     dev=args.dev,
     verbose=args.verbose,
