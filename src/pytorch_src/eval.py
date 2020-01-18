@@ -75,6 +75,12 @@ class Evaluator:
     self.model = torch.nn.DataParallel(self.model)
     self.model = self.model.cuda()
 
+    self.add_noise = False
+    eot = getattr(self.params, 'eot', False)
+    if getattr(self.params, 'add_noise', False) and eot == False:
+      self.add_noise = True
+      self.noise = utils.AddNoise(self.params)
+
     if self.params.eval_under_attack:
       if self.params.dump_files:
         self.dump = DumpFiles(params)
@@ -193,6 +199,8 @@ class Evaluator:
         batch_start_time = time.time()
         inputs, labels = data
         inputs, labels = inputs.cuda(), labels.cuda()
+        if self.add_noise:
+          inputs = self.noise(inputs)
         outputs = self.model(inputs)
         loss = self.criterion(outputs, labels)
         _, predicted = torch.max(outputs.data, 1)
