@@ -140,7 +140,7 @@ class IMAGENETReader(BaseReader):
     self.n_classes = 1001
     self.batch_shape = (None, self.height, self.height, 1)
 
-    slpit = 'train' if self_is_training else 'val'
+    split = 'train' if self.is_training else 'val'
     self.dataset = ImageNet(self.path, slip=split,
                             download=False, transform=self.transform())
 
