@@ -13,6 +13,8 @@ from torchvision.datasets import CIFAR10
 from torchvision.datasets import CIFAR100
 from torchvision.datasets import ImageNet
 
+from ..utils import AddNoise
+
 
 class BaseReader:
 
@@ -22,6 +24,7 @@ class BaseReader:
     self.num_splits = num_gpus
     self.batch_size = batch_size
     self.is_training = is_training
+    self.add_noise = getattr(self.params, 'noise', False) and self.is_training
     self.path = join(self.get_data_dir(), self.params.dataset)
     self.num_threads = self.params.datasets_num_private_threads
 
@@ -71,8 +74,12 @@ class MNISTReader(BaseReader):
     self.n_classes = 10
     self.batch_shape = (None, 32, 32, 1)
 
+    transform = self.transform()
+    if self.add_noise:
+      transform.transforms.append(AddNoise(self.params))
+
     self.dataset = MNIST(path, train=self.is_training,
-                         download=False, transform=self.transform())
+                         download=False, transform=transform)
 
   def transform(self):
     transform = Compose([
@@ -112,8 +119,13 @@ class CIFAR10Reader(CIFARReader):
   def __init__(self, params, batch_size, num_gpus, is_training):
     super(CIFAR10Reader, self).__init__(
       params, batch_size, num_gpus, is_training)
+
+    transform = self.transform()
+    if self.add_noise:
+      transform.transforms.append(AddNoise(self.params))
+
     self.dataset = CIFAR10(self.path, train=self.is_training,
-                           download=False, transform=self.transform())
+                           download=False, transform=transform)
 
 
 class CIFAR100Reader(CIFARReader):
@@ -121,8 +133,13 @@ class CIFAR100Reader(CIFARReader):
   def __init__(self, params, batch_size, num_gpus, is_training):
     super(CIFAR100Reader, self).__init__(
       params, batch_size, num_gpus, is_training)
+
+    transform = self.transform()
+    if self.add_noise:
+      transform.transforms.append(AddNoise(self.params))
+
     self.dataset = CIFAR100(self.path, train=self.is_training,
-                           download=False, transform=self.transform())
+                           download=False, transform=transform)
 
 
 class IMAGENETReader(BaseReader):
@@ -141,8 +158,13 @@ class IMAGENETReader(BaseReader):
     self.batch_shape = (None, self.height, self.height, 1)
 
     split = 'train' if self.is_training else 'val'
+
+    transform = self.transform()
+    if self.add_noise:
+      transform.transforms.append(AddNoise(self.params))
+
     self.dataset = ImageNet(self.path, slip=split,
-                            download=False, transform=self.transform())
+                            download=False, transform=transform)
 
   def transform(self):
     if self.is_training:
