@@ -153,7 +153,7 @@ class Evaluator:
           logging.info(
             "Loading checkpoint for eval: {}".format(latest_checkpoint))
           # Restores from checkpoint
-          checkpoint = torch.load(ckpt)
+          checkpoint = torch.load(latest_checkpoint)
           global_step = checkpoint['global_step']
           epoch = checkpoint['epoch']
           self.model.load_state_dict(checkpoint['model_state_dict'])
@@ -192,7 +192,7 @@ class Evaluator:
     running_accuracy = 0
     running_inputs = 0
     running_loss = 0
-    data_loader, _ = self.reader.load_dataset() 
+    data_loader, _ = self.reader.load_dataset()
     for batch_n, data in enumerate(data_loader):
 
       with torch.no_grad():
