@@ -25,10 +25,6 @@ from torch.optim import lr_scheduler
 from torch.nn.parallel import DistributedDataParallel
 
 
-from advertorch import attacks
-
-
-
 def get_scheduler(optimizer, lr_scheduler, lr_scheduler_params):
   """Return a learning rate scheduler
   schedulers. See https://pytorch.org/docs/stable/optim.html for more details.
@@ -69,31 +65,6 @@ def get_optimizer(optimizer, opt_args, init_lr, weight_decay, params):
   else:
     raise ValueError("Optimizer was not recognized")
   return opt
-
-
-def get_attack(model, num_classes, attack_name, attack_params):
-  if attack_name == 'carlini':
-    attack = attacks.CarliniWagnerL2Attack(model, num_classes, **attack_params)
-  elif attack_name == 'elasticnet':
-    attack = attacks.ElasticNetL1Attack(model, num_classes, **attack_params)
-  elif attack_name == 'pgd':
-    norm = attack_params['norm']
-    del attack_params['norm']
-    if norm == 'inf':
-      attack = attacks.LinfPGDAttack(model, **attack_params)
-    elif norm == 'l1':
-      attack = attacks.SparseL1PGDAttack(model, **attack_params)
-    elif norm == 'l2':
-      attack = attacks.L2PGDAttack(model, **attack_params)
-    else:
-      raise ValueError("Norm not recognized for PGD attack.")
-  elif attack_name == 'fgsm':
-    attack = GradientSignAttack(model, **attack_params)
-  else:
-    raise ValueError("Attack name not recognized for adv training.")
-  return attack
-
-
 
 
 class Trainer:

@@ -37,6 +37,34 @@ def set_default_param_values_and_env_vars(params):
     if params.datasets_num_private_threads == 0:
       params.datasets_num_private_threads = num_private_threads
   return params
+
+
+def get_attack(model, num_classes, attack_name, attack_params):
+  if attack_name == 'carlini':
+    attack = attacks.CarliniWagnerL2Attack(model, num_classes, **attack_params)
+  elif attack_name == 'elasticnet':
+    attack = attacks.ElasticNetL1Attack(model, num_classes, **attack_params)
+  elif attack_name == 'pgd':
+    norm = attack_params['norm']
+    del attack_params['norm']
+    if norm == 'inf':
+      attack = attacks.LinfPGDAttack(model, **attack_params)
+    elif norm == 'l1':
+      attack = attacks.SparseL1PGDAttack(model, **attack_params)
+    elif norm == 'l2':
+      attack = attacks.L2PGDAttack(model, **attack_params)
+    else:
+      raise ValueError("Norm not recognized for PGD attack.")
+  elif attack_name == 'fgsm':
+    attack = GradientSignAttack(model, **attack_params)
+  else:
+    raise ValueError("Attack name not recognized for adv training.")
+  return attack
+
+
+
+
+
 class MixtureNoise:
 
   def __init__(self, noise1, noise2, method, prob=0.5):
