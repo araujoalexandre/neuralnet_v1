@@ -136,7 +136,7 @@ class GenerateScript:
     load_cmd += '\n'.join(modules_load) + '\n'
     if self.backend == 'tensorflow':
       load_cmd += 'module load tensorflow-gpu/py3/1.14'
-    elif self.backend == 'pytorch':
+    elif self.backend in ['py', 'pytorch']:
       load_cmd += 'module load pytorch-gpu/py3/1.1'
     return load_cmd
 
