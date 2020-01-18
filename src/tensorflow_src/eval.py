@@ -10,13 +10,13 @@ from os.path import join
 from os.path import exists
 
 import utils as global_utils
+from dump_files import DumpFiles
 from . import attacks
 from . import utils
 from .models import model, model_config
 from .dataset.readers import readers_config
 from .train_utils import variable_mgr, variable_mgr_util
 from .utils import make_summary
-from .dump_files import DumpFiles
 
 import numpy as np
 import tensorflow as tf
@@ -55,7 +55,7 @@ class Evaluator:
     self.message = global_utils.MessageBuilder()
 
     # class for dumping data
-    if self.params.eval_under_attack:
+    if self.eval_under_attack and self.params.dump_files:
       self.dump = DumpFiles(params)
 
     if self.params.num_gpus:
@@ -180,7 +180,7 @@ class Evaluator:
       with open(path, 'a') as f:
         f.write("{}\n".format(self.params.attack_method))
         f.write("sample {}, {}\n".format(self.params.attack_sample,
-                                       json.dumps(attack_config)))
+                                       json.dumps(self.params.attack_params)))
         f.write("{:.5f}\t{:.5f}\n\n".format(acc_val, acc_adv_val))
 
     else:
@@ -356,6 +356,8 @@ class Evaluator:
     while True:
       try:
         results, examples_per_second = self._run_fetches(sess, fetches)
+        if self.params.dump_files:
+          self.dump.files(results)
         count += self.batch_size
         if self.params.dump_files:
           dump.files(results)
@@ -385,8 +387,6 @@ class Evaluator:
     while True:
       try:
         results, examples_per_second = self._run_fetches(sess, fetches)
-        # if self.params.dump_files:
-        #   self.dump.files(results)
         self.message.add('step', global_step)
         self.message.add('accuracy', results['accuracy'], format='.5f')
         self.message.add('avg loss', results['loss'], format='.5f')
