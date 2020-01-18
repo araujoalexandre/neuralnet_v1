@@ -47,7 +47,7 @@ step_lr: &step_lr
   gamma: 0.2
 
 multi_step_lr: &multi_step_lr
-  milestones: [30, 60, 90, 120, 180]
+  milestones: [60, 120, 160]
   gamma: 0.1
 
 exponential_lr: &exponential_lrr
@@ -124,10 +124,13 @@ elasticnet: &adv_params_elasticnet
   decision_rule: 'EN'
 
 pgd: &adv_params_pgd
-  norm: 'inf'
-  eps: 0.031
-  nb_iter: 10
-  eps_iter: 0.0062
+  # norm: 'inf'
+  # eps: 0.031
+  # eps_iter: 0.0062
+  norm: l2
+  eps: 0.832
+  eps_iter: 0.1664
+  nb_iter: {nb_iter}
   rand_init: True
   clip_min: 0.0
   clip_max: 1.0
@@ -139,6 +142,17 @@ fgsm: &adv_params_fgsm
   clip_max: 1.0
   targeted: False
 
+###########################
+###  Noise Parameters   ###
+###########################
+
+noise_params: &noise_params
+  distribution: {dist}
+  loc_normal: 0.
+  scale_normal: 0.25
+  scale_uniform: {scale_uniform}
+  low: 0
+  high: 1
 
 ###########################
 ### Training Parameters ###
@@ -155,6 +169,11 @@ train: &TRAIN
   adversarial_training_name: pgd
   adversarial_training_params:
     <<: *adv_params_pgd
+
+  add_noise: False
+  noise:
+    <<: *noise_params
+  
   init_learning_rate: 0.1
   lr_scheduler: multi_step_lr 
   lr_scheduler_params: 
@@ -164,7 +183,7 @@ train: &TRAIN
     <<: *sgd
 
   # Weight decay factor for training.
-  weight_decay: 0.002
+  weight_decay: 0.0002
 
   # Data layout to use: NHWC (TF native) or NCHW (cuDNN native, requires GPU). 
   # Choices: NHWC, NCHW.
@@ -176,7 +195,7 @@ train: &TRAIN
   # random seed 
   torch_random_seed: null
   # Batch size per compute device (i.e. GPU)
-  batch_size: 50
+  batch_size: 25
   # Number of epochs to run 
   num_epochs: 200
   # Device to use for computation: cpu or gpu
@@ -203,7 +222,7 @@ train: &TRAIN
   datasets_num_private_threads: 0
 
   gradient_clip_by_norm: null
-  gradient_clip_by_value: 5
+  gradient_clip_by_value: null
 
   # Sets the threshold for what messages will be logged. 
   logging_verbosity: INFO
@@ -221,4 +240,58 @@ eval: &EVAL
   num_gpu: 4
   eval_interval_secs: 30
   eval_during_training: False
+  eval_under_attack: False
 
+attack: &ATTACK
+  dump_files: True
+  eval_num_gpu: 4
+  eot: False
+  eot_samples: 80
+
+attack_fgsm:
+  <<: *TRAIN
+  <<: *EVAL
+  <<: *ATTACK
+  attack_method: fgsm
+  attack_params:
+    <<: *adv_params_fgsm
+
+attack_pgd_linf:
+  <<: *TRAIN
+  <<: *EVAL
+  <<: *ATTACK
+  attack_method: pgd
+  attack_params:
+    <<: *adv_params_pgd
+    norm: 'inf'
+    eps: 0.031
+    eps_iter: 0.0062
+
+attack_pgd_l2:
+  <<: *TRAIN
+  <<: *EVAL
+  <<: *ATTACK
+  attack_method: pgd
+  attack_params:
+    <<: *adv_params_pgd
+    norm: l2
+    eps: 0.832
+    eps_iter: 0.1664
+
+
+
+attack_carlini:
+  <<: *TRAIN
+  <<: *EVAL
+  <<: *ATTACK
+  attack_method: carlini
+  attack_params:
+    <<: *adv_params_carlini
+
+attack_elasticnet:
+  <<: *TRAIN
+  <<: *EVAL
+  <<: *ATTACK
+  attack_method: elasticnet
+  attack_params:
+    <<: *adv_params_elasticnet
