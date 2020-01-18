@@ -16,7 +16,7 @@ from script import GenerateScript
 _CLUSTER_MAX_TIME_JOB = 20
 
 LIST_ATTACKS = [
-  'fgm', 'pgd', 'carlini', 'elasticnet']
+  'fgm', 'fgsm', 'pgd', 'pgd_l2', 'pgd_linf', 'carlini', 'elasticnet']
 
 DATE_FORMAT = "%Y-%m-%d_%H.%M.%S_%f"
 
