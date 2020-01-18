@@ -17,7 +17,7 @@ from .dataset.readers import readers_config
 
 import numpy as np
 import torch
-
+import torch.backends.cudnn as cudnn
 
 
 class Evaluator:
@@ -49,6 +49,9 @@ class Evaluator:
 
     # create a mesage builder for logging
     self.message = global_utils.MessageBuilder()
+
+    if self.params.cudnn_benchmark:
+      cudnn.benchmark = True
 
     if self.params.num_gpus:
       self.batch_size = self.params.batch_size * self.num_gpus
