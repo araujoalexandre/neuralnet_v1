@@ -197,7 +197,7 @@ class GenerateScript:
     args.append('--data_dir={}'.format(self.data_dir))
     args.append('--backend={}'.format(self.backend))
     if self.override_params and self.mode in ('eval', 'attack'):
-      args.append('--override_params={}'.format(self.override_params))
+      args.append("--override_params='{}'".format(self.override_params))
     if self.distributed:
       args.append('--job_name={}'.format(job_name))
       args.append('--worker_hosts=${wk_hosts}')
