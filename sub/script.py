@@ -131,8 +131,9 @@ class GenerateScript:
     return slurm_header
 
   def create_load_cmd(self):
-    load_cmd = ['module load {}'.format(module) for module in self.modules]
-    load_cmd = '\n'.join(load_cmd) + '\n'
+    modules_load = ['module load {}'.format(module) for module in self.modules]
+    load_cmd = 'module purge\n'
+    load_cmd += '\n'.join(modules_load) + '\n'
     if self.backend == 'tensorflow':
       load_cmd += 'module load tensorflow-gpu/py3/1.14'
     elif self.backend == 'pytorch':
