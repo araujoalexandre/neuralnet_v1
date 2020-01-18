@@ -170,7 +170,7 @@ class Evaluator:
         sess.run(local_var_init_op_group)
         # pass session to attack class for Carlini Attack
         self.attack.sess = sess
-        # Restores from bast checkpoint
+        # Restores from best checkpoint
         best_checkpoint, global_step = \
             global_utils.get_best_checkpoint(
               self.logs_dir, backend='tensorflow')
