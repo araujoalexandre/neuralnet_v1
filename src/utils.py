@@ -191,6 +191,7 @@ def load_params(config_file, config_name, override_params=None):
   for k, v in data[config_name].items():
     params.add(k, v)
   if override_params:
+    logging.info('Overriding parameters of configuration file')
     params_to_override = json.loads(override_params)
     for key, value in params_to_override.items():
       params.override(key, value)
