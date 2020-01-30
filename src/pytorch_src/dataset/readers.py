@@ -24,7 +24,8 @@ class BaseReader:
     self.num_splits = num_gpus
     self.batch_size = batch_size
     self.is_training = is_training
-    self.add_noise = getattr(self.params, 'noise', False) and self.is_training
+    self.add_noise = getattr(
+      self.params, 'add_noise', False) and self.is_training
     self.path = join(self.get_data_dir(), self.params.dataset)
     self.num_threads = self.params.datasets_num_private_threads
 
