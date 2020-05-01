@@ -30,7 +30,7 @@ def circulant_multiply(k, x):
 class DiagonalCirculantLayer(nn.Module):
 
   def __init__(self, shape_in, shape_out, use_diag=True, use_bias=True,
-        alpha=2., activation='leaky_relu', activation_slope=0.1, **kwargs):
+        alpha=2., **kwargs):
     super(DiagonalCirculantLayer, self).__init__()
     self.use_diag, self.use_bias = use_diag, use_bias
     self.shape_in, self.shape_out = shape_in, shape_out
