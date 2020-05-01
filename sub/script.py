@@ -37,7 +37,8 @@ class GenerateScript:
     self.models_dir = dirname(train_dir)
     self.logs_dir = '{}_logs'.format(train_dir)
     self.data_dir = os.environ.get('DATADIR')
-    self.project_dir = os.environ.get('PROJECTDIR')
+    # self.project_dir = os.environ.get('PROJECTDIR')
+    self.project_dir = self.logs_dir
 
     # slrum config
     self.account = os.environ.get('slurm_account', None)
@@ -77,7 +78,6 @@ class GenerateScript:
     self.modules = [
       'cuda/10.1.1',
       'cudnn/10.1-v7.5.1.10',
-      'nccl/2.5.6-2-cuda'
     ]
 
     # python config
@@ -125,7 +125,7 @@ class GenerateScript:
     if self.dependency:
       slurm_header.append('--dependency=afterany:{}'.format(self.dependency))
     if self.dev_mode:
-      slurm_header.append('--qos qos_gpu-dev')
+      slurm_header.append('--qos=qos_gpu-dev')
     slurm_header = ['{} {}'.format('#SBATCH', arg) for arg in slurm_header]
     slurm_header = '\n'.join(slurm_header)
     return slurm_header
@@ -135,9 +135,10 @@ class GenerateScript:
     load_cmd = 'module purge\n'
     load_cmd += '\n'.join(modules_load) + '\n'
     if self.backend == 'tensorflow':
+      load_cmd += 'nccl/2.5.6-2-cuda\n'
       load_cmd += 'module load tensorflow-gpu/py3/1.14'
     elif self.backend in ['py', 'pytorch']:
-      load_cmd += 'module load pytorch-gpu/py3/1.1'
+     load_cmd += 'module load pytorch-gpu/py3/1.3.1+nccl-2.5.6\n'
     return load_cmd
 
   def unset_proxy(self):
@@ -227,7 +228,7 @@ class GenerateScript:
       job_script += '{}\n'.format(self.create_distribution_setup())
 
     if self.cluster and self.distributed:
-      if self.backend in ['py', 'pytroch']:
+      if self.backend in ['py', 'pytorch']:
         job_script += "master_host=${workers[0]}\n"
         job_script += "master_port={}\n\n".format(
           self.distributed_config['ps_port'])

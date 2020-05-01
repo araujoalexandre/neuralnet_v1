@@ -20,6 +20,14 @@ LIST_ATTACKS = [
 
 DATE_FORMAT = "%Y-%m-%d_%H.%M.%S_%f"
 
+def copytree(src, dst, symlinks=False, ignore=None):
+  for item in os.listdir(src):
+    s = os.path.join(src, item)
+    d = os.path.join(dst, item)
+    if os.path.isdir(s):
+      shutil.copytree(s, d, symlinks, ignore)
+    else:
+      shutil.copy2(s, d)
 
 class GenerateRunJobConfig:
 
@@ -133,6 +141,11 @@ class GenerateRunJobConfig:
 
     if self.mode == 'train':
       self.config_path = self.make_yaml_config()
+      # copy the src code into config folder
+      src_folder = join(self.projectdir, 'src')
+      if not exists(join(self.logs_dir, 'src')):
+        copytree(src_folder, join(self.logs_dir, 'src'))
+
     elif self.mode in ('eval', 'attack'):
       self.config_path = join(self.logs_dir, 'config.yaml')
       assert exists(self.config_path), \
@@ -240,34 +253,42 @@ class GenerateRunJobConfig:
 class GridSearchUtils:
   """Create utils scripts for grid search experiment."""
 
-  def __init__(self, xp_name):
+  def __init__(self, xp_name, debug=False):
 
-    # bash script to get parameters of all models
-    self.file1 = open('script_accuracy_{}.sh'.format(xp_name), 'w')
-    # bash script to get accuracy of all models
-    self.file2 = open('script_params_{}.sh'.format(xp_name), 'w')
-    # bash script to scancel all jobs
-    self.file3 = open('script_scancel_jobs_{}.sh'.format(xp_name), 'w')
-    # bash script to print all jobs
-    self.file4 = open('script_squeue_jobs_{}.sh'.format(xp_name), 'w')
+    self.debug = debug
+    if not debug:
 
-    self.all_jobids = []
+      # bash script to get parameters of all models
+      filename1 = 'script_accuracy_{}.sh'.format(xp_name)
+      assert not exists(filename1)
+      self.file1 = open(filename1, 'w')
+
+      # bash script to scancel all jobs
+      filename3 = 'script_scancel_jobs_{}.sh'.format(xp_name)
+      assert not exists(filename3)
+      self.file3 = open(filename3, 'w')
+
+      # bash script to print all jobs
+      filename4 = 'script_squeue_jobs_{}.sh'.format(xp_name)
+      assert not exists(filename4)
+      self.file4 = open(filename4, 'w')
+
+      self.all_jobids = []
+
 
   def write(self, folder, params, jobids):
-    self.all_jobids.extend(jobids)
-    self.file1.write("echo '{} {}'\n".format(folder, str(params)))
-    self.file1.write("cat {}_logs/best_accuracy.txt\n".format(folder))
-    self.file2.write("echo '{}'\n".format(folder))
-    self.file2.write(
-      "python3 utils/inspect_checkpoint.py --folder={}\n".format(folder))
-    self.file3.write("scancel {}\n".format(' '.join(jobids)))
+    if not self.debug:
+      self.all_jobids.extend(jobids)
+      self.file1.write("echo '{} {}'\n".format(folder, str(params)))
+      self.file1.write("cat {}_logs/best_accuracy.txt\n".format(folder))
+      self.file3.write("scancel {}\n".format(' '.join(jobids)))
 
   def close(self):
-    self.file1.close()
-    self.file2.close()
-    self.file3.close()
-    self.file4.write('squeue -j {}'.format(','.join(self.all_jobids)))
-    self.file4.close()
+    if not self.debug:
+      self.file1.close()
+      self.file3.close()
+      self.file4.write('squeue -j {}'.format(','.join(self.all_jobids)))
+      self.file4.close()
 
 
 
@@ -299,7 +320,7 @@ if __name__ == '__main__':
   parser.add_argument("--mode", type=str, default="train",
                         choices=("train", "eval", "attack"),
                         help="Choose job type train, eval, attack.")
-  parser.add_argument("--backend", type=str, default="tensorflow",
+  parser.add_argument("--backend", type=str, default="pytorch",
                         choices=("tensorflow", "tf", "pytorch", "torch", "py"),
                         help="Choose job type train, eval, attack.")
   parser.add_argument("--no_eval", action="store_true", default=False,
@@ -419,7 +440,7 @@ if __name__ == '__main__':
     distributed_config=distributed_config)
 
   if args.grid_search:
-    grid_search_utils = GridSearchUtils(args.name)
+    grid_search_utils = GridSearchUtils(args.name, debug=args.debug)
     for params in parse_grid_search(args.grid_search):
       print(params)
       job = GenerateRunJobConfig(
