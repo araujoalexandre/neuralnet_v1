@@ -2,6 +2,8 @@
 from . import inception_model
 from . import lenet_model
 from . import resnet_model
+from . import resnet_model_nobn
+from . import resnet_model_weight_norm
 from . import vgg_model
 from . import wide_resnet_model
 from . import circulant_model
@@ -22,13 +24,9 @@ _model_name_to_imagenet_model = {
 }
 
 _model_name_to_cifar_model = {
-    # 'trivial': trivial_model.TrivialModel,
-    # 'lenet': lenet_model.Lenet5Model,
-    # 'resnet20': resnet_model.create_resnet20_cifar_model,
-    # 'resnet32': resnet_model.create_resnet32_cifar_model,
-    # 'resnet44': resnet_model.create_resnet44_cifar_model,
-    # 'resnet56': resnet_model.create_resnet56_cifar_model,
-    # 'resnet110': resnet_model.create_resnet110_cifar_model,
+    'resnet': resnet_model.ResNet,
+    'resnet_nobn': resnet_model_nobn.ResNet,
+    'resnet_weight_norm': resnet_model_weight_norm.ResNet,
     'wide_resnet': wide_resnet_model.WideResnetModel,
     'diagonal_circulant': circulant_model.DiagonalCirculantModel,
     'scattering_circulant': scattering_model.ScatteringCirculantModel,
