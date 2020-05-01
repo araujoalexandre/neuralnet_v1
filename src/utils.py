@@ -155,6 +155,7 @@ class Params:
     if not isinstance(new_values, dict):
       setattr(self, key, new_values)
       self._params[key] = new_values
+      return
     obj = getattr(self, key)
     for k, v in new_values.items():
       obj[k] = v
