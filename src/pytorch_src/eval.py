@@ -132,7 +132,7 @@ class Evaluator:
       # save results
       path = join(self.logs_dir, "attacks_score.txt")
       with open(path, 'a') as f:
-        f.write("{}\n".format(self.params.attack_method))
+        f.write("{}\n".format(self.attack.__class__.__name__))
         f.write("sample {}, {}\n".format(self.params.eot_samples,
                                        json.dumps(self.params.attack_params)))
         f.write("{:.5f}\n\n".format(self.best_accuracy))
