@@ -54,6 +54,19 @@ class DiagonalCirculantLayer(nn.Module):
       self.bias = nn.Parameter(torch.Tensor(shape_out))
       nn.init.constant_(self.bias, 0.1)
 
+  def normalize(self):
+    max_circ = torch.max(torch.abs(torch.rfft(self.kernel, 1)))
+    if max_circ > 1:
+      self.kernel.data = self.kernel.data / max_circ
+    max_diag = torch.max(torch.abs(self.diag))
+    if max_diag > 1:
+      self.diag.data = self.diag.data / max_diag
+
+  def get_sv_max(self):
+    max_circ = torch.max(torch.abs(torch.rfft(self.kernel, 1)))
+    max_diag = torch.max(torch.abs(self.diag))
+    return max_circ, max_diag
+
   def forward(self, x):
     padding_size = np.abs(self.size - self.shape_in)
     paddings = (0, padding_size)
