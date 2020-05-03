@@ -99,7 +99,6 @@ class CIFARReader(BaseReader):
     self.height, self.width = 32, 32
     self.n_train_files = 50000
     self.n_test_files = 10000
-    self.n_classes = 10
     self.batch_shape = (None, 32, 32, 3)
     self.use_data_augmentation = self.params.data_augmentation
 
@@ -120,6 +119,7 @@ class CIFAR10Reader(CIFARReader):
   def __init__(self, params, batch_size, num_gpus, is_training):
     super(CIFAR10Reader, self).__init__(
       params, batch_size, num_gpus, is_training)
+    self.n_classes = 10
 
     transform = self.transform()
     if self.add_noise:
@@ -134,6 +134,7 @@ class CIFAR100Reader(CIFARReader):
   def __init__(self, params, batch_size, num_gpus, is_training):
     super(CIFAR100Reader, self).__init__(
       params, batch_size, num_gpus, is_training)
+    self.n_classes = 100
 
     transform = self.transform()
     if self.add_noise:
