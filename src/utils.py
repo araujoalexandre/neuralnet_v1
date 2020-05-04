@@ -117,7 +117,7 @@ class MessageBuilder:
 def setup_logging(verbosity):
   formatter = logging.Formatter(
     "[%(asctime)s %(filename)s:%(lineno)s] %(message)s",
-    datefmt='%Y-%m-%d %H:%M:%S')
+    datefmt='%H:%M:%S')
   absl.logging.get_absl_handler().setFormatter(formatter)
   log = logging.getLogger('tensorflow')
   level = {'DEBUG': 10, 'ERROR': 40, 'FATAL': 50,
