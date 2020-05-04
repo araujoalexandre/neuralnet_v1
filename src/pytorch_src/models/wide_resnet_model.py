@@ -1,10 +1,13 @@
 
+import logging
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.init as init
 import torch.nn.functional as F
 from torch.autograd import Variable
+
+from .layers import DiagonalCirculantLayer
 
 
 def conv3x3(in_planes, out_planes, stride=1, bias=True):
@@ -77,7 +80,13 @@ class WideResnetModel(nn.Module):
       wide_basic, nStages[3], n, dropout_rate, stride=2, bias=bias)
     self.bn1 = nn.BatchNorm2d(nStages[3], momentum=0.9)
 
-    self.linear = nn.Linear(nStages[3], num_classes)
+    if self.params.lipschitz_regularization:
+      logging.info('Using Diagonal Circulant as last layer.')
+      self.linear = DiagonalCirculantLayer(
+        nStages[3], num_classes, **self.params.model_params)
+    else:
+      self.linear = nn.Linear(nStages[3], num_classes)
+
 
   def _wide_layer(self, block, planes, num_blocks, dropout_rate, stride, bias=False):
     strides = [stride] + [1]*int(num_blocks-1)
