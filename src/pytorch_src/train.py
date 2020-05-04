@@ -195,12 +195,19 @@ class Trainer:
 
     if self.local_rank == 0:
       logging.info("Start training")
+      logging.info("NCCL Version {}".format(torch.cuda.nccl.version()))
+
+    profile_enabled = False
     for i in range(self.params.num_epochs):
       if self.is_distributed:
         sampler.set_epoch(i)
       for data in data_loader:
         epoch = (int(global_step) * batch_size) / n_files
-        self._training(data, epoch, global_step)
+        with torch.autograd.profiler.profile(
+            enabled=profile_enabled, use_cuda=True) as prof:
+          self._training(data, epoch, global_step)
+        if profile_enabled:
+          logging.info(prof.key_averages().table(sort_by="self_cpu_time_total"))
         self.save_ckpt(global_step, epoch)
         global_step += 1
       scheduler.step()
