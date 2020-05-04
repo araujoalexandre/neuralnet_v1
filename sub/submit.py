@@ -105,8 +105,11 @@ class GenerateRunJobConfig:
     
     self.logs_dir  = '{}_logs'.format(self.train_dir)
     # we don't create the train directory because it will be created by the
-    # train session 
-    if not exists(self.logs_dir):
+    # train session, we remove folder_debug_logs before creating it again
+    if self.dev_or_debug_mode and exists(self.logs_dir):
+      shutil.rmtree(self.logs_dir)
+      os.mkdir(self.logs_dir)
+    elif not exists(self.logs_dir):
       os.mkdir(self.logs_dir)
 
     if not self.dev_or_debug_mode:
