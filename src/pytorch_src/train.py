@@ -167,14 +167,6 @@ class Trainer:
     if self.params.cudnn_benchmark:
       cudnn.benchmark = True
 
-    # save the parameters in json formet in the training directory
-    model_flags_dict = self.params.to_json()
-    log_folder = '{}_logs'.format(self.train_dir)
-    flags_json_path = join(log_folder, "model_flags.json")
-    if not exists(flags_json_path):
-      with open(flags_json_path, "w") as fout:
-        fout.write(model_flags_dict)
-
     self._run_training()
 
 
