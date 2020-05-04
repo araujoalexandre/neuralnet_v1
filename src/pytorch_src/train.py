@@ -13,6 +13,7 @@ from os.path import exists
 import utils as global_utils
 from . import utils
 from .models import model_config
+from .lipschitz import LipschitzRegularization
 
 from .dataset.readers import readers_config
 
@@ -132,6 +133,9 @@ class Trainer:
         self.model, device_ids=[i], output_device=i)
       logging.info('model defined with DistributedDataParallel')
 
+    # define Lipschitz Reg module
+    self.lipschitz_reg = LipschitzRegularization(self.model, self.params)
+
     # if adversarial training, create the attack class
     if self.params.adversarial_training:
       attack_params = self.params.adversarial_training_params
@@ -238,14 +242,19 @@ class Trainer:
 
     outputs = self.model(inputs)
     self.optimizer.zero_grad()
+
     loss = self.criterion(outputs, labels.cuda())
-    loss.backward()
+    lip_loss = self.lipschitz_reg.get_lip_reg(epoch, self.model)
+    total_loss = loss + lip_loss
+    total_loss.backward()
+
     if self.params.gradient_clip_by_norm:
       torch.nn.utils.clip_grad_norm_(
         self.model.parameters(), self.params.gradient_clip_by_norm)
     elif self.params.gradient_clip_by_value:
       torch.nn.utils.clip_grad_value_(
         self.model.parameters(), self.params.gradient_clip_by_value)
+
     self.optimizer.step()
     seconds_per_batch = time.time() - batch_start_time
     examples_per_second = self.batch_size / seconds_per_batch
@@ -258,7 +267,9 @@ class Trainer:
       self.message.add("step", step, width=5, format=".0f")
       self.message.add("lr", lr, format=".6f")
       self.message.add("loss", loss, format=".4f")
+      self.message.add("lip", lip_loss, format="2.4f")
       self.message.add("imgs/sec", examples_per_second, width=5, format=".0f")
       logging.info(self.message.get_message())
+
 
 
