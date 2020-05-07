@@ -1,0 +1,313 @@
+
+#########################
+### Models Parameters ###
+#########################
+
+dense: &dense
+  n_layers: 5
+  hidden: 0
+  use_bias: True
+
+diagonal_circulant: &diagonal_circulant
+  n_layers: 5
+  use_diag: True
+  use_bias: True
+  alpha: 1.414
+  activation_slope: 0.1
+  use_batch_norm: True
+  pooling: max
+
+conv_circulant: &conv_circulant
+  use_diag: False
+  use_bias: True
+  activation: relu6
+
+wide_resnet: &wide_resnet
+  widen_factor: 10
+  depth: 28
+  leaky_slope: 0.1
+  dropout: 0.3
+  use_dc_last: False
+
+structured: &structured
+  rank: 1
+  class_type: toeplitz
+  n_layers: 3
+
+
+################################
+### Learning Rate Parameters ###
+################################
+
+piecewise_constant: &piecewise_constant
+  milestones: [7500, 15000, 20000]
+  values: [0.1, 0.02, 0.0004, 0.00008]
+
+step_lr: &step_lr
+  step_size: 50
+  gamma: 0.2
+
+multi_step_lr: &multi_step_lr
+  milestones: [60, 120, 160]
+  gamma: 0.1
+
+exponential_lr: &exponential_lrr
+  gamma: 0.97 
+
+reduce_lr_on_plateau: &reduce_lr_on_plateau
+  mode: 'min'
+  factor: 0.1
+  patience: 10
+  verbose: False
+  threshold: 0.0001
+  threshold_mode: 'rel'
+  cooldown: 0
+  min_lr: 0
+  eps: 1.e-08
+
+cyclic_lr: &cyclic_lr
+  base_lr: 0.01
+  max_lr: 0.1
+  step_size_up: 2000
+  step_size_down: None
+  mode: 'triangular'
+  gamma: 0.999
+  scale_fn: None
+  scale_mode: 'cycle'
+  cycle_momentum: True
+  base_momentum: 0.8
+  max_momentum: 0.9
+
+lambda_lr_warmup: &lambda_lr_warmup
+  warmup_epoch: 1
+  warmup_multiplier: 5
+
+############################
+### Optimizer Parameters ###
+############################
+
+sgd: &sgd
+  momentum: 0.9
+  dampening: 0
+  nesterov: True
+
+rmsprop: &rmsprop
+  alpha: 0.99
+  momentum: 0.0
+  eps: 1.e-08
+
+rmsproptf: &rmsproptf
+  alpha: 0.9
+  momentum: 0.9
+  eps: 0.001
+
+adam: &adam 
+  betas: [0.9, 0.999]
+  eps: 1.e-08
+  amsgrad: True
+
+#######################################
+### Adversarial Training Parameters ###
+#######################################
+
+carlini: &adv_params_carlini
+  learning_rate: 0.01
+  binary_search_steps: 9
+  max_iterations: 15
+  confidence: 0.
+  abort_early: True
+  initial_const: 0.001
+  clip_min: 0.0
+  clip_max: 1.0
+
+elasticnet: &adv_params_elasticnet
+  learning_rate: 0.01
+  binary_search_steps: 9
+  max_iterations: 15
+  confidence: 0.
+  targeted: False
+  abort_early: True
+  initial_const: 0.001
+  clip_min: 0.0
+  clip_max: 1.0
+  beta: 0.001
+  decision_rule: 'EN'
+
+pgd: &adv_params_pgd
+  norm: 'inf'
+  eps: 0.031
+  eps_iter: 0.0062
+  nb_iter: 10
+  rand_init: True
+  clip_min: 0.0
+  clip_max: 1.0
+
+fgsm: &adv_params_fgsm
+  eps: 0.05
+  clip_min: 0.0
+  clip_max: 1.0
+  targeted: False
+
+###########################
+###  Noise Parameters   ###
+###########################
+
+noise_params: &noise_params
+  distribution: uniform
+  loc_normal: 0.
+  scale_normal: 0.25
+  scale_uniform: 0.20
+  low: 0
+  high: 1
+
+###########################
+### Training Parameters ###
+###########################
+
+train: &TRAIN
+
+  dataset: cifar10
+  model: wide_resnet
+  model_params: 
+    <<: *wide_resnet
+
+  adversarial_training: True
+  adv_strategy: null
+  adversarial_training_name: pgd
+  adversarial_training_params:
+    <<: *adv_params_pgd
+
+  add_noise: False
+  noise:
+    <<: *noise_params
+  
+  init_learning_rate: 0.1
+  lr_scheduler: multi_step_lr 
+  lr_scheduler_params: 
+    <<: *multi_step_lr
+  optimizer: sgd
+  optimizer_params:
+    <<: *sgd
+
+  lb_smooth: 0.0
+
+  # Weight decay factor for training.
+  weight_decay: 0.0003
+
+  lipschitz_regularization: True
+  lipschitz_decay: 0.05
+  lipschitz_method: sum
+  lipschitz_bound_sample: 10
+
+  lipschitz_normalization: False
+
+  # Data layout to use: NHWC (TF native) or NCHW (cuDNN native, requires GPU). 
+  # Choices: NHWC, NCHW.
+  data_format: NCHW
+
+  data_augmentation: True
+  imagenet_image_size: 224
+
+  # random seed 
+  torch_random_seed: null
+  # Batch size per compute device (i.e. GPU)
+  batch_size: 25
+  # Number of epochs to run 
+  num_epochs: 200
+  # Device to use for computation: cpu or gpu
+  device: gpu
+  # The number of GPUs to run on
+  num_gpus: 4
+  # This flag allows you to enable the inbuilt cudnn auto-tuner to find the 
+  # best algorithm to use for your hardware.
+  cudnn_benchmark: True
+  # Methods to assign GPU host work to threads. global: all GPUs and CPUs 
+  # share the same global threads; gpu_private: a private threadpool for each 
+  # GPU; gpu_shared: all GPUs share the same threadpool.
+  gpu_thread_mode: gpu_private
+  # The number of threads to use for GPU. Only valid when gpu_thread_mode is not global.
+  per_gpu_thread_count: 0
+  # Number of threads to use for intra-op parallelism. 0=auto, None=disable.
+  num_intra_threads: 0 
+  # Number of threads to use for intra-op parallelism. 0=auto.
+  num_inter_threads: 0 
+  # Number of threads for a private threadpool created for all datasets 
+  # computation. By default, we pick an appropriate number. If set to 0, we 
+  # use the default tf-Compute threads for dataset operations, if False, we
+  # don't use a private threadpool.
+  datasets_num_private_threads: 0
+
+  gradient_clip_by_norm: null
+  gradient_clip_by_value: null
+
+  # Sets the threshold for what messages will be logged. 
+  logging_verbosity: INFO
+  # frequency of logs during training 
+  frequency_log_steps: 100
+  # How often to save trained models.
+  save_checkpoint_epochs: 2
+ 
+
+
+eval: &EVAL
+  <<: *TRAIN
+  data_pattern: test*
+  batch_size: 200
+  num_gpu: 4
+  eval_interval_secs: 30
+  eval_during_training: False
+  eval_under_attack: False
+
+attack: &ATTACK
+  dump_files: True
+  eval_num_gpu: 4
+  eot: False
+  eot_samples: 80
+
+attack_fgsm:
+  <<: *TRAIN
+  <<: *EVAL
+  <<: *ATTACK
+  attack_method: fgsm
+  attack_params:
+    <<: *adv_params_fgsm
+
+attack_pgd_linf:
+  <<: *TRAIN
+  <<: *EVAL
+  <<: *ATTACK
+  attack_method: pgd
+  attack_params:
+    <<: *adv_params_pgd
+    norm: 'inf'
+    eps: 0.031
+    eps_iter: 0.0062
+
+attack_pgd_l2:
+  <<: *TRAIN
+  <<: *EVAL
+  <<: *ATTACK
+  attack_method: pgd
+  attack_params:
+    <<: *adv_params_pgd
+    norm: l2
+    eps: 0.832
+    eps_iter: 0.1664
+
+
+
+attack_carlini:
+  <<: *TRAIN
+  <<: *EVAL
+  <<: *ATTACK
+  attack_method: carlini
+  attack_params:
+    <<: *adv_params_carlini
+
+attack_elasticnet:
+  <<: *TRAIN
+  <<: *EVAL
+  <<: *ATTACK
+  attack_method: elasticnet
+  attack_params:
+    <<: *adv_params_elasticnet
