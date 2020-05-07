@@ -1,4 +1,6 @@
 __pycache__
+*.egg-info/
 data
 *.pyc
 script_*
+*swp
