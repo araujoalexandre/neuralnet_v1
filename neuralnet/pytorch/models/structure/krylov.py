@@ -31,7 +31,8 @@ try:
     #     verbose=False
     #     )
 except (ImportError, RuntimeError) as e:
-    print("CUDA version of slow Krylov multiply isn't installed.")
+  pass
+    # print("CUDA version of slow Krylov multiply isn't installed.")
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 

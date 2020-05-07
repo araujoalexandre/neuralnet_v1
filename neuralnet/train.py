@@ -54,9 +54,9 @@ def main(_):
   params.horovod_device = FLAGS.horovod_device
 
   if FLAGS.backend.lower() in ('tensorflow', 'tf'):
-    from tensorflow_src.train import Trainer
+    from neuralnet.tensorflow.train import Trainer
   elif FLAGS.backend.lower() in ('pytorch', 'py', 'torch'):
-    from pytorch_src.train import Trainer
+    from neuralnet.pytorch.train import Trainer
   else:
     raise ValueError(
       "Backend not recognised. Choose between Tensorflow and Pytorch.")

@@ -14,6 +14,7 @@ import utils as global_utils
 from . import utils
 from .models import model_config
 from .lipschitz import LipschitzRegularization
+from .rmsprop import RMSpropTF
 
 from .dataset.readers import readers_config
 
@@ -24,6 +25,11 @@ import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 from torch.optim import lr_scheduler
 from torch.nn.parallel import DistributedDataParallel
+
+try:
+  from warmup_scheduler import GradualWarmupScheduler
+except:
+  pass
 
 
 def get_scheduler(optimizer, lr_scheduler, lr_scheduler_params):
@@ -47,6 +53,18 @@ def get_scheduler(optimizer, lr_scheduler, lr_scheduler_params):
   elif lr_scheduler == 'cyclic_lr':
     scheduler = torch.optim.lr_scheduler.CyclicLR(
       optimizer, **lr_scheduler_params)
+  elif lr_scheduler == 'lambda_lr_warmup':
+    warmup_epoch = lr_scheduler_params['warmup_epoch']
+    warmup_multiplier = lr_scheduler_params['warmup_multiplier']
+    lr_lambda = lambda x: 0.97 ** int((x + warmup_epoch) / 2.4)
+    after_scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer, lr_lambda=lr_lambda)
+    scheduler = GradualWarmupScheduler(
+        optimizer,
+        multiplier=warmup_epoch,
+        total_epoch=warmup_multiplier,
+        after_scheduler=after_scheduler
+    )
   else:
     raise ValueError("scheduler was not recognized")
   return scheduler
@@ -63,6 +81,8 @@ def get_optimizer(optimizer, opt_args, init_lr, weight_decay, params):
   elif optimizer == 'adam':
     opt = torch.optim.Adam(
       params, lr=init_lr, weight_decay=weight_decay, **opt_args)
+  elif optimizer == 'rmsproptf':
+    opt = RMSpropTF(params, lr=init_lr, weight_decay=weight_decay, **opt_args)
   else:
     raise ValueError("Optimizer was not recognized")
   return opt
@@ -172,7 +192,12 @@ class Trainer:
 
   def _run_training(self):
 
-    self.criterion = torch.nn.CrossEntropyLoss().cuda()
+    if self.params.lb_smooth == 0:
+      self.criterion = torch.nn.CrossEntropyLoss().cuda()
+    else:
+      self.criterion = utils.CrossEntropyLabelSmooth(
+        self.reader.n_classes, self.params.lb_smooth)
+
     self.optimizer = get_optimizer(
                        self.params.optimizer,
                        self.params.optimizer_params,

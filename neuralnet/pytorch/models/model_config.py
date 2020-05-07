@@ -9,6 +9,7 @@ from . import wide_resnet_model
 from . import circulant_model
 from . import scattering_model
 from . import structured_model
+from .efficientnet.model import create_efficientnet_model
 
 _model_name_to_imagenet_model = {
     'trivial': '',
@@ -16,11 +17,8 @@ _model_name_to_imagenet_model = {
     'vgg13': vgg_model.create_vgg13_model,
     'vgg16': vgg_model.create_vgg16_model,
     'vgg19': vgg_model.create_vgg19_model,
+    'efficientnet-b0': create_efficientnet_model,
     'lenet': lenet_model.LeNet,
-    # 'inception4': inception_model.Inceptionv4Model,
-    # 'resnet50': '',
-    # 'resnet101': '',
-    # 'resnet152': '',
 }
 
 _model_name_to_cifar_model = {
@@ -36,11 +34,6 @@ _model_name_to_cifar_model = {
       scattering_model.ScatteringByChannelCirculantModel,
     'ldr_model': structured_model.LDRModel,
     'ldr_multi_layer_model': structured_model.LDRMultiLayerModel
-}
-
-_model_name_to_mnist_model = {
-  # 'trivial': '',
-  # 'lenet': lenet_model.Lenet5Model,
 }
 
 def _get_model_map(dataset_name):

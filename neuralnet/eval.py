@@ -37,9 +37,9 @@ def main(_):
   params.start_new_model = False
 
   if FLAGS.backend.lower() in ('tensorflow', 'tf'):
-    from tensorflow_src.eval import Evaluator
+    from neuralnet.tensorflow.eval import Evaluator
   elif FLAGS.backend.lower() in ('pytorch', 'py', 'torch'):
-    from pytorch_src.eval import Evaluator
+    from neuralnet.pytorch.eval import Evaluator
   else:
     raise ValueError(
       "Backend not recognised. Choose between Tensorflow and Pytorch.")

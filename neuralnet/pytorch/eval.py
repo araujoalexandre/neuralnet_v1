@@ -92,7 +92,7 @@ class Evaluator:
 
       attack_params = self.params.attack_params
       self.attack = utils.get_attack(
-                      attack_model,
+                      self.model,
                       self.reader.n_classes,
                       self.params.attack_method,
                       attack_params)

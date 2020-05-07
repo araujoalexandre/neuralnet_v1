@@ -80,13 +80,12 @@ class WideResnetModel(nn.Module):
       wide_basic, nStages[3], n, dropout_rate, stride=2, bias=bias)
     self.bn1 = nn.BatchNorm2d(nStages[3], momentum=0.9)
 
-    if self.params.lipschitz_regularization:
+    if self.config.get('use_dc_last', False):
       logging.info('Using Diagonal Circulant as last layer.')
       self.linear = DiagonalCirculantLayer(
         nStages[3], num_classes, **self.params.model_params)
     else:
       self.linear = nn.Linear(nStages[3], num_classes)
-
 
   def _wide_layer(self, block, planes, num_blocks, dropout_rate, stride, bias=False):
     strides = [stride] + [1]*int(num_blocks-1)

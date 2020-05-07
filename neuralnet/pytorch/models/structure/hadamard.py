@@ -15,7 +15,7 @@ try:
     #     verbose=False
     #     )
 except (ImportError, RuntimeError) as e:
-    print("CUDA version of Hadamard transform isn't installed. Will use Pytorch's version, which is much slower.")
+    # print("CUDA version of Hadamard transform isn't installed. Will use Pytorch's version, which is much slower.")
     use_hadamard_transform_cuda = False
 
 from scipy.linalg import hadamard
