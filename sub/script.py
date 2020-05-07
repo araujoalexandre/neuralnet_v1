@@ -206,7 +206,7 @@ class GenerateScript:
       args.append('--task_index={}'.format(task_id))
 
     args = ' '.join(args)
-    file_to_run = join(self.project_dir, 'src', self.file_to_run)
+    file_to_run = join(self.project_dir, 'neuralnet', self.file_to_run)
     python_cmd = '{} {} {}'.format(self.python_exec, file_to_run, args)
     return python_cmd
 

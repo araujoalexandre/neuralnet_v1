@@ -145,9 +145,9 @@ class GenerateRunJobConfig:
     if self.mode == 'train':
       self.config_path = self.make_yaml_config()
       # copy the src code into config folder
-      src_folder = join(self.projectdir, 'src')
-      if not exists(join(self.logs_dir, 'src')):
-        copytree(src_folder, join(self.logs_dir, 'src'))
+      src_folder = join(self.projectdir, 'neuralnet')
+      if not exists(join(self.logs_dir, 'neuralnet')):
+        copytree(src_folder, join(self.logs_dir, 'neuralnet'))
 
     elif self.mode in ('eval', 'attack'):
       self.config_path = join(self.logs_dir, 'config.yaml')
@@ -177,7 +177,12 @@ class GenerateRunJobConfig:
 
   def make_yaml_config(self):
     # load the template and populate the values
-    config_path = join(self.projectdir, 'config', self.config_file)
+    if self.backend in ["tensorflow", "tf"]:
+      config_path = join(
+        self.projectdir, 'config', 'tensorflow', self.config_file)
+    else:
+      config_path = join(
+        self.projectdir, 'config', 'pytorch', self.config_file)
     assert exists(config_path), \
           "config file '{}' does not exist".format(self.config_file)
     with open(config_path) as f:
