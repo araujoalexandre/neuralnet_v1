@@ -160,10 +160,11 @@ class Evaluator:
         self.model.eval()
         self.eval_loop(global_step, epoch)
 
-    path = join(self.logs_dir, "best_accuracy.txt")
-    with open(path, 'w') as f:
-      f.write("{}\t{:.4f}\n".format(
-        self.best_global_step, self.best_accuracy))
+      if self.best_global_step is not None and self.best_accuracy is not None:
+        path = join(self.logs_dir, "best_accuracy.txt")
+        with open(path, 'a') as f:
+          f.write("{}\t{:.4f}\n".format(
+            self.best_global_step, self.best_accuracy))
 
     logging.info("Done evaluation -- number of eval reached.")
 
