@@ -226,7 +226,7 @@ class Trainer:
     for i in range(self.params.num_epochs):
       if self.is_distributed:
         sampler.set_epoch(i)
-      for data in data_loader:
+      for n_batch, data in enumerate(data_loader):
         epoch = (int(global_step) * batch_size) / n_files
         with torch.autograd.profiler.profile(
             enabled=profile_enabled, use_cuda=True) as prof:
