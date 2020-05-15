@@ -116,7 +116,7 @@ class Evaluator:
     self.best_accuracy = None
 
     if self.params.eval_under_attack:
-      # normal evaulation has already been done
+      # normal evaluation has already been done
       # we get the best checkpoint of the model
       best_checkpoint, global_step = \
           global_utils.get_best_checkpoint(
