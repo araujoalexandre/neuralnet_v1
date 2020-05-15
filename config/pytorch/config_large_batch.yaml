@@ -27,7 +27,7 @@ wide_resnet: &wide_resnet
   depth: 28
   leaky_slope: 0.1
   dropout: 0.3
-  use_dc_last: False
+  use_dc_last: {use_dc_last}
 
 structured: &structured
   rank: 1
@@ -181,7 +181,7 @@ train: &TRAIN
   model_params: 
     <<: *wide_resnet
 
-  adversarial_training: True
+  adversarial_training: False
   adv_strategy: null
   adversarial_training_name: pgd
   adversarial_training_params:
@@ -202,11 +202,11 @@ train: &TRAIN
   lb_smooth: 0.0
 
   # Weight decay factor for training.
-  weight_decay: 0.0003
+  weight_decay: {weight_decay}
 
   lipschitz_regularization: True
   lipschitz_decay: {lip_decay}
-  lipschitz_method: product
+  lipschitz_method: sum
   lipschitz_bound_sample: 10
 
   lipschitz_normalization: False
@@ -221,7 +221,7 @@ train: &TRAIN
   # random seed 
   torch_random_seed: null
   # Batch size per compute device (i.e. GPU)
-  batch_size: 25
+  batch_size: {batch_size}
   # Number of epochs to run 
   num_epochs: 200
   # Device to use for computation: cpu or gpu
@@ -253,9 +253,9 @@ train: &TRAIN
   # Sets the threshold for what messages will be logged. 
   logging_verbosity: INFO
   # frequency of logs during training 
-  frequency_log_steps: 10
+  frequency_log_steps: 100
   # How often to save trained models.
-  save_checkpoint_epochs: 1
+  save_checkpoint_epochs: 2
  
 
 
@@ -291,7 +291,6 @@ attack_pgd_linf:
     norm: 'inf'
     eps: 0.031
     eps_iter: 0.0062
-    nb_iter: 100
 
 attack_pgd_l2:
   <<: *TRAIN
@@ -303,7 +302,6 @@ attack_pgd_l2:
     norm: l2
     eps: 0.832
     eps_iter: 0.1664
-    nb_iter: 100
 
 attack_carlini:
   <<: *TRAIN
@@ -312,7 +310,6 @@ attack_carlini:
   attack_method: carlini
   attack_params:
     <<: *adv_params_carlini
-    max_iterations: 100
 
 attack_elasticnet:
   <<: *TRAIN

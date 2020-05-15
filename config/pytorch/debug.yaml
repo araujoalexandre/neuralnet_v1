@@ -27,7 +27,7 @@ wide_resnet: &wide_resnet
   depth: 28
   leaky_slope: 0.1
   dropout: 0.3
-  use_dc_last: True
+  use_dc_last: False
 
 structured: &structured
   rank: 1
@@ -111,9 +111,10 @@ adam: &adam
 #######################################
 
 carlini: &adv_params_carlini
+  l2_bound: 0.83
   learning_rate: 0.01
   binary_search_steps: 9
-  max_iterations: 15
+  max_iterations: 30
   confidence: 0.
   abort_early: True
   initial_const: 0.001
@@ -133,10 +134,16 @@ elasticnet: &adv_params_elasticnet
   beta: 0.001
   decision_rule: 'EN'
 
-pgd: &adv_params_pgd
-  # norm: 'inf'
-  # eps: 0.031
-  # eps_iter: 0.0062
+pgd_linf: &adv_params_pgd_linf
+  norm: 'inf'
+  eps: 0.031
+  eps_iter: 0.0062
+  nb_iter: 10
+  rand_init: True
+  clip_min: 0.0
+  clip_max: 1.0
+
+pgd_l2: &adv_params_pgd_l2
   norm: l2
   eps: 0.832
   eps_iter: 0.1664
@@ -144,7 +151,6 @@ pgd: &adv_params_pgd
   rand_init: True
   clip_min: 0.0
   clip_max: 1.0
-  # sparsity: 0.05
 
 fgsm: &adv_params_fgsm
   eps: 0.05
@@ -179,7 +185,7 @@ train: &TRAIN
   adv_strategy: null
   adversarial_training_name: pgd
   adversarial_training_params:
-    <<: *adv_params_pgd
+    <<: *adv_params_pgd_linf
 
   add_noise: False
   noise:
@@ -258,12 +264,11 @@ eval: &EVAL
   data_pattern: test*
   batch_size: 200
   num_gpu: 4
-  eval_interval_secs: 30
-  eval_during_training: False
   eval_under_attack: False
 
 attack: &ATTACK
-  dump_files: True
+  eval_under_attack: True
+  dump_files: False
   eval_num_gpu: 4
   eot: False
   eot_samples: 80
@@ -282,7 +287,7 @@ attack_pgd_linf:
   <<: *ATTACK
   attack_method: pgd
   attack_params:
-    <<: *adv_params_pgd
+    <<: *adv_params_pgd_linf
     norm: 'inf'
     eps: 0.031
     eps_iter: 0.0062
@@ -293,12 +298,10 @@ attack_pgd_l2:
   <<: *ATTACK
   attack_method: pgd
   attack_params:
-    <<: *adv_params_pgd
+    <<: *adv_params_pgd_l2
     norm: l2
     eps: 0.832
     eps_iter: 0.1664
-
-
 
 attack_carlini:
   <<: *TRAIN

@@ -176,12 +176,12 @@ noise_params: &noise_params
 
 train: &TRAIN
 
-  dataset: {dataset}
+  dataset: cifar10
   model: wide_resnet
   model_params: 
     <<: *wide_resnet
 
-  adversarial_training: True
+  adversarial_training: False
   adv_strategy: null
   adversarial_training_name: pgd
   adversarial_training_params:
@@ -205,8 +205,8 @@ train: &TRAIN
   weight_decay: 0.0003
 
   lipschitz_regularization: True
-  lipschitz_decay: {lip_decay}
-  lipschitz_method: product
+  lipschitz_decay: 0.0008
+  lipschitz_method: sum
   lipschitz_bound_sample: 10
 
   lipschitz_normalization: False
@@ -221,7 +221,7 @@ train: &TRAIN
   # random seed 
   torch_random_seed: null
   # Batch size per compute device (i.e. GPU)
-  batch_size: 25
+  batch_size: 300
   # Number of epochs to run 
   num_epochs: 200
   # Device to use for computation: cpu or gpu
@@ -253,9 +253,9 @@ train: &TRAIN
   # Sets the threshold for what messages will be logged. 
   logging_verbosity: INFO
   # frequency of logs during training 
-  frequency_log_steps: 10
+  frequency_log_steps: 100
   # How often to save trained models.
-  save_checkpoint_epochs: 1
+  save_checkpoint_epochs: 2
  
 
 
@@ -291,7 +291,6 @@ attack_pgd_linf:
     norm: 'inf'
     eps: 0.031
     eps_iter: 0.0062
-    nb_iter: 100
 
 attack_pgd_l2:
   <<: *TRAIN
@@ -303,7 +302,6 @@ attack_pgd_l2:
     norm: l2
     eps: 0.832
     eps_iter: 0.1664
-    nb_iter: 100
 
 attack_carlini:
   <<: *TRAIN
@@ -312,7 +310,6 @@ attack_carlini:
   attack_method: carlini
   attack_params:
     <<: *adv_params_carlini
-    max_iterations: 100
 
 attack_elasticnet:
   <<: *TRAIN
