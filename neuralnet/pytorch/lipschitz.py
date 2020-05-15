@@ -36,8 +36,6 @@ class LipschitzRegularization:
 
 
 
-
-
 class LipschitzConstants:
 
   def __init__(self, model, params):
@@ -71,7 +69,6 @@ class LipschitzConstants:
     """Compute a bound on the Lipchitz of Convolution layer."""
     padding = module.padding[0]
     kernel = module.weight
-    # self.lip_bound_cls[i].repackage()
     lip = self.lip_bound_cls[i].compute(kernel)
     return lip
 
@@ -105,64 +102,5 @@ class LipschitzConstants:
 
 
 
-class LipschitzNormalization:
-
-  def _normalize_conv(self, module):
-    """Normalize Convolutional kernel with Lipschitz."""
-    padding = module.padding[0]
-    kernel = module.weight
-    lb = LipschitzBound(kernel, padding, sample=50)
-    lip_conv = lb.compute()
-    if lip_conv > 1:
-      module.weight.data = module.weight.data / lip_conv
-
-  def _normalize_diagonal_circulant(self, module):
-    """Normalize Diagonal Circulant layer with Lipschitz."""
-    lip_circ = torch.max(torch.abs(torch.rfft(module.kernel, 1)))
-    lip_diag = torch.max(torch.abs(module.diag))
-    if lip_circ > 1:
-      module.kernel.data = module.kernel.data / lip_circ
-    if lip_diag > 1:
-      module.diag.data = module.diag.data / lip_diag
-
-  def normalize_network(self, model):
-    """Normalize each layer of network with Lipschitz"""
-    for module in self.model.modules():
-      name = module.__class__.__name__
-      if name == 'Conv2d':
-        self._normalize_conv(module)
-      if name == 'DiagonalCirculantLayer':
-        self._normalize_diagonal_circulant(module)
-
-
-
-    # else: # no reg, but we compute the lip anyway
-    #
-    #   for module in self.model.modules():
-    #     if 'conv' not in module.__class__.__name__.lower():
-    #       continue
-    #     n_layers += 1
-    #     padding = module.padding[0]
-    #     kernel = module.weight.data
-    #     lb = LipschitzBound(kernel, padding, sample=50)
-    #     lip_bound = lb.compute()
-    #     lip_loss += lip_bound
-    #     lip_log_loss = torch.log(lip_bound + 1)
-    #   lip_mean = lip_loss / n_layers
-    #
-    # # if self.lip_margin:   
-    # #   y_onehot = torch.zeros((len(labels), 10))
-    # #   y_onehot = y_onehot.scatter_(1, y, 1)
-    # #   y_onehot[y_onehot == 1] = -1
-    # #   y_onehot[y_onehot == 0] = 1
-    # #   y_onehot[y_onehot == -1] = 0
-    # #   
-    # #   mask = torch.max(outputs, axis=1)[1] == y.reshape(-1)
-    # #   outputs[mask, :] += torch.sign(outputs[mask, :]) * y_onehot[mask, :] *
-    # #   torch.sqrt(2) * self.params.lip_margin_cst * lip_loss
-    #
-    # loss = self.criterion(outputs, labels.cuda())
-    #
-    #
 
 
