@@ -21,7 +21,7 @@ class LipschitzRegularization:
       self.lip_constants = LipschitzConstants(model, params)
 
   def get_lip_reg(self, epoch, model):
-    if self.lipschitz_regularization:
+    if self.lipschitz_regularization and self.decay > 0:
       self.lip_constants.clear()
       lip_cst = self.lip_constants.compute_lipschitz_cst(model)
       if self.method == 'sum':
