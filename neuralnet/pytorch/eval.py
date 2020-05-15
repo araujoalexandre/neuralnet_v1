@@ -142,29 +142,7 @@ class Evaluator:
       logging.info('Evalution under attack done.')
       return
 
-    # if the evaluation is made during training, we don't know how many 
-    # checkpoint we need to process
-    if self.params.eval_during_training:
-      last_global_step = 0
-      while True:
-        latest_checkpoint, global_step = global_utils.get_checkpoint(
-          self.train_dir, last_global_step, backend='pytorch')
-        if latest_checkpoint is None or global_step == last_global_step:
-          time.sleep(self.params.eval_interval_secs)
-          continue
-        else:
-          logging.info(
-            "Loading checkpoint for eval: {}".format(latest_checkpoint))
-          # Restores from checkpoint
-          checkpoint = torch.load(latest_checkpoint)
-          global_step = checkpoint['global_step']
-          epoch = checkpoint['epoch']
-          self.model.load_state_dict(checkpoint['model_state_dict'])
-          self.model.eval()
-          self.eval_loop(global_step, epoch)
-          last_global_step = global_step
-    # if the evaluation is made after training, we look for all
-    # checkpoints 
+    # make global evaluation
     else:
       ckpts = global_utils.get_list_checkpoints(
         self.train_dir, backend='pytorch')
