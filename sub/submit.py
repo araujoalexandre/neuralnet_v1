@@ -417,7 +417,6 @@ if __name__ == '__main__':
   elif args.mode == 'attack':
     assert args.train_dir, \
         "Need to specify the name of the model to attack: --folder."
-  if args.mode == 'attack':
     assert args.attack, \
         "Need to specify the name of the attack: --attack."
     assert args.attack in LIST_ATTACKS, "Attack not recognized."
