@@ -146,9 +146,10 @@ class Evaluator:
     else:
       ckpts = global_utils.get_list_checkpoints(
         self.train_dir, backend='pytorch')
-      # remove first checkpoint model.ckpt-0
-      ckpts.pop(0)
       for ckpt in ckpts:
+        # remove first checkpoint model.ckpt-0
+        if 'model.ckpt-0' in ckpt:
+          continue
         logging.info(
           "Loading checkpoint for eval: {}".format(ckpt))
         # Restores from checkpoint
