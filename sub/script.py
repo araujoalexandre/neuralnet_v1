@@ -138,7 +138,12 @@ class GenerateScript:
       load_cmd += 'nccl/2.5.6-2-cuda\n'
       load_cmd += 'module load tensorflow-gpu/py3/1.14'
     elif self.backend in ['py', 'pytorch']:
-     load_cmd += 'module load pytorch-gpu/py3/1.3.1+nccl-2.5.6\n'
+      # advertorch is not working with nccl 2.5
+      if self.mode == 'attack':
+        load_cmd += 'module load nccl/2.4.8-1-cuda\n'
+        load_cmd += 'module load pytorch-gpu/py3/1.3.1'
+      else:
+        load_cmd += 'module load pytorch-gpu/py3/1.3.1+nccl-2.5.6\n'
     return load_cmd
 
   def unset_proxy(self):
