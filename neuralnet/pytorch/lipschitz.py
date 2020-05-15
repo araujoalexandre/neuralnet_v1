@@ -28,7 +28,7 @@ class LipschitzRegularization:
         lip_loss = sum(lip_cst)
         return self.decay * lip_loss
       elif self.method == 'product':
-        lip_loss = [torch.log(x + 1) for x in lip_cst]
+        lip_loss = [torch.log(x) for x in lip_cst]
         return self.decay * sum(lip_loss)
       else:
         raise "Lipschitz regularization method not recognized."
