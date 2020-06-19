@@ -33,6 +33,8 @@ structured: &structured
   class_type: toeplitz
   n_layers: 3
 
+resnet: &resnet
+  depth: 101
 
 ################################
 ### Learning Rate Parameters ###
@@ -41,23 +43,20 @@ structured: &structured
 piecewise_constant: &piecewise_constant
   milestones: [7500, 15000, 20000]
   values: [0.1, 0.02, 0.0004, 0.00008]
-  warmup: False
 
 step_lr: &step_lr
   step_size: 50
   gamma: 0.2
-  warmup: False
 
 multi_step_lr: &multi_step_lr
-  milestones: [60, 120, 160]
+  milestones: [30, 60, 80, 90]
   gamma: 0.1
-  warmup: False
 
 exponential_lr: &exponential_lrr
   decay_factor: 0.97
   decay_epochs: 2.4
   staircase: True
-  warmup: 5
+  # warmup: 5
 
 reduce_lr_on_plateau: &reduce_lr_on_plateau
   mode: 'min'
@@ -181,16 +180,12 @@ noise_params: &noise_params
 train: &TRAIN
 
   dataset: imagenet
-  model: efficientnet-b2
-  model_params: null
-  # model_params: 
-  #   <<: *efficientnet-b0
+  model: resnet
+  model_params: 
+    <<: *resnet
 
-  adversarial_training: False
-  adv_split_loss: True
+  adversarial_training: True
   adv_strategy: null
-  adv_attack_after_epochs: 5
-  adv_warmup_epochs: 10
   adversarial_training_name: pgd
   adversarial_training_params:
     <<: *adv_params_pgd_linf
@@ -199,26 +194,25 @@ train: &TRAIN
   noise:
     <<: *noise_params
   
-  # 4 machines with 8 gpus each: total batch size 4096
-  init_learning_rate: 0.256
-  lr_scheduler: lambda_lr_warmup
+  init_learning_rate: 0.1
+  lr_scheduler: multi_step_lr
   lr_scheduler_params: 
-    <<: *lambda_lr_warmup
-  optimizer: rmsproptf
+    <<: *multi_step_lr
+  optimizer: sgd
   optimizer_params:
-    <<: *rmsproptf
+    <<: *sgd
 
   lb_smooth: 0.1
   ema: 0.999
 
   # Weight decay factor for training.
-  weight_decay: 0.00001
+  weight_decay: 0.0001
 
   lipschitz_regularization: True
-  lipschitz_decay: 0.00001
+  lipschitz_decay: 0.002
   lipschitz_bound_sample: 10
   lipschitz_computation: lipbound
-  lipschitz_n_iter: 1
+  lipschitz_n_iter: 10
 
   lipschitz_normalization: False
 
@@ -234,11 +228,11 @@ train: &TRAIN
   # Batch size per compute device (i.e. GPU)
   batch_size: 128
   # Number of epochs to run 
-  num_epochs: 350
+  num_epochs: 100
   # Device to use for computation: cpu or gpu
   device: gpu
   # The number of GPUs to run on
-  num_gpus: 8
+  num_gpus: 4
   # This flag allows you to enable the inbuilt cudnn auto-tuner to find the 
   # best algorithm to use for your hardware.
   cudnn_benchmark: True
@@ -274,10 +268,11 @@ eval: &EVAL
   <<: *TRAIN
   data_pattern: test*
   batch_size: 512
-  num_gpu: 8
+  num_gpus: 4
   eval_under_attack: False
 
 attack: &ATTACK
+  batch_size: 32
   eval_under_attack: True
   dump_files: False
   eval_num_gpu: 8

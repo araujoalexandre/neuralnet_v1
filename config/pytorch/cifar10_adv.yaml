@@ -25,8 +25,8 @@ conv_circulant: &conv_circulant
 wide_resnet: &wide_resnet
   widen_factor: 10
   depth: 28
-  leaky_slope: 0.1
-  dropout: {dropout}
+  leaky_slope: 0.0
+  dropout: 0.3
   use_dc_last: False
 
 structured: &structured
@@ -114,7 +114,7 @@ carlini: &adv_params_carlini
   l2_bound: 0.83
   learning_rate: 0.01
   binary_search_steps: 9
-  max_iterations: 30
+  max_iterations: 100
   confidence: 0.
   abort_early: True
   initial_const: 0.001
@@ -124,7 +124,7 @@ carlini: &adv_params_carlini
 elasticnet: &adv_params_elasticnet
   learning_rate: 0.01
   binary_search_steps: 9
-  max_iterations: 15
+  max_iterations: 100
   confidence: 0.
   targeted: False
   abort_early: True
@@ -181,7 +181,7 @@ train: &TRAIN
   model_params: 
     <<: *wide_resnet
 
-  adversarial_training: {adv_training}
+  adversarial_training: True
   adv_strategy: null
   adversarial_training_name: pgd
   adversarial_training_params:
@@ -201,16 +201,14 @@ train: &TRAIN
 
   lb_smooth: 0.0
 
-  # sub-sampling
-  sampling_stop_at: {sampling}
-
   # Weight decay factor for training.
-  weight_decay: {weight_decay}
+  weight_decay: 0.0003
 
   lipschitz_regularization: True
-  lipschitz_decay: {lip_decay}
-  lipschitz_method: product
+  lipschitz_decay: 0.008
   lipschitz_bound_sample: 10
+  lipschitz_computation: power_method
+  lipschitz_n_iter: 10
 
   lipschitz_normalization: False
 
@@ -224,13 +222,13 @@ train: &TRAIN
   # random seed 
   torch_random_seed: null
   # Batch size per compute device (i.e. GPU)
-  batch_size: 25
+  batch_size: 8
   # Number of epochs to run 
   num_epochs: 200
   # Device to use for computation: cpu or gpu
   device: gpu
   # The number of GPUs to run on
-  num_gpus: 4
+  num_gpus: 8
   # This flag allows you to enable the inbuilt cudnn auto-tuner to find the 
   # best algorithm to use for your hardware.
   cudnn_benchmark: True
@@ -258,7 +256,7 @@ train: &TRAIN
   # frequency of logs during training 
   frequency_log_steps: 100
   # How often to save trained models.
-  save_checkpoint_epochs: 2
+  save_checkpoint_epochs: 1
  
 
 
@@ -294,7 +292,7 @@ attack_pgd_linf:
     norm: 'inf'
     eps: 0.031
     eps_iter: 0.0062
-    nb_iter: 20
+    nb_iter: 100
 
 attack_pgd_l2:
   <<: *TRAIN
@@ -306,7 +304,7 @@ attack_pgd_l2:
     norm: l2
     eps: 0.832
     eps_iter: 0.1664
-    nb_iter: 20
+    nb_iter: 100
 
 attack_carlini:
   <<: *TRAIN

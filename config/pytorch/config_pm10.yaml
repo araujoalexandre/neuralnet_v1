@@ -114,7 +114,7 @@ carlini: &adv_params_carlini
   l2_bound: 0.83
   learning_rate: 0.01
   binary_search_steps: 9
-  max_iterations: 30
+  max_iterations: 100
   confidence: 0.
   abort_early: True
   initial_const: 0.001
@@ -124,7 +124,7 @@ carlini: &adv_params_carlini
 elasticnet: &adv_params_elasticnet
   learning_rate: 0.01
   binary_search_steps: 9
-  max_iterations: 15
+  max_iterations: 100
   confidence: 0.
   targeted: False
   abort_early: True
@@ -205,9 +205,10 @@ train: &TRAIN
   weight_decay: 0.0003
 
   lipschitz_regularization: True
-  lipschitz_decay: 0.0008
-  lipschitz_method: sum
+  lipschitz_decay: 0.05
   lipschitz_bound_sample: 10
+  lipschitz_computation: power_method
+  lipschitz_n_iter: 10
 
   lipschitz_normalization: False
 
@@ -221,7 +222,7 @@ train: &TRAIN
   # random seed 
   torch_random_seed: null
   # Batch size per compute device (i.e. GPU)
-  batch_size: 300
+  batch_size: 25
   # Number of epochs to run 
   num_epochs: 200
   # Device to use for computation: cpu or gpu
@@ -253,9 +254,9 @@ train: &TRAIN
   # Sets the threshold for what messages will be logged. 
   logging_verbosity: INFO
   # frequency of logs during training 
-  frequency_log_steps: 100
+  frequency_log_steps: 10
   # How often to save trained models.
-  save_checkpoint_epochs: 2
+  save_checkpoint_epochs: 1
  
 
 
@@ -291,6 +292,7 @@ attack_pgd_linf:
     norm: 'inf'
     eps: 0.031
     eps_iter: 0.0062
+    nb_iter: 100
 
 attack_pgd_l2:
   <<: *TRAIN
@@ -302,6 +304,7 @@ attack_pgd_l2:
     norm: l2
     eps: 0.832
     eps_iter: 0.1664
+    nb_iter: 100
 
 attack_carlini:
   <<: *TRAIN
