@@ -78,8 +78,10 @@ cyclic_lr: &cyclic_lr
   base_momentum: 0.8
   max_momentum: 0.9
 
-lambda_lr_warmup: &lambda_lr_warmup
-  warmup_epoch: 5
+lambda_lr: &lambda_lr
+  gamma: 0.97
+  decay_every_epoch: 2
+  warmup: 0
 
 ############################
 ### Optimizer Parameters ###
@@ -176,9 +178,9 @@ noise_params: &noise_params
 train: &TRAIN
 
   dataset: cifar10
-  model: wide_resnet
+  model: resnet
   model_params: 
-    <<: *wide_resnet
+    <<: *resnet
 
   adversarial_training: False
   adv_strategy: null
@@ -191,14 +193,15 @@ train: &TRAIN
     <<: *noise_params
   
   init_learning_rate: 0.1
-  lr_scheduler: multi_step_lr 
+  lr_scheduler: lambda_lr
   lr_scheduler_params: 
-    <<: *multi_step_lr
+    <<: *lambda_lr
   optimizer: sgd
   optimizer_params:
     <<: *sgd
 
-  lb_smooth: 0.0
+  lb_smooth: 0.1
+  ema: 0.999
 
   # Weight decay factor for training.
   weight_decay: 0.0003
@@ -209,12 +212,6 @@ train: &TRAIN
   lipschitz_computation: lipbound
   lipschitz_n_iter: 10
 
-  lipschitz_normalization: False
-
-  # Data layout to use: NHWC (TF native) or NCHW (cuDNN native, requires GPU). 
-  # Choices: NHWC, NCHW.
-  data_format: NCHW
-
   data_augmentation: True
   imagenet_image_size: 224
 
@@ -224,10 +221,6 @@ train: &TRAIN
   batch_size: 25
   # Number of epochs to run 
   num_epochs: 200
-  # Device to use for computation: cpu or gpu
-  device: gpu
-  # The number of GPUs to run on
-  num_gpus: 4
   # This flag allows you to enable the inbuilt cudnn auto-tuner to find the 
   # best algorithm to use for your hardware.
   cudnn_benchmark: True
@@ -263,13 +256,11 @@ eval: &EVAL
   <<: *TRAIN
   data_pattern: test*
   batch_size: 200
-  num_gpu: 4
   eval_under_attack: False
 
 attack: &ATTACK
   eval_under_attack: True
   dump_files: False
-  eval_num_gpu: 4
   eot: False
   eot_samples: 80
 

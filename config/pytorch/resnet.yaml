@@ -52,7 +52,7 @@ multi_step_lr: &multi_step_lr
   milestones: [30, 60, 80, 90]
   gamma: 0.1
 
-exponential_lr: &exponential_lrr
+exponential_lr: &exponential_lr
   decay_factor: 0.97
   decay_epochs: 2.4
   staircase: True
@@ -208,7 +208,7 @@ train: &TRAIN
   weight_decay: 0.0001
 
   lipschitz_regularization: False
-  lipschitz_decay: 0.008
+  lipschitz_decay: 0.002
   lipschitz_bound_sample: 10
   lipschitz_computation: lipbound
   lipschitz_n_iter: 10
@@ -228,10 +228,6 @@ train: &TRAIN
   batch_size: 16
   # Number of epochs to run 
   num_epochs: 100
-  # Device to use for computation: cpu or gpu
-  device: gpu
-  # The number of GPUs to run on
-  num_gpus: 8
   # This flag allows you to enable the inbuilt cudnn auto-tuner to find the 
   # best algorithm to use for your hardware.
   cudnn_benchmark: True
@@ -267,13 +263,11 @@ eval: &EVAL
   <<: *TRAIN
   data_pattern: test*
   batch_size: 512
-  num_gpu: 8
   eval_under_attack: False
 
 attack: &ATTACK
   eval_under_attack: True
   dump_files: False
-  eval_num_gpu: 8
   eot: False
   eot_samples: 80
 

@@ -52,11 +52,10 @@ multi_step_lr: &multi_step_lr
   milestones: [30, 60, 80, 90]
   gamma: 0.1
 
-exponential_lr: &exponential_lrr
+exponential_lr: &exponential_lr
   decay_factor: 0.97
   decay_epochs: 2.4
   staircase: True
-  # warmup: 5
 
 reduce_lr_on_plateau: &reduce_lr_on_plateau
   mode: 'min'
@@ -226,13 +225,9 @@ train: &TRAIN
   # random seed 
   torch_random_seed: null
   # Batch size per compute device (i.e. GPU)
-  batch_size: 128
+  batch_size: 16
   # Number of epochs to run 
   num_epochs: 100
-  # Device to use for computation: cpu or gpu
-  device: gpu
-  # The number of GPUs to run on
-  num_gpus: 4
   # This flag allows you to enable the inbuilt cudnn auto-tuner to find the 
   # best algorithm to use for your hardware.
   cudnn_benchmark: True
@@ -268,14 +263,12 @@ eval: &EVAL
   <<: *TRAIN
   data_pattern: test*
   batch_size: 512
-  num_gpus: 4
   eval_under_attack: False
 
 attack: &ATTACK
   batch_size: 32
   eval_under_attack: True
   dump_files: False
-  eval_num_gpu: 8
   eot: False
   eot_samples: 80
 

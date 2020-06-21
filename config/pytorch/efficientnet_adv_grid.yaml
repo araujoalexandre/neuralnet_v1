@@ -53,7 +53,7 @@ multi_step_lr: &multi_step_lr
   gamma: 0.1
   warmup: False
 
-exponential_lr: &exponential_lrr
+exponential_lr: &exponential_lr
   decay_factor: 0.97
   decay_epochs: 2.4
   staircase: True
@@ -83,8 +83,10 @@ cyclic_lr: &cyclic_lr
   base_momentum: 0.8
   max_momentum: 0.9
 
-lambda_lr_warmup: &lambda_lr_warmup
-  warmup_epoch: 5
+lambda_lr: &lambda_lr
+  gamma: 0.97
+  decay_every_epoch: 2.4
+  warmup: 5
 
 ############################
 ### Optimizer Parameters ###
@@ -192,21 +194,15 @@ train: &TRAIN
   adversarial_training_params:
     <<: *adv_params_pgd_linf
 
-  free_adv:
-    eps: 0.031
-    clip_eps: 0.031
-    fgsm_step: 0.0062
-    n_repeats: 4
- 
   add_noise: False
   noise:
     <<: *noise_params
   
   # 4 machines with 8 gpus each: total batch size 4096
   init_learning_rate: 0.256
-  lr_scheduler: lambda_lr_warmup
+  lr_scheduler: lambda_lr
   lr_scheduler_params: 
-    <<: *lambda_lr_warmup
+    <<: *lambda_lr
   optimizer: rmsproptf
   optimizer_params:
     <<: *rmsproptf
@@ -217,17 +213,11 @@ train: &TRAIN
   # Weight decay factor for training.
   weight_decay: 0.00001
 
-  lipschitz_regularization: False
-  lipschitz_decay: 0.00001
+  lipschitz_regularization: True
+  lipschitz_decay: {lipdecay}
   lipschitz_bound_sample: 10
   lipschitz_computation: lipbound
-  lipschitz_n_iter: 1
-
-  lipschitz_normalization: False
-
-  # Data layout to use: NHWC (TF native) or NCHW (cuDNN native, requires GPU). 
-  # Choices: NHWC, NCHW.
-  data_format: NCHW
+  lipschitz_n_iter: 10
 
   data_augmentation: True
   imagenet_image_size: 224
@@ -238,10 +228,6 @@ train: &TRAIN
   batch_size: 128
   # Number of epochs to run 
   num_epochs: 350
-  # Device to use for computation: cpu or gpu
-  device: gpu
-  # The number of GPUs to run on
-  num_gpus: 8
   # This flag allows you to enable the inbuilt cudnn auto-tuner to find the 
   # best algorithm to use for your hardware.
   cudnn_benchmark: True
@@ -277,13 +263,11 @@ eval: &EVAL
   <<: *TRAIN
   data_pattern: test*
   batch_size: 512
-  num_gpu: 8
   eval_under_attack: False
 
 attack: &ATTACK
   eval_under_attack: True
   dump_files: False
-  eval_num_gpu: 8
   eot: False
   eot_samples: 80
 
