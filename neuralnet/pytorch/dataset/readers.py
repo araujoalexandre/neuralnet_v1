@@ -76,7 +76,7 @@ class MNISTReader(BaseReader):
     self.n_train_files = 60000
     self.n_test_files = 10000
     self.n_classes = 10
-    self.batch_shape = (None, 32, 32, 1)
+    self.batch_shape = (None, 1, 32, 32)
 
     transform = self.transform()
     if self.add_noise:
@@ -102,7 +102,7 @@ class CIFARReader(BaseReader):
     self.height, self.width = 32, 32
     self.n_train_files = 50000
     self.n_test_files = 10000
-    self.batch_shape = (None, 32, 32, 3)
+    self.batch_shape = (None, 3, 32, 32)
     self.use_data_augmentation = self.params.data_augmentation
 
     self.cifar_mean = (0.4914, 0.4822, 0.4465) 
