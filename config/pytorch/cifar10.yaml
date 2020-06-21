@@ -79,8 +79,7 @@ cyclic_lr: &cyclic_lr
   max_momentum: 0.9
 
 lambda_lr_warmup: &lambda_lr_warmup
-  warmup_epoch: 1
-  warmup_multiplier: 5
+  warmup_epoch: 5
 
 ############################
 ### Optimizer Parameters ###
@@ -204,10 +203,10 @@ train: &TRAIN
   # Weight decay factor for training.
   weight_decay: 0.0003
 
-  lipschitz_regularization: True
-  lipschitz_decay: 0.05
+  lipschitz_regularization: False
+  lipschitz_decay: 0.008
   lipschitz_bound_sample: 10
-  lipschitz_computation: power_method
+  lipschitz_computation: lipbound
   lipschitz_n_iter: 10
 
   lipschitz_normalization: False

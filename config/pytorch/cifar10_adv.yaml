@@ -79,8 +79,7 @@ cyclic_lr: &cyclic_lr
   max_momentum: 0.9
 
 lambda_lr_warmup: &lambda_lr_warmup
-  warmup_epoch: 1
-  warmup_multiplier: 5
+  warmup_epoch: 5
 
 ############################
 ### Optimizer Parameters ###
@@ -204,10 +203,10 @@ train: &TRAIN
   # Weight decay factor for training.
   weight_decay: 0.0003
 
-  lipschitz_regularization: True
+  lipschitz_regularization: False
   lipschitz_decay: 0.008
   lipschitz_bound_sample: 10
-  lipschitz_computation: power_method
+  lipschitz_computation: lipbound
   lipschitz_n_iter: 10
 
   lipschitz_normalization: False
@@ -222,13 +221,13 @@ train: &TRAIN
   # random seed 
   torch_random_seed: null
   # Batch size per compute device (i.e. GPU)
-  batch_size: 8
+  batch_size: 25
   # Number of epochs to run 
   num_epochs: 200
   # Device to use for computation: cpu or gpu
   device: gpu
   # The number of GPUs to run on
-  num_gpus: 8
+  num_gpus: 4
   # This flag allows you to enable the inbuilt cudnn auto-tuner to find the 
   # best algorithm to use for your hardware.
   cudnn_benchmark: True

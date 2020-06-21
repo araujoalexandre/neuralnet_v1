@@ -176,11 +176,11 @@ noise_params: &noise_params
 train: &TRAIN
 
   dataset: cifar10
-  model: resnet
+  model: wide_resnet
   model_params: 
     <<: *wide_resnet
 
-  adversarial_training: {adv_training}
+  adversarial_training: False
   adv_strategy: null
   adversarial_training_name: pgd
   adversarial_training_params:
@@ -203,7 +203,7 @@ train: &TRAIN
   # Weight decay factor for training.
   weight_decay: 0.0003
 
-  lipschitz_regularization: {lipreg}
+  lipschitz_regularization: True
   lipschitz_decay: 0.008
   lipschitz_bound_sample: 10
   lipschitz_computation: lipbound
