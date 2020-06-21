@@ -4,39 +4,39 @@ import multiprocessing
 
 import torch
 from torch.distributions import normal, laplace, uniform, bernoulli
+from torch.optim.lr_scheduler import _LRScheduler
 from advertorch import attacks
 
 def set_default_param_values_and_env_vars(params):
   """Sets up the default param values and environment variables ."""
   # Sets GPU thread settings
-  if params.device == 'gpu':
-    if params.gpu_thread_mode not in ['global', 'gpu_shared', 'gpu_private']:
-      raise ValueError('Invalid gpu_thread_mode: %s' % params.gpu_thread_mode)
+  if params.gpu_thread_mode not in ['global', 'gpu_shared', 'gpu_private']:
+    raise ValueError('Invalid gpu_thread_mode: %s' % params.gpu_thread_mode)
 
-    if params.per_gpu_thread_count and params.gpu_thread_mode == 'global':
-      raise ValueError(
-          'Invalid per_gpu_thread_count with gpu_thread_mode=global: %s' %
-          params.per_gpu_thread_count)
-    # Default to two threads. One for the device compute and the other for
-    # memory copies.
-    per_gpu_thread_count = params.per_gpu_thread_count or 2
-    total_gpu_thread_count = per_gpu_thread_count * params.num_gpus
+  if params.per_gpu_thread_count and params.gpu_thread_mode == 'global':
+    raise ValueError(
+        'Invalid per_gpu_thread_count with gpu_thread_mode=global: %s' %
+        params.per_gpu_thread_count)
+  # Default to two threads. One for the device compute and the other for
+  # memory copies.
+  per_gpu_thread_count = params.per_gpu_thread_count or 2
+  total_gpu_thread_count = per_gpu_thread_count * params.num_gpus
 
-    cpu_count = multiprocessing.cpu_count()
-    if not params.num_inter_threads and params.gpu_thread_mode in [
-        'gpu_private', 'gpu_shared'
-    ]:
-      main_thread_count = max(cpu_count - total_gpu_thread_count, 1)
-      params.num_inter_threads = main_thread_count
+  cpu_count = multiprocessing.cpu_count()
+  if not params.num_inter_threads and params.gpu_thread_mode in [
+      'gpu_private', 'gpu_shared'
+  ]:
+    main_thread_count = max(cpu_count - total_gpu_thread_count, 1)
+    params.num_inter_threads = main_thread_count
 
-    # From the total cpu thread count, subtract the total_gpu_thread_count,
-    # and then 2 threads per GPU device for event monitoring and sending /
-    # receiving tensors
-    num_monitoring_threads = 2 * params.num_gpus
-    num_private_threads = max(
-        cpu_count - total_gpu_thread_count - num_monitoring_threads, 1)
-    if params.datasets_num_private_threads == 0:
-      params.datasets_num_private_threads = num_private_threads
+  # From the total cpu thread count, subtract the total_gpu_thread_count,
+  # and then 2 threads per GPU device for event monitoring and sending /
+  # receiving tensors
+  num_monitoring_threads = 2 * params.num_gpus
+  num_private_threads = max(
+      cpu_count - total_gpu_thread_count - num_monitoring_threads, 1)
+  if params.datasets_num_private_threads == 0:
+    params.datasets_num_private_threads = num_private_threads
   return params
 
 
@@ -201,3 +201,39 @@ class EMA:
         self.shadow[name] = new_average.clone()
       else:
         self.shadow[name] = x.clone()
+
+
+class GradualWarmupScheduler(_LRScheduler):
+  """ Gradually warm-up(increasing) learning rate in optimizer.
+  Proposed in 'Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour'.
+  Args:
+    optimizer (Optimizer): Wrapped optimizer.
+    total_epoch: target learning rate is reached at total_epoch, gradually
+    after_scheduler: after target_epoch, use this scheduler(eg. ReduceLROnPlateau)
+  """
+  def __init__(self, optimizer, total_epoch, after_scheduler):
+    self.total_epoch = total_epoch
+    self.after_scheduler = after_scheduler
+    self.finished = False
+    super(GradualWarmupScheduler, self).__init__(optimizer)
+
+  def get_lr(self):
+    if self.last_epoch >= self.total_epoch:
+      if not self.finished:
+        self.after_scheduler.base_lrs = [base_lr for base_lr in self.base_lrs]
+        self.finished = True
+      # return self.after_scheduler.get_last_lr()
+      return self.after_scheduler.get_lr()
+    return [base_lr * (float(self.last_epoch + 1) / self.total_epoch) for base_lr in self.base_lrs]
+
+  def step(self, epoch=None, metrics=None):
+    if self.finished and self.after_scheduler:
+      if epoch is None:
+        self.after_scheduler.step(None)
+      else:
+        self.after_scheduler.step(epoch - self.total_epoch)
+      # self._last_lr = self.after_scheduler.get_last_lr()
+      self._last_lr = self.after_scheduler.get_lr()
+    else:
+      return super(GradualWarmupScheduler, self).step(epoch)
+

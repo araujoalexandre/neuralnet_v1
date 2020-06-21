@@ -256,7 +256,8 @@ class EfficientNetCenterCrop:
 
 
 
-
+def final_normalization(img):
+  return (img - img.min()) / (img.max() - img.min())
 
 
 class IMAGENETReader(BaseReader):
@@ -291,8 +292,8 @@ class IMAGENETReader(BaseReader):
     self.height, self.width = self.image_size, self.image_size
     self.n_train_files = 1281167
     self.n_test_files = 50000
-    self.n_classes = 1001
-    self.batch_shape = (None, self.height, self.height, 1)
+    self.n_classes = 1000
+    self.batch_shape = (None, 3, self.height, self.height)
 
     split = 'train' if self.is_training else 'val'
 
@@ -310,25 +311,26 @@ class IMAGENETReader(BaseReader):
   def efficientnet_transform(self):
     if self.is_training:
       transform = Compose([
-          EfficientNetRandomCrop(self.image_size),
-          transforms.Resize(
-            (self.image_size, self.image_size), interpolation=Image.BICUBIC),
-          transforms.RandomHorizontalFlip(),
-          transforms.ColorJitter(
-              brightness=0.4,
-              contrast=0.4,
-              saturation=0.4,
-          ),
-          transforms.ToTensor(),
-          Lighting(0.1, self.imagenet_pca['eigval'], self.imagenet_pca['eigvec']),
-          transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        EfficientNetRandomCrop(self.image_size),
+        transforms.Resize(
+          (self.image_size, self.image_size), interpolation=Image.BICUBIC),
+        transforms.RandomHorizontalFlip(),
+        transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4),
+        transforms.ToTensor(),
+        Lighting(0.1, self.imagenet_pca['eigval'], self.imagenet_pca['eigvec']),
+        transforms.Normalize(
+          mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        final_normalization
       ])
     else:
       transform = Compose([
-          EfficientNetCenterCrop(input_size),
-          transforms.Resize((input_size, input_size), interpolation=Image.BICUBIC),
-          transforms.ToTensor(),
-          transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        EfficientNetCenterCrop(self.image_size),
+        transforms.Resize(
+          (self.image_size, self.image_size), interpolation=Image.BICUBIC),
+        transforms.ToTensor(),
+        transforms.Normalize(
+          mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        final_normalization
       ])
     return transform
 
