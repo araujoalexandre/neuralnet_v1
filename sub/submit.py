@@ -10,6 +10,7 @@ from subprocess import Popen, PIPE
 from os.path import isdir, exists, join
 from os.path import basename, dirname
 from datetime import datetime
+from distutils.dir_util import copy_tree
 
 from script import GenerateScript
 
@@ -44,7 +45,6 @@ class GenerateRunJobConfig:
                n_cpus=None,
                n_gpus=None,
                partition=None,
-               cluster=None,
                time=None,
                dependency=None,
                template_config_params=None,
@@ -66,7 +66,6 @@ class GenerateRunJobConfig:
     self.n_cpus = n_cpus
     self.n_gpus = n_gpus
     self.slurm_partition = partition
-    self.cluster = cluster
     self.time = time
     self.dependency = dependency
     self.template_config_params = template_config_params
@@ -77,10 +76,7 @@ class GenerateRunJobConfig:
     self.dev_or_debug_mode = self.debug or self.dev
     self.distributed_config = distributed_config
 
-    if self.cluster == "slurm":
-      self.executable = 'sbatch'
-    else:
-      self.executable = 'bash'
+    self.executable = 'sbatch'
     
     self.projectdir = os.environ.get('PROJECTDIR', None)
     assert self.projectdir is not None, \
@@ -122,15 +118,11 @@ class GenerateRunJobConfig:
     # to match the time required: if self.time > _CLUSTER_MAX_TIME_JOB, 
     # we run multiple jobs with dependency
     if not self.dev_or_debug_mode:
-      if self.cluster == 'slurm':
-        njobs = self.time // _CLUSTER_MAX_TIME_JOB
-        self.times = [60 * _CLUSTER_MAX_TIME_JOB] * njobs
-        if self.time % _CLUSTER_MAX_TIME_JOB:
-          self.times += [(self.time % _CLUSTER_MAX_TIME_JOB) * 60]
-        self.times = list(map(int, self.times))
-      else:
-        # not cluster job, unlimitied time
-        self.times = None
+      njobs = self.time // _CLUSTER_MAX_TIME_JOB
+      self.times = [60 * _CLUSTER_MAX_TIME_JOB] * njobs
+      if self.time % _CLUSTER_MAX_TIME_JOB:
+        self.times += [(self.time % _CLUSTER_MAX_TIME_JOB) * 60]
+      self.times = list(map(int, self.times))
     else:
       # in dev or debug mode, we only ask for 60 minutes
       self.times = [60]
@@ -142,21 +134,21 @@ class GenerateRunJobConfig:
       elif self.mode in ['eval', 'attack']:
         self.file_to_run = "eval.py"
 
-    if self.mode == 'train':
+    if self.mode == 'train' and self.start_new_model:
       self.config_path = self.make_yaml_config()
       # copy the src code into config folder
       src_folder = join(self.projectdir, 'neuralnet')
       if not exists(join(self.logs_dir, 'neuralnet')):
-        copytree(src_folder, join(self.logs_dir, 'neuralnet'))
+        copy_tree(src_folder, join(self.logs_dir, 'neuralnet'))
 
-    elif self.mode in ('eval', 'attack'):
+    elif self.mode in ('eval', 'attack') or \
+          (self.mode == 'train' and not self.start_new_model):
       self.config_path = join(self.logs_dir, 'config.yaml')
       assert exists(self.config_path), \
           "config.yaml not found in '{}'.".format(basename(self.train_dir))
 
     # init script template object
     self.script_template = GenerateScript(
-                        cluster=self.cluster,
                         mode=self.mode,
                         train_dir=self.train_dir,
                         job_name=self.job_name,
@@ -177,7 +169,7 @@ class GenerateRunJobConfig:
 
   def make_yaml_config(self):
     # load the template and populate the values
-    if self.backend in ["tensorflow", "tf"]:
+    if self.backend == 'tensorflow':
       config_path = join(
         self.projectdir, 'config', 'tensorflow', self.config_file)
     else:
@@ -207,12 +199,10 @@ class GenerateRunJobConfig:
         print(script)
       p = self._execute(fp.name)
       # p = (bytes('Submitted batch job 1234'.encode('utf8')), bytes(''.encode('utf8')))
-    if self.cluster is not None:
-      result, error = list(map(lambda x: x.decode('utf8'), p))
-      if error:
-        raise RuntimeError("Error in the job submission {}".format(error))
-      return result 
-    return None
+    result, error = list(map(lambda x: x.decode('utf8'), p))
+    if error:
+      raise RuntimeError("Error in the job submission {}".format(error))
+    return result
 
   def run_training_mode(self):
     # run training jobs
@@ -220,16 +210,16 @@ class GenerateRunJobConfig:
     jobids = []
     for time in self.times:
       self.script_template.time = time 
+      self.script_template.srun_worker_id = 0
       script = self.script_template.generate()
       result = self.run_job(script)
       if result is None:
         return self.train_dir
       jobid = result.strip().split(' ')[-1]
       jobids.append(jobid)
-      if self.cluster == "slurm":
-        if "Submitted batch job" in result:
-          self.script_template.start_new_model = False
-          self.script_template.dependency = jobid
+      if "Submitted batch job" in result:
+        self.script_template.start_new_model = False
+        self.script_template.dependency = jobid
     # run eval
     if self.with_eval:
       self.script_template.switch_to_eval_mode()
@@ -240,7 +230,10 @@ class GenerateRunJobConfig:
         jobids.append(jobid)
 
     print("Submitted batch job {}".format(' '.join(jobids)))
-    print("Folder '{}' created".format(basename(self.train_dir)))
+    if self.start_new_model:
+      print("Folder '{}' created.".format(basename(self.train_dir)))
+    else:
+      print("Using folder '{}'.".format(basename(self.train_dir)))
     return self.train_dir, jobids
 
   def run_eval_attack_mode(self):
@@ -266,20 +259,17 @@ class GridSearchUtils:
     self.debug = debug
     if not debug:
 
-      # bash script to get parameters of all models
-      filename1 = 'script_accuracy_{}.sh'.format(xp_name)
-      assert not exists(filename1)
-      self.file1 = open(filename1, 'w')
-
-      # bash script to scancel all jobs
-      filename3 = 'script_scancel_jobs_{}.sh'.format(xp_name)
-      assert not exists(filename3)
-      self.file3 = open(filename3, 'w')
-
-      # bash script to print all jobs
-      filename4 = 'script_squeue_jobs_{}.sh'.format(xp_name)
-      assert not exists(filename4)
-      self.file4 = open(filename4, 'w')
+      filenames = [
+        'script_accuracy_{}.sh'.format(xp_name),
+        'script_attacks_{}.sh'.format(xp_name),
+        'script_check_{}.sh'.format(xp_name),
+        'script_scancel_jobs_{}.sh'.format(xp_name),
+        'script_squeue_jobs_{}.sh'.format(xp_name)
+      ]
+      self.file = []
+      for filename in filenames:
+        assert not exists(filename)
+        self.file.append(open(filename, 'w'))
 
       self.all_jobids = []
 
@@ -287,17 +277,18 @@ class GridSearchUtils:
   def write(self, folder, params, jobids):
     if not self.debug:
       self.all_jobids.extend(jobids)
-      self.file1.write("echo '{} {}'\n".format(folder, str(params)))
-      self.file1.write("cat {}_logs/best_accuracy.txt\n".format(folder))
-      self.file3.write("scancel {}\n".format(' '.join(jobids)))
+      self.file[0].write("echo '{} {}'\n".format(folder, str(params)))
+      self.file[0].write("cat {}_logs/best_accuracy.txt\n".format(folder))
+      self.file[1].write("echo '{} {}'\n".format(folder, str(params)))
+      self.file[1].write("cat {}_logs/attacks_score.txt\n".format(folder))
+      self.file[2].write("tail {}_logs/log_train*.logs\n".format(folder))
+      self.file[3].write("scancel {}\n".format(' '.join(jobids)))
+      self.file[4].write('squeue -j {}'.format(','.join(self.all_jobids)))
 
   def close(self):
     if not self.debug:
-      self.file1.close()
-      self.file3.close()
-      self.file4.write('squeue -j {}'.format(','.join(self.all_jobids)))
-      self.file4.close()
-
+      for f in self.file:
+        f.close()
 
 
 def parse_grid_search(params):
@@ -333,22 +324,14 @@ if __name__ == '__main__':
                         help="Choose job type train, eval, attack.")
   parser.add_argument("--no_eval", action="store_true", default=False,
                         help="Run the evaluation after training.")
-  parser.add_argument("--restart_model", action="store_true", default=False,
-                        help="Start the training of a new model or restart one.")
   parser.add_argument("--models_dir", type=str,
                         help="Set path of trained folders.")
   parser.add_argument("--attack", type=str, default='',
                         help="Attack to perform.")
   parser.add_argument("--file_to_run", type=str,
                         help="Set file to run")
-  parser.add_argument("--n_cpus", type=int, default=40,
-                        help="Number of cpu to use.")
-  parser.add_argument("--n_gpus", type=int, default=4,
-                        help="Number of gpu to use.")
   parser.add_argument("--partition", type=str, default="gpu_p1",
                         help="Define the slurm partition to use")
-  parser.add_argument("--cluster", type=str, default="slurm",
-                        help="slurm to generate slurm srun code, bash otherwise")
   parser.add_argument("--time", type=int, default=20,
                         help="max time for the job")
   parser.add_argument("--dependency", type=int, default=0,
@@ -384,8 +367,20 @@ if __name__ == '__main__':
   # parse all arguments 
   args = parser.parse_args()
 
+  if args.backend == 'tf':
+    args.backend = 'tensorflow'
+  elif args.backend in ['torch', 'py']:
+    args.backend = 'pytorch'
 
-  if args.nodes > 1 and args.mode == 'train':
+  if args.partition == 'gpu_p1':
+    args.n_gpus = 4
+    args.n_cpus = 40
+  elif args.partition == 'gpu_p2':
+    args.n_gpus = 8
+    args.n_cpus = 40
+
+  # if run with PyTorch, we always use distributed training
+  if args.backend == 'pytorch' or (args.nodes > 1 and args.mode == 'train'):
     assert args.num_ps <= args.nodes // 2, \
         "Number of parameter server seems to high."
     distributed_config = {
@@ -397,7 +392,6 @@ if __name__ == '__main__':
   else:
     distributed_config = None
 
-
   # define or create a models directory in workdir
   if args.models_dir is None:
     args.models_dir = join(work_dir, "models")
@@ -405,8 +399,9 @@ if __name__ == '__main__':
       os.mkdir(args.models_dir)
 
   # sanity checks
-  if args.mode == 'train' and args.config is None:
-    raise ValueError("Train mode needs the name of a config file.")
+  if args.mode == 'train' and args.config is None and args.train_dir is None:
+    raise ValueError(
+      "Train mode needs the name of a config file or a train_dir.")
   if not args.mode in ("train", "eval", "attack"):
     raise ValueError(
       "mode not recognized, should be ('train', 'eval', 'attack')")
@@ -423,21 +418,25 @@ if __name__ == '__main__':
 
   if args.grid_search:
     assert args.name, "Required if grid_search is set"
-  
+
+  start_new_model = True
+  if args.train_dir and args.mode == 'train':
+    config = 'config'
+    start_new_model = False
+
   job_params = dict(
     config_file=args.config,
     train_dir=args.train_dir,
     mode=args.mode,
     backend=args.backend,
     with_eval=not args.no_eval,
-    start_new_model=not args.restart_model,
+    start_new_model=start_new_model,
     models_dir=args.models_dir,
     attack_name=args.attack,
     file_to_run=args.file_to_run,
     n_cpus=args.n_cpus,
     n_gpus=args.n_gpus,
     partition=args.partition,
-    cluster=args.cluster,
     time=args.time,
     dependency=args.dependency,
     override_params=args.override_params,

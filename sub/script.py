@@ -9,7 +9,6 @@ class GenerateScript:
   """Create of job script for local or slurm cluster"""
 
   def __init__(self, 
-               cluster=None,
                mode='train',
                train_dir=None,
                job_name=None,
@@ -27,7 +26,6 @@ class GenerateScript:
                dev_mode=False,
                distributed_config=None):
 
-    self.cluster = cluster
     self.mode = mode
     self.bash_path = shutil.which("bash")
     self.python_exec = "python3"
@@ -37,14 +35,12 @@ class GenerateScript:
     self.models_dir = dirname(train_dir)
     self.logs_dir = '{}_logs'.format(train_dir)
     self.data_dir = os.environ.get('DATADIR')
-    # self.project_dir = os.environ.get('PROJECTDIR')
     self.project_dir = self.logs_dir
 
     # slrum config
     self.account = os.environ.get('slurm_account', None)
-    if self.cluster == "slurm":
-      assert self.account is not None, \
-        "Slurm account needs to be set in environment variables"
+    assert self.account is not None, \
+      "Slurm account needs to be set in environment variables"
     self.job_name = job_name
     self.partition = partition
     self.n_gpus = n_gpus
@@ -53,8 +49,7 @@ class GenerateScript:
     self.distributed_config = distributed_config
     self.dev_mode = dev_mode
     
-    if self.cluster and self.distributed_config is not None \
-      and self.mode == 'train':
+    if self.distributed_config is not None and self.mode == 'train':
       self.distributed = True
       self.nodes = self.distributed_config['nodes']
       self.num_ps = self.distributed_config['num_ps']
@@ -64,7 +59,7 @@ class GenerateScript:
       self.distributed = False
       self.nodes = 1
 
-    if backend in ['py', 'pytorch'] and self.distributed:
+    if backend  == 'pytorch' and self.distributed:
       # add torch.distributed.launch config before main script
       setup_dist_pytorch = [' -m torch.distributed.launch']
       setup_dist_pytorch.append('--nnodes {}'.format(self.nodes))
@@ -74,12 +69,6 @@ class GenerateScript:
       setup_dist_pytorch.append('--master_port ${master_port}')
       self.python_exec += ' '.join(setup_dist_pytorch)
     
-    # module to load
-    self.modules = [
-      'cuda/10.1.1',
-      'cudnn/10.1-v7.5.1.10',
-    ]
-
     # python config
     self.file_to_run = file_to_run
     self.log_filename = log_filename
@@ -119,7 +108,6 @@ class GenerateScript:
     slurm_header.append('--partition={}'.format(self.partition))
     slurm_header.append('--nodes={}'.format(self.nodes))
     slurm_header.append('--gres=gpu:{}'.format(self.n_gpus))
-    # slurm_header.append('--cpus-per-task={}'.format(self.n_cpus))
     slurm_header.append('--wait-all-nodes=1')
     slurm_header.append('--exclusive')
     if self.dependency:
@@ -131,19 +119,12 @@ class GenerateScript:
     return slurm_header
 
   def create_load_cmd(self):
-    modules_load = ['module load {}'.format(module) for module in self.modules]
     load_cmd = 'module purge\n'
-    load_cmd += '\n'.join(modules_load) + '\n'
     if self.backend == 'tensorflow':
       load_cmd += 'nccl/2.5.6-2-cuda\n'
       load_cmd += 'module load tensorflow-gpu/py3/1.14'
-    elif self.backend in ['py', 'pytorch']:
-      # advertorch is not working with nccl 2.5
-      if self.mode == 'attack':
-        load_cmd += 'module load nccl/2.4.8-1-cuda\n'
-        load_cmd += 'module load pytorch-gpu/py3/1.3.1'
-      else:
-        load_cmd += 'module load pytorch-gpu/py3/1.3.1+nccl-2.5.6\n'
+    elif self.backend == 'pytorch':
+      load_cmd += 'module load pytorch-gpu/py3/1.5.0'
     return load_cmd
 
   def unset_proxy(self):
@@ -181,7 +162,6 @@ class GenerateScript:
     srun_args.append('--open-mode=append')
     srun_args.append('--nodes=1')
     srun_args.append('--gres=gpu:{}'.format(self.n_gpus))
-    # srun_args.append('--cpus-per-task={}'.format(self.n_cpus))
     if self.distributed:
       srun_args.append('--nodelist="${{workers[{}]}}"'.format(
         self.srun_worker_id))
@@ -202,6 +182,7 @@ class GenerateScript:
     args.append('--train_dir={}'.format(self.train_dir))
     args.append('--data_dir={}'.format(self.data_dir))
     args.append('--backend={}'.format(self.backend))
+    args.append('--n_gpus={}'.format(self.n_gpus))
     if self.override_params and self.mode in ('eval', 'attack'):
       args.append("--override_params='{}'".format(self.override_params))
     if self.distributed:
@@ -215,29 +196,22 @@ class GenerateScript:
     python_cmd = '{} {} {}'.format(self.python_exec, file_to_run, args)
     return python_cmd
 
-  def redirect_logs(self):
-    if self.cluster:
-      # no redirection
-      return ''
-    return "&>> {}/log_{}.logs".format(
-      self.logs_dir, self.log_filename)
-
   def generate(self):
     """ Construct a job submission script """
     job_script = '#!{}\n'.format(self.bash_path)
-    if self.cluster:
-      job_script += '{}\n'.format(self.create_slurm_header())
-      job_script += '{}\n'.format(self.create_load_cmd())
-      job_script += '{}\n'.format(self.unset_proxy())
+    job_script += '{}\n'.format(self.create_slurm_header())
+    job_script += '{}\n'.format(self.create_load_cmd())
+    job_script += '{}\n'.format(self.unset_proxy())
     if self.distributed:
       job_script += '{}\n'.format(self.create_distribution_setup())
 
-    if self.cluster and self.distributed:
-      if self.backend in ['py', 'pytorch']:
+    if self.distributed:
+      if self.backend == 'pytorch':
         job_script += "master_host=${workers[0]}\n"
         job_script += "master_port={}\n\n".format(
           self.distributed_config['ps_port'])
         # job_script += 'export NCCL_DEBUG=INFO\n\n'
+        job_script += "export OMP_NUM_THREADS=1\n"
       if self.num_ps:
         for ps_id in range(self.num_ps):
           job_script += self.create_srun_cmd(
@@ -254,8 +228,7 @@ class GenerateScript:
       job_script += 'wait "${pids[@]}"\n'
 
     else:
-      if self.cluster:
-        job_script += self.create_srun_cmd()
+      job_script += self.create_srun_cmd()
       job_script += '{}'.format(self.create_python_cmd()) 
-      job_script += ' {}'.format(self.redirect_logs())
+      # job_script += ' {}'.format(self.redirect_logs())
     return job_script
