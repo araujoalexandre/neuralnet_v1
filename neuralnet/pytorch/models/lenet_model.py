@@ -12,7 +12,7 @@ def conv_init(m):
 
 class LeNet(nn.Module):
 
-  def __init__(self, params, num_classes):
+  def __init__(self, params, num_classes, is_training=None):
     super(LeNet, self).__init__()
     self.conv1 = nn.Conv2d(3, 6, 5)
     self.conv2 = nn.Conv2d(6, 16, 5)

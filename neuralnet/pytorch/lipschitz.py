@@ -26,66 +26,65 @@ class LipschitzRegularization:
       if self.lipschitz_computation == 'lipbound':
         if local_rank == 0:
           logging.info("Lipschitz regularization activated with LipBound.")
-        self.lip_constants = LipschitzLipBound(model, params, reader)
+        self.lip_constants = LipschitzLipBound(
+          model, params, reader, local_rank)
       elif self.lipschitz_computation == "power_method":
         if local_rank == 0:
           logging.info(
             "Lipschitz regularization activated with Power Iteration {}".format(
               self.params.lipschitz_n_iter))
-        self.lip_constants = LipschitzPowerIteration(model, params, reader)
+        self.lip_constants = LipschitzPowerIteration(
+          model, params, reader, local_rank)
       else:
         raise ValueError("Method for computing Lipschitz not recognized.")
 
   def get_lip_reg(self, epoch, model):
     if self.lipschitz_regularization and self.decay > 0:
       lip_cst = self.lip_constants.compute(model)
-      lip_loss = [torch.log(x) for x in lip_cst]
-      return self.decay * sum(lip_loss)
+      lip_loss = [(torch.log(x), torch.log(y)) for (x, y) in lip_cst]
+      lipreg = self.decay * sum([lip_max for (lip_min, lip_max) in lip_loss])
+      return lipreg, [(x.item(), y.item()) for (x, y) in lip_loss]
     return 0.
 
 
 
 class LipschitzGlobal:
 
-  def __init__(self, model, params):
+  def __init__(self, model, params, local_rank):
 
     self.conv_id = set()
     self.batch_bn_id = set()
-    self.diagonal_circulant_id = set()
+    self.linear_id = set()
 
     for i, module in enumerate(model.modules()):
       name = module.__class__.__name__.lower()
-      # logging.info(name)
-      # add_it = False
+      logging.info('name {}'.format(name))
       if 'conv2d' in name:
-        # add_it = True
+        if local_rank == 0:
+          logging.info(name)
         self.conv_id.add(i)
       elif 'batchnorm' in name:
-        # add_it = True
+        if local_rank == 0:
+          logging.info(name)
         self.batch_bn_id.add(i)
-      elif 'diagonalcirculant' in name:
-        # add_it = True
-        self.diagonal_circulant_id.add(i)
-      # weight = getattr(module, 'weight', False)
-      # shape = 0 if weight is False else weight.shape
-      # if add_it:
-      #   logging.info('{} {} adding it !'.format(name, shape))
-      # else:
-      #   logging.info('{}'.format(name, shape))
+      elif 'linear' in name:
+        if local_rank == 0:
+          logging.info(name)
+        self.linear_id.add(i)
 
   def _compute_batch_norm(self, module):
     """Compute the Lipschitz of Batch Norm layer."""
     weight = module.weight
     running_var = module.running_var
     eps = module.eps
-    lip = torch.max(torch.abs(weight / torch.sqrt(running_var + eps)))
-    return lip
+    values = torch.abs(weight / torch.sqrt(running_var + eps))
+    max_lip = torch.max(values)
+    min_lip = torch.min(values)
+    return max_lip, min_lip
 
-  def _compute_diagonal_circulant(self, module):
-    """Compute the Lipschitz of Diagonal Circulant layer"""
-    lip_circ = torch.max(torch.abs(torch.rfft(module.kernel, 1)))
-    lip_diag = torch.max(torch.abs(module.diag))
-    return lip_circ, lip_diag
+  def _compute_linear_sv(self, module):
+    s = torch.svd(module.weight, compute_uv=True)[1]
+    return torch.max(s), torch.min(s)
 
   def compute(self, model):
     """Compute Lipschitz of full Network."""
@@ -98,18 +97,18 @@ class LipschitzGlobal:
       elif i in self.batch_bn_id:
         lip_bn = self._compute_batch_norm(module)
         lip_loss.append(lip_bn)
-      elif i in self.diagonal_circulant_id:
-        lip_circ, lip_diag = self._compute_diagonal_circulant(module)
-        lip_loss.extend([lip_circ, lip_diag])
+      elif i in self.linear_id:
+        lip_linear = self._compute_linear_sv(module)
+        lip_loss.append(lip_linear)
     return lip_loss
 
 
 
 class LipschitzPowerIteration(LipschitzGlobal):
 
-  def __init__(self, model, params, reader):
+  def __init__(self, model, params, reader, local_rank):
     super(LipschitzPowerIteration, self).__init__(
-      model, params)
+      model, params, local_rank)
 
     self.model = model
     self.n_iter = params.lipschitz_n_iter
@@ -143,7 +142,7 @@ class LipschitzPowerIteration(LipschitzGlobal):
       handle.remove()
 
   def _compute_conv(self, i, module):
-    """Compute a bound on the Lipchitz of Convolution layer."""
+    """Compute a bound on the Lipschitz of Convolution layer."""
 
     kernel = module.weight.clone()
     padding = module.padding[0]
@@ -176,23 +175,13 @@ class LipschitzPowerIteration(LipschitzGlobal):
 
 class LipschitzLipBound(LipschitzGlobal):
 
-  def __init__(self, model, params, *args):
+  def __init__(self, model, params, reader, local_rank):
     super(LipschitzLipBound, self).__init__(
-      model, params)
+      model, params, local_rank)
 
     self.lip_bound_cls = {}
     self.sample = params.lipschitz_bound_sample
     
-    # # we pre-create LipschitzBound for each kernel
-    # for i, module in enumerate(model.modules()):
-    #   name = module.__class__.__name__
-    #   print(name)
-    #   if name == 'Conv2d':
-    #     padding = module.padding[0]
-    #     kernel = module.weight
-    #     self.lip_bound_cls[i] = \
-    #       LipschitzBound(kernel.shape, padding, sample=self.sample)
-
     # we pre-create LipschitzBound for each kernel
     for i, module in enumerate(model.modules()):
       name = module.__class__.__name__
@@ -210,7 +199,7 @@ class LipschitzLipBound(LipschitzGlobal):
     padding = module.padding[0]
     kernel = module.weight
     lip = self.lip_bound_cls[i].compute(kernel)
-    return lip
+    return torch.FloatTensor([0]), lip
 
 
 

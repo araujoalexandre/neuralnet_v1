@@ -325,9 +325,10 @@ class Trainer:
     outputs = self.model(inputs)
     loss = self.criterion(outputs, labels.cuda())
 
-    with torch.autograd.profiler.record_function("lipreg"):
-      lip_loss = self.lipschitz_reg.get_lip_reg(epoch, self.model)
-    total_loss = loss + lip_loss
+    # with torch.autograd.profiler.record_function("lipreg"):
+    #   lip_loss, sing_values = self.lipschitz_reg.get_lip_reg(epoch, self.model)
+    # total_loss = loss + lip_loss
+    total_loss = loss
     if self.params.optimizer == 'rmsproptf':
       params_without_bn = [p for n, p in self.model.named_parameters() \
                            if not ('_bn' in n or '.bn' in n)]
@@ -370,9 +371,10 @@ class Trainer:
       self.message.add("step", step, width=5, format=".0f")
       self.message.add("lr", lr, format=".6f")
       self.message.add("loss", loss, format=".4f")
-      self.message.add("lip", lip_loss, format="2.4f")
+      # self.message.add("lip", lip_loss, format="2.4f")
       self.message.add("imgs/sec", examples_per_second, width=5, format=".0f")
       logging.info(self.message.get_message())
+      # logging.info(sing_values)
 
 
 

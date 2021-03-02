@@ -7,6 +7,7 @@ from . import wide_resnet_model
 from . import circulant_model
 from . import scattering_model
 from . import structured_model
+from . import lenet_model
 from .efficientnet.model import create_efficientnet_model
 
 _model_name_to_imagenet_model = {
@@ -26,6 +27,7 @@ _model_name_to_imagenet_model = {
 }
 
 _model_name_to_cifar_model = {
+    'lenet': lenet_model.LeNet,
     'resnet': resnet_model_cifar.ResNet,
     'wide_resnet': wide_resnet_model.WideResnetModel,
     'diagonal_circulant': circulant_model.DiagonalCirculantModel,

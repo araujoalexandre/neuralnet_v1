@@ -16,6 +16,7 @@ flags.DEFINE_string("train_dir", "",
                     "Name of the training directory")
 flags.DEFINE_string("data_dir", "",
                     "Name of the data directory")
+flags.DEFINE_integer("n_gpus", 4, "Number of GPUs to use.")
 flags.DEFINE_string("backend", "tensorflow",
                     "Wheather run tensorflow model of Pytorch.")
 flags.DEFINE_string("override_params", "",
@@ -34,6 +35,7 @@ def main(_):
     config_path, config_name, override_params=override_params)
   params.train_dir = FLAGS.train_dir
   params.data_dir = FLAGS.data_dir
+  params.num_gpus = FLAGS.n_gpus
   params.start_new_model = False
 
   if FLAGS.backend.lower() in ('tensorflow', 'tf'):
