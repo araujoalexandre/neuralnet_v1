@@ -3,6 +3,18 @@
 ### Models Parameters ###
 #########################
 
+resnet: &resnet
+  depth: 50
+  leaky_slope: 0.0
+  use_dc_last: False
+
+wide_resnet: &wide_resnet
+  widen_factor: 10
+  depth: 28
+  leaky_slope: 0.0
+  dropout: 0.3
+  use_dc_last: False
+
 dense: &dense
   n_layers: 5
   hidden: 0
@@ -21,13 +33,6 @@ conv_circulant: &conv_circulant
   use_diag: False
   use_bias: True
   activation: relu6
-
-wide_resnet: &wide_resnet
-  widen_factor: 10
-  depth: 28
-  leaky_slope: 0.0
-  dropout: 0.3
-  use_dc_last: False
 
 structured: &structured
   rank: 1
@@ -241,7 +246,7 @@ train: &TRAIN
   datasets_num_private_threads: 0
 
   gradient_clip_by_norm: null
-  gradient_clip_by_value: null
+  gradient_clip_by_value: 0.2
 
   # Sets the threshold for what messages will be logged. 
   logging_verbosity: INFO

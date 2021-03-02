@@ -183,11 +183,11 @@ noise_params: &noise_params
 train: &TRAIN
 
   dataset: cifar10
-  model: resnet
-  model_params: 
-    <<: *resnet
+  model: lenet
+  # model_params: 
+  #   <<: *resnet
 
-  adversarial_training: False
+  adversarial_training: True
   adv_strategy: null
   adversarial_training_name: pgd
   adversarial_training_params:
@@ -197,7 +197,7 @@ train: &TRAIN
   noise:
     <<: *noise_params
   
-  init_learning_rate: 0.1
+  init_learning_rate: 0.01
   lr_scheduler: lambda_lr
   lr_scheduler_params: 
     <<: *lambda_lr
@@ -205,13 +205,13 @@ train: &TRAIN
   optimizer_params:
     <<: *sgd
 
-  lb_smooth: 0.1
+  lb_smooth: 0.01
   ema: 0.999
 
   # Weight decay factor for training.
   weight_decay: 0.0003
 
-  lipschitz_regularization: True
+  lipschitz_regularization: False
   lipschitz_decay: 0.008
   lipschitz_bound_sample: 10
   lipschitz_computation: lipbound

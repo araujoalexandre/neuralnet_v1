@@ -3,18 +3,6 @@
 ### Models Parameters ###
 #########################
 
-resnet: &resnet
-  depth: 50
-  leaky_slope: 0.0
-  use_dc_last: False
-
-wide_resnet: &wide_resnet
-  widen_factor: 10
-  depth: 28
-  leaky_slope: 0.0
-  dropout: 0.3
-  use_dc_last: False
-
 dense: &dense
   n_layers: 5
   hidden: 0
@@ -34,6 +22,12 @@ conv_circulant: &conv_circulant
   use_bias: True
   activation: relu6
 
+wide_resnet: &wide_resnet
+  widen_factor: 10
+  depth: 28
+  leaky_slope: 0.1
+  dropout: 0.3
+
 structured: &structured
   rank: 1
   class_type: toeplitz
@@ -47,17 +41,23 @@ structured: &structured
 piecewise_constant: &piecewise_constant
   milestones: [7500, 15000, 20000]
   values: [0.1, 0.02, 0.0004, 0.00008]
+  warmup: False
 
 step_lr: &step_lr
   step_size: 50
   gamma: 0.2
+  warmup: False
 
 multi_step_lr: &multi_step_lr
   milestones: [60, 120, 160]
   gamma: 0.1
+  warmup: False
 
-exponential_lr: &exponential_lrr
-  gamma: 0.97 
+exponential_lr: &exponential_lr
+  decay_factor: 0.97
+  decay_epochs: 2.4
+  staircase: True
+  warmup: 5
 
 reduce_lr_on_plateau: &reduce_lr_on_plateau
   mode: 'min'
@@ -85,8 +85,8 @@ cyclic_lr: &cyclic_lr
 
 lambda_lr: &lambda_lr
   gamma: 0.97
-  decay_every_epoch: 2
-  warmup: 0
+  decay_every_epoch: 2.4
+  warmup: 5
 
 ############################
 ### Optimizer Parameters ###
@@ -144,7 +144,7 @@ pgd_linf: &adv_params_pgd_linf
   norm: 'inf'
   eps: 0.031
   eps_iter: 0.0062
-  nb_iter: 10
+  nb_iter: 5
   rand_init: True
   clip_min: 0.0
   clip_max: 1.0
@@ -153,7 +153,7 @@ pgd_l2: &adv_params_pgd_l2
   norm: l2
   eps: 0.832
   eps_iter: 0.1664
-  nb_iter: 10
+  nb_iter: 5
   rand_init: True
   clip_min: 0.0
   clip_max: 1.0
@@ -182,10 +182,11 @@ noise_params: &noise_params
 
 train: &TRAIN
 
-  dataset: cifar10
-  model: resnet
-  model_params: 
-    <<: *resnet
+  dataset: imagenet
+  model: efficientnet-b0
+  model_params: null
+  # model_params: 
+  #   <<: *efficientnet-b0
 
   adversarial_training: False
   adv_strategy: null
@@ -197,22 +198,23 @@ train: &TRAIN
   noise:
     <<: *noise_params
   
-  init_learning_rate: 0.1
+  # 4 machines with 8 gpus each: total batch size 4096
+  init_learning_rate: 0.256
   lr_scheduler: lambda_lr
   lr_scheduler_params: 
     <<: *lambda_lr
-  optimizer: sgd
+  optimizer: rmsproptf
   optimizer_params:
-    <<: *sgd
+    <<: *rmsproptf
 
   lb_smooth: 0.1
   ema: 0.999
 
   # Weight decay factor for training.
-  weight_decay: 0.0003
+  weight_decay: 0.00001
 
   lipschitz_regularization: True
-  lipschitz_decay: 0.008
+  lipschitz_decay: 0.002
   lipschitz_bound_sample: 10
   lipschitz_computation: lipbound
   lipschitz_n_iter: 10
@@ -223,9 +225,9 @@ train: &TRAIN
   # random seed 
   torch_random_seed: null
   # Batch size per compute device (i.e. GPU)
-  batch_size: 25
+  batch_size: 128
   # Number of epochs to run 
-  num_epochs: 200
+  num_epochs: 350
   # This flag allows you to enable the inbuilt cudnn auto-tuner to find the 
   # best algorithm to use for your hardware.
   cudnn_benchmark: True
@@ -260,7 +262,7 @@ train: &TRAIN
 eval: &EVAL
   <<: *TRAIN
   data_pattern: test*
-  batch_size: 200
+  batch_size: 512
   eval_under_attack: False
 
 attack: &ATTACK
